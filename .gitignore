@@ -1,0 +1,62 @@
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+.Python
+env/
+venv/
+.venv/
+ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ========================
+# Environment & Secrets
+# ========================
+.env
+*.env.local
+*.env.production
+*.env.development
+
+# ========================
+# Project-specific
+# ========================
+implementation.md
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ========================
+# IDE & Editor
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ========================
+# Logs
+# ========================
+*.log
+logs/
+
+# ========================
+# Node (if frontend tooling added later)
+# ========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
