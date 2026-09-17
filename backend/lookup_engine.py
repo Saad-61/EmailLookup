@@ -969,6 +969,36 @@ async def lookup_company(domain: str, client: httpx.AsyncClient) -> Optional[dic
 PROFILES_DB_PATH = os.path.join(os.path.dirname(__file__), "../data/profiles.db")
 
 
+async def lookup_wikidata_entity(username: Optional[str] = None, name: Optional[str] = None) -> dict:
+    """Check local wikidata_entities table for authoritative cross-links."""
+    if not os.path.exists(PROFILES_DB_PATH):
+        return {}
+    try:
+        async with aiosqlite.connect(PROFILES_DB_PATH, timeout=30.0) as db:
+            await db.execute("PRAGMA journal_mode=WAL;")
+            await db.execute("PRAGMA busy_timeout=30000;")
+            db.row_factory = aiosqlite.Row
+            if username:
+                async with db.execute(
+                    "SELECT * FROM wikidata_entities WHERE LOWER(github_username) = ? LIMIT 1",
+                    (username.lower().strip(),)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        return dict(row)
+            if name and len(name.split()) >= 2:
+                async with db.execute(
+                    "SELECT * FROM wikidata_entities WHERE LOWER(name) = ? LIMIT 1",
+                    (name.lower().strip(),)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        return dict(row)
+    except Exception:
+        pass
+    return {}
+
+
 async def lookup_harvested_db(email: str) -> dict:
     """Check local profiles.db database for previously scraped profile data."""
     if not os.path.exists(PROFILES_DB_PATH):
@@ -978,13 +1008,28 @@ async def lookup_harvested_db(email: str) -> dict:
             await db.execute("PRAGMA journal_mode=WAL;")
             await db.execute("PRAGMA busy_timeout=30000;")
             db.row_factory = aiosqlite.Row
+            # 1. Direct exact email match
+            clean_em = email.lower().strip()
             async with db.execute(
                 "SELECT * FROM harvested_profiles WHERE email = ?",
-                (email.lower().strip(),)
+                (clean_em,)
             ) as cursor:
                 row = await cursor.fetchone()
                 if row:
                     return dict(row)
+
+            # 2. SHA-1 reverse hash match (supports GHArchive & BigQuery hashed exports)
+            if "@" in clean_em:
+                prefix, domain = clean_em.split("@", 1)
+                hashed_prefix = hashlib.sha1(prefix.encode("utf-8")).hexdigest()
+                hashed_email = f"{hashed_prefix}@{domain}"
+                async with db.execute(
+                    "SELECT * FROM harvested_profiles WHERE email = ?",
+                    (hashed_email,)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        return dict(row)
     except Exception:
         pass
     return {}
@@ -1210,7 +1255,15 @@ async def run_lookup(email: str) -> dict:
         gh_direct_linkedin = (github.get("linkedin_url") if isinstance(github, dict) else None)
         # Priority 2: Gravatar profile link
         gravatar_linkedin = gravatar.get("linkedin")
-        linkedin_url = gh_direct_linkedin or gravatar_linkedin
+        # Priority 3: Local Harvested DB link
+        harvested_linkedin = harvested.get("linkedin_url")
+
+        # Priority 4: Wikidata authoritative entity cross-link
+        gh_u = (github.get("username") if isinstance(github, dict) else None) or gravatar.get("gravatar_handle") or harvested.get("username")
+        wikidata_record = await lookup_wikidata_entity(username=gh_u, name=resolved_name)
+        wikidata_linkedin = wikidata_record.get("linkedin_url") if wikidata_record else None
+
+        linkedin_url = gh_direct_linkedin or gravatar_linkedin or harvested_linkedin or wikidata_linkedin
         linkedin_loc = None
         linkedin_confidence = 100 if linkedin_url else 0
 
