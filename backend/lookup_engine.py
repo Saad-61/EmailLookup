@@ -933,65 +933,120 @@ def _strip_html(text: str) -> str:
 
 # ── Company enrichment (for corporate emails) ─────────────────────────────────
 
-async def lookup_company(domain: str, client: httpx.AsyncClient) -> Optional[dict]:
+async def lookup_company(
+    domain: str,
+    client: httpx.AsyncClient,
+    company_hint: Optional[str] = None,
+) -> Optional[dict]:
     """
-    Use Clearbit Logo API (free, no auth) to get basic company info from domain.
-    Works only for corporate / company domains (not gmail.com etc.).
+    Look up company intelligence from local company_domains (5.48M records)
+    or fallback to Clearbit live autocomplete API.
+    Works for corporate domains AND personal emails with company hints (e.g. GitHub company, LinkedIn title, or email keywords).
     """
     personal_domains = {
         "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
         "icloud.com", "protonmail.com", "aol.com", "zoho.com",
         "mail.com", "yandex.com", "gmx.com", "live.com",
     }
-    clean_dom = domain.lower().strip()
-    if clean_dom in personal_domains:
+    clean_dom = domain.lower().strip() if domain else ""
+    is_personal = clean_dom in personal_domains or not clean_dom
+
+    if is_personal and not company_hint:
         return None
 
-    # Step 1: Check local company_domains SQLite database (0 ms, offline)
+    # Step 1: Check local company_domains SQLite database (5.48M records, 0 ms offline)
     if os.path.exists(PROFILES_DB_PATH):
         try:
             async with aiosqlite.connect(PROFILES_DB_PATH, timeout=10.0) as db:
                 await db.execute("PRAGMA journal_mode=WAL;")
                 await db.execute("PRAGMA busy_timeout=15000;")
                 db.row_factory = aiosqlite.Row
-                async with db.execute(
-                    "SELECT * FROM company_domains WHERE domain = ? LIMIT 1",
-                    (clean_dom,)
-                ) as cursor:
-                    row = await cursor.fetchone()
-                    if row:
-                        r = dict(row)
-                        return {
-                            "name": r.get("company_name") or clean_dom.split(".")[0].capitalize(),
-                            "domain": clean_dom,
-                            "logo": f"https://logo.clearbit.com/{clean_dom}",
-                            "industry": r.get("industry"),
-                            "country": r.get("country"),
-                            "rank": r.get("rank"),
-                            "email_format": r.get("email_format"),
-                            "mx_provider": r.get("mx_provider"),
-                        }
+
+                # Direct domain match
+                if not is_personal and clean_dom:
+                    async with db.execute(
+                        "SELECT * FROM company_domains WHERE domain = ? LIMIT 1",
+                        (clean_dom,)
+                    ) as cursor:
+                        row = await cursor.fetchone()
+                        if row:
+                            r = dict(row)
+                            c_dom = r.get("domain") or clean_dom
+                            return {
+                                "name": r.get("company_name") or c_dom.split(".")[0].capitalize(),
+                                "domain": c_dom,
+                                "logo": f"https://logo.clearbit.com/{c_dom}",
+                                "industry": r.get("industry"),
+                                "country": r.get("country"),
+                                "rank": r.get("rank"),
+                                "email_format": r.get("email_format"),
+                                "mx_provider": r.get("mx_provider"),
+                            }
+
+                # Match by company_hint
+                if company_hint:
+                    hint = company_hint.strip()
+                    if hint.startswith("@"):
+                        hint = hint[1:].strip()
+                    # Strip leading "The " or trailing Inc/LLC
+                    clean_h = re.sub(r"^(the|a)\s+", "", hint, flags=re.IGNORECASE)
+                    clean_h = re.sub(r"\s+(inc\.?|llc\.?|ltd\.?|corp\.?|corporation|group|technologies|solutions|services|pvt\.?)$", "", clean_h, flags=re.IGNORECASE).strip()
+                    if len(clean_h) >= 3:
+                        h_clean = clean_h.lower()
+                        h_slug = re.sub(r"\s+", "", h_clean)
+                        async with db.execute(
+                            """SELECT * FROM company_domains
+                               WHERE domain = ? OR domain = ? OR domain = ? OR domain = ?
+                                  OR LOWER(company_name) = ? OR LOWER(company_name) = ? OR LOWER(company_name) LIKE ?
+                               ORDER BY rank ASC NULLS LAST LIMIT 1""",
+                            (
+                                f"{h_slug}.com", f"{h_clean}.com", h_slug, h_clean,
+                                h_clean, f"the {h_clean}", f"%{h_clean}%"
+                            )
+                        ) as cursor:
+                            row = await cursor.fetchone()
+                            if row:
+                                r = dict(row)
+                                c_dom = r.get("domain") or f"{h_slug}.com"
+                                return {
+                                    "name": r.get("company_name") or hint.title(),
+                                    "domain": c_dom,
+                                    "logo": f"https://logo.clearbit.com/{c_dom}",
+                                    "industry": r.get("industry"),
+                                    "country": r.get("country"),
+                                    "rank": r.get("rank"),
+                                    "email_format": r.get("email_format"),
+                                    "mx_provider": r.get("mx_provider"),
+                                }
         except Exception:
             pass
 
-    # Step 2: Fallback to Clearbit Autocomplete API
-    try:
-        resp = await client.get(
-            f"https://autocomplete.clearbit.com/v1/companies/suggest?query={clean_dom}",
-            headers=BROWSER_HEADERS,
-            timeout=6,
-        )
-        if resp.status_code == 200:
-            companies = resp.json()
-            if companies:
-                c = companies[0]
-                return {
-                    "name": c.get("name"),
-                    "domain": c.get("domain"),
-                    "logo": c.get("logo"),
-                }
-    except Exception:
-        pass
+    # Step 2: Fallback to Clearbit Autocomplete API (Live fetching)
+    query_str = company_hint or clean_dom
+    if query_str and (not is_personal or (company_hint and len(company_hint) >= 3)):
+        try:
+            resp = await client.get(
+                f"https://autocomplete.clearbit.com/v1/companies/suggest?query={query_str}",
+                headers=BROWSER_HEADERS,
+                timeout=6,
+            )
+            if resp.status_code == 200:
+                companies = resp.json()
+                if companies:
+                    c = companies[0]
+                    c_dom = c.get("domain") or ""
+                    return {
+                        "name": c.get("name"),
+                        "domain": c_dom,
+                        "logo": c.get("logo") or (f"https://logo.clearbit.com/{c_dom}" if c_dom else None),
+                        "industry": None,
+                        "country": None,
+                        "rank": None,
+                        "email_format": None,
+                        "mx_provider": None,
+                    }
+        except Exception:
+            pass
     return None
 
 
@@ -1367,6 +1422,24 @@ async def run_lookup(email: str) -> dict:
 
         if not resolved_avatar and harvested:
             resolved_avatar = harvested.get("avatar_url")
+
+        # ── Fallback Company Resolution (from GitHub / Harvested / Email keywords) ──
+        if not company:
+            gh_comp = github.get("company") if isinstance(github, dict) else None
+            h_comp = harvested.get("company") if isinstance(harvested, dict) else None
+            cand_comp = gh_comp or h_comp
+
+            if cand_comp:
+                company = await lookup_company(domain="", client=client, company_hint=cand_comp)
+
+            if not company and local_part:
+                name_parts = set(re.findall(r"\w+", (resolved_name or "").lower()))
+                for chunk in re.split(r"[._+-]", local_part):
+                    if len(chunk) >= 4 and not chunk.isdigit() and chunk not in name_parts:
+                        c_test = await lookup_company(domain="", client=client, company_hint=chunk)
+                        if c_test:
+                            company = c_test
+                            break
 
     # ── Build person card ──
     person = {

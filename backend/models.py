@@ -48,6 +48,8 @@ class LookupResponse(BaseModel):
     address: Optional[str] = None
     deliverability: Optional[str] = None
     autocorrect: Optional[str] = None
+    company: Optional[dict] = None
+    email_quality: Optional[dict] = None
     error: Optional[str] = None
 
 
