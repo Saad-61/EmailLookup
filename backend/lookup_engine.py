@@ -167,23 +167,38 @@ async def lookup_gravatar(email: str, client: httpx.AsyncClient) -> dict:
             if not is_clean_human_name(display_name):
                 display_name = None
 
-            about = data.get("description") or data.get("about_me") or None
+            about = data.get("description") or data.get("about_me") or data.get("job_title") or None
             location = data.get("location") or None
 
             result["name"] = display_name
             result["bio"] = about
             result["location"] = location
 
-            # Extract linked URLs from profile
-            links = data.get("links", []) or data.get("accounts", [])
-            for link in links:
+            # Extract linked URLs & verified accounts from profile (Gravatar v3 uses verified_accounts)
+            raw_accounts = []
+            if isinstance(data.get("verified_accounts"), list):
+                raw_accounts.extend(data["verified_accounts"])
+            if isinstance(data.get("links"), list):
+                raw_accounts.extend(data["links"])
+            if isinstance(data.get("accounts"), list):
+                raw_accounts.extend(data["accounts"])
+
+            for link in raw_accounts:
+                if not isinstance(link, dict):
+                    continue
                 url = link.get("url") or link.get("link_url") or ""
-                label = (link.get("label") or link.get("name") or "").lower()
+                label = (
+                    link.get("service_type")
+                    or link.get("service_label")
+                    or link.get("label")
+                    or link.get("name")
+                    or ""
+                ).lower()
                 if "linkedin" in label or "linkedin.com" in url:
                     result["linkedin"] = url
                 elif "github" in label or "github.com" in url:
                     result["github_url"] = url
-                elif not result.get("website") and url:
+                elif not result.get("website") and url and not any(k in url for k in ["gravatar.com", "wordpress.com"]):
                     result["website"] = url
 
         # Only set avatar if verified to exist (HEAD returns 200, not 404 default)
