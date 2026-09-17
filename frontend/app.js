@@ -277,7 +277,7 @@ function renderLookupResults(data) {
     contactLocEl.classList.add("not-found");
   }
 
-  // ── Company Intelligence ──
+  // ── Company Intelligence (Simplified: Name + Logo) ──
   const companyCard = document.getElementById("company-card");
   const comp = data.company;
   if (companyCard && comp && (comp.name || comp.domain)) {
@@ -285,21 +285,28 @@ function renderLookupResults(data) {
     const metaParts = [];
     if (comp.industry) metaParts.push(comp.industry);
     if (comp.country) metaParts.push(comp.country);
-    if (comp.domain) metaParts.push(comp.domain);
-    document.getElementById("company-meta").textContent = metaParts.join(" · ") || "Verified Enterprise";
+    if (comp.domain && comp.domain.toLowerCase() !== (comp.name || "").toLowerCase()) metaParts.push(comp.domain);
+    document.getElementById("company-meta").textContent = metaParts.join(" · ") || comp.domain || "Enterprise";
 
     const logoEl = document.getElementById("company-logo");
     if (comp.logo) {
       logoEl.src = comp.logo;
+      logoEl.classList.remove("hidden");
+      logoEl.onerror = () => {
+        if (comp.domain && !logoEl.src.includes("google.com/s2/favicons")) {
+          logoEl.src = `https://www.google.com/s2/favicons?domain=${comp.domain}&sz=128`;
+        } else {
+          logoEl.classList.add("hidden");
+        }
+      };
+    } else if (comp.domain) {
+      logoEl.src = `https://www.google.com/s2/favicons?domain=${comp.domain}&sz=128`;
       logoEl.classList.remove("hidden");
       logoEl.onerror = () => logoEl.classList.add("hidden");
     } else {
       logoEl.classList.add("hidden");
     }
 
-    document.getElementById("company-format").textContent = comp.email_format || "—";
-    document.getElementById("company-mx").textContent = comp.mx_provider || "—";
-    document.getElementById("company-rank").textContent = comp.rank ? `#${comp.rank.toLocaleString()}` : "—";
     companyCard.classList.remove("hidden");
   } else if (companyCard) {
     companyCard.classList.add("hidden");

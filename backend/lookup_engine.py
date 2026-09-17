@@ -11,6 +11,7 @@ import html
 import os
 import time
 import re
+import urllib.parse
 import httpx
 import aiosqlite
 import sqlite3
@@ -802,27 +803,49 @@ async def search_linkedin_anchored(
             except Exception:
                 pass
 
-        # ── Strategy 2: DuckDuckGo Fallback ──
+        # ── Strategy 2: DuckDuckGo Fallback (HTML & Lite) ──
         try:
-            resp = await client.get(
-                "https://html.duckduckgo.com/html/",
-                params={"q": query},
-                headers={**BROWSER_HEADERS, "Accept": "text/html"},
-                timeout=8,
-                follow_redirects=True,
-            )
-            if resp.status_code == 200:
-                soup = BeautifulSoup(resp.text, "lxml")
-                for a in soup.select("a.result__a"):
-                    href = a.get("href", "")
-                    title = a.get_text(strip=True).lower()
-                    if "linkedin.com/in/" in href and "/in/dir/" not in href and "/pub/dir/" not in href:
-                        match = re.search(r"(https?://[a-z]{2,3}\.linkedin\.com/in/[^&\s\"]+)", href)
-                        if match:
-                            clean_url = match.group(1).split("?")[0].rstrip("/")
-                            is_valid, conf = is_valid_linkedin_candidate(clean_url, title, "", target_handle, target_name, anchor)
-                            if is_valid:
-                                return clean_url, None, conf
+            ddg_endpoints = [
+                ("https://html.duckduckgo.com/html/", "GET"),
+                ("https://lite.duckduckgo.com/lite/", "POST"),
+            ]
+            for ddg_url, ddg_method in ddg_endpoints:
+                try:
+                    if ddg_method == "GET":
+                        resp = await client.get(
+                            ddg_url,
+                            params={"q": query},
+                            headers={**BROWSER_HEADERS, "Accept": "text/html"},
+                            timeout=8,
+                            follow_redirects=True,
+                        )
+                    else:
+                        resp = await client.post(
+                            ddg_url,
+                            data={"q": query},
+                            headers={**BROWSER_HEADERS, "Content-Type": "application/x-www-form-urlencoded", "Accept": "text/html"},
+                            timeout=8,
+                            follow_redirects=True,
+                        )
+
+                    if resp.status_code == 200:
+                        soup = BeautifulSoup(resp.text, "lxml")
+                        links = soup.select("a.result__a, a.result-link")
+                        if links:
+                            for a in links:
+                                raw_href = a.get("href", "")
+                                href = urllib.parse.unquote(raw_href)
+                                title = a.get_text(strip=True).lower()
+                                if "linkedin.com/in/" in href and "/in/dir/" not in href and "/pub/dir/" not in href:
+                                    match = re.search(r"(https?://(?:[a-z0-9-]+\.)?linkedin\.com/in/[^&\s\"?]+)", href)
+                                    if match:
+                                        clean_url = match.group(1).split("?")[0].rstrip("/")
+                                        is_valid, conf = is_valid_linkedin_candidate(clean_url, title, "", target_handle, target_name, anchor)
+                                        if is_valid:
+                                            return clean_url, None, conf
+                            break
+                except Exception:
+                    continue
         except Exception:
             pass
 
