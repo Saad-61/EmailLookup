@@ -943,12 +943,41 @@ async def lookup_company(domain: str, client: httpx.AsyncClient) -> Optional[dic
         "icloud.com", "protonmail.com", "aol.com", "zoho.com",
         "mail.com", "yandex.com", "gmx.com", "live.com",
     }
-    if domain.lower() in personal_domains:
+    clean_dom = domain.lower().strip()
+    if clean_dom in personal_domains:
         return None
 
+    # Step 1: Check local company_domains SQLite database (0 ms, offline)
+    if os.path.exists(PROFILES_DB_PATH):
+        try:
+            async with aiosqlite.connect(PROFILES_DB_PATH, timeout=10.0) as db:
+                await db.execute("PRAGMA journal_mode=WAL;")
+                await db.execute("PRAGMA busy_timeout=15000;")
+                db.row_factory = aiosqlite.Row
+                async with db.execute(
+                    "SELECT * FROM company_domains WHERE domain = ? LIMIT 1",
+                    (clean_dom,)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        r = dict(row)
+                        return {
+                            "name": r.get("company_name") or clean_dom.split(".")[0].capitalize(),
+                            "domain": clean_dom,
+                            "logo": f"https://logo.clearbit.com/{clean_dom}",
+                            "industry": r.get("industry"),
+                            "country": r.get("country"),
+                            "rank": r.get("rank"),
+                            "email_format": r.get("email_format"),
+                            "mx_provider": r.get("mx_provider"),
+                        }
+        except Exception:
+            pass
+
+    # Step 2: Fallback to Clearbit Autocomplete API
     try:
         resp = await client.get(
-            f"https://autocomplete.clearbit.com/v1/companies/suggest?query={domain}",
+            f"https://autocomplete.clearbit.com/v1/companies/suggest?query={clean_dom}",
             headers=BROWSER_HEADERS,
             timeout=6,
         )
