@@ -109,6 +109,16 @@
           </div>
         </div>
 
+        <!-- Platform Accounts & Presence (13+ platforms) -->
+        <div class="result-card hidden" id="platforms-card">
+          <h3 class="card-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            Platform Presence &amp; Accounts
+            <span class="card-subtitle" id="platforms-summary"></span>
+          </h3>
+          <div id="platforms-list" class="platforms-grid"></div>
+        </div>
+
         <!-- Contact Info -->
         <div class="result-card" id="contact-card">
           <h3 class="card-title">
@@ -200,44 +210,70 @@
       <div id="verify-results" class="results-area hidden">
         <div class="result-card verify-result-card">
 
-          <!-- Verdict banner -->
+          <!-- Hero Verdict Banner -->
           <div id="verify-verdict" class="verdict-banner">
             <span id="verdict-icon" class="verdict-icon">?</span>
-            <div>
-              <p id="verdict-title" class="verdict-title">—</p>
+            <div class="verdict-content">
+              <div class="verdict-header">
+                <span id="verdict-title" class="verdict-title">—</span>
+                <span id="verdict-badge" class="verdict-pill">—</span>
+              </div>
               <p id="verdict-sub" class="verdict-sub"></p>
             </div>
           </div>
 
-          <!-- Details grid -->
-          <div class="verify-grid">
-            <div class="verify-row">
-              <span class="vl">Mail Provider</span>
-              <span id="v-provider" class="vv">—</span>
+          <!-- Simplified 3-Tile Summary -->
+          <div class="verify-summary-grid">
+            <div class="verify-tile">
+              <span class="tile-label">Can I Contact?</span>
+              <span id="v-contactable" class="tile-val">—</span>
+              <span id="v-contactable-sub" class="tile-sub">Delivery Recommendation</span>
             </div>
-            <div class="verify-row">
-              <span class="vl">MX Server</span>
-              <span id="v-mx" class="vv mono">—</span>
+            <div class="verify-tile">
+              <span class="tile-label">Inbox Status</span>
+              <span id="v-inbox-status" class="tile-val">—</span>
+              <span id="v-inbox-sub" class="tile-sub">Mailbox Existence</span>
             </div>
-            <div class="verify-row">
-              <span class="vl">Catch-All Domain</span>
-              <span id="v-catchall" class="vv">—</span>
-            </div>
-            <div class="verify-row">
-              <span class="vl">Confidence</span>
-              <span id="v-confidence" class="vv">—</span>
-            </div>
-            <div class="verify-row">
-              <span class="vl">Method Used</span>
-              <span id="v-method" class="vv">—</span>
-            </div>
-            <div class="verify-row">
-              <span class="vl">Response Time</span>
-              <span id="v-time" class="vv">—</span>
+            <div class="verify-tile">
+              <span class="tile-label">Mail Provider</span>
+              <span id="v-provider" class="tile-val">—</span>
+              <span id="v-provider-sub" class="tile-sub">Host Service</span>
             </div>
           </div>
 
+          <!-- Single Context / Guidance Note -->
           <div id="verify-note" class="verify-note hidden"></div>
+
+          <!-- Collapsible Technical Diagnostics (for developers/power users) -->
+          <details class="tech-details" id="tech-details">
+            <summary class="tech-summary">
+              <span>⚙️ Technical Diagnostics &amp; Handshake Details</span>
+              <span class="tech-arrow">▼</span>
+            </summary>
+            <div class="verify-grid tech-grid">
+              <div class="verify-row">
+                <span class="vl">MX Mail Server</span>
+                <span id="v-mx" class="vv mono">—</span>
+              </div>
+              <div class="verify-row">
+                <span class="vl">Catch-All Domain</span>
+                <span id="v-catchall" class="vv">—</span>
+              </div>
+              <div class="verify-row">
+                <span class="vl">Verification Confidence</span>
+                <span id="v-confidence" class="vv">—</span>
+              </div>
+              <div class="verify-row">
+                <span class="vl">Protocol Method</span>
+                <span id="v-method" class="vv">—</span>
+              </div>
+              <div class="verify-row">
+                <span class="vl">Server Response Latency</span>
+                <span id="v-time" class="vv">—</span>
+              </div>
+            </div>
+          </details>
+
         </div>
       </div>
 

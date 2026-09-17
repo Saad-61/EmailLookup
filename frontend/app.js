@@ -230,6 +230,34 @@ function renderLookupResults(data) {
     ? chips.join("")
     : "<p class='no-data'>No social profiles found for this email.</p>";
 
+  // ── Platform Accounts (13+ probed platforms) ──
+  const platformsCard = document.getElementById("platforms-card");
+  const platformsList = document.getElementById("platforms-list");
+  const platformsSummary = document.getElementById("platforms-summary");
+  const platforms = data.platforms || [];
+
+  if (platformsCard && platformsList) {
+    if (platforms.length > 0) {
+      const foundCount = platforms.filter(p => p.found).length;
+      if (platformsSummary) {
+        platformsSummary.textContent = `${foundCount} active account${foundCount === 1 ? '' : 's'} detected`;
+      }
+      platformsList.innerHTML = platforms.map(p => {
+        const iconInfo = PLATFORM_ICONS[p.icon] || { emoji: "🌐", label: p.name };
+        return `
+          <div class="platform-chip ${p.found ? 'found' : 'not-found'}">
+            <span class="platform-icon-emoji">${iconInfo.emoji}</span>
+            <span>${p.name}</span>
+            <span class="platform-status">${p.found ? '✅' : '—'}</span>
+          </div>
+        `;
+      }).join("");
+      platformsCard.classList.remove("hidden");
+    } else {
+      platformsCard.classList.add("hidden");
+    }
+  }
+
   // ── Contact ──
   const phoneEl = document.getElementById("phone-val");
   if (data.phone) {
@@ -427,39 +455,139 @@ function renderVerifyResults(data) {
   const verdictIcon = document.getElementById("verdict-icon");
   const verdictTitle = document.getElementById("verdict-title");
   const verdictSub = document.getElementById("verdict-sub");
+  const verdictBadge = document.getElementById("verdict-badge");
 
-  verdict.className = "verdict-banner";
+  const vContactable = document.getElementById("v-contactable");
+  const vContactableSub = document.getElementById("v-contactable-sub");
+  const vInboxStatus = document.getElementById("v-inbox-status");
+  const vInboxSub = document.getElementById("v-inbox-sub");
+  const vProvider = document.getElementById("v-provider");
+  const vProviderSub = document.getElementById("v-provider-sub");
+  const noteEl = document.getElementById("verify-note");
+
+  const provider = data.mx_provider || "Standard Provider";
+  vProvider.textContent = provider;
+
+  const isProtectedHost = (
+    data.valid === null &&
+    (
+      ["Microsoft 365", "Google Workspace", "Yahoo Mail", "Apple iCloud"].includes(data.mx_provider) ||
+      (data.error && /dropped connection|rejected|timeout/i.test(data.error))
+    )
+  );
 
   if (data.valid === true) {
-    verdict.classList.add("valid");
+    verdict.className = "verdict-banner valid";
     verdictIcon.textContent = "✅";
-    verdictTitle.textContent = "Valid Email Address";
-    verdictSub.textContent = "This email address exists and can receive mail.";
+    verdictTitle.textContent = "Safe to Contact";
+    verdictSub.textContent = "This email address is verified and active. Messages will reach this inbox.";
+    verdictBadge.textContent = "Deliverable";
+    verdictBadge.className = "verdict-pill deliverable";
+
+    vContactable.textContent = "Yes, Safe to Send";
+    vContactable.style.color = "var(--c-success)";
+    vContactableSub.textContent = "High confidence delivery";
+
+    vInboxStatus.textContent = "Active Mailbox";
+    vInboxStatus.style.color = "var(--c-success)";
+    vInboxSub.textContent = "Mailbox exists & accepts mail";
+
+    vProviderSub.textContent = "Configured Host";
+    noteEl.classList.add("hidden");
+
   } else if (data.valid === false) {
-    verdict.classList.add("invalid");
+    verdict.className = "verdict-banner invalid";
     verdictIcon.textContent = "❌";
-    verdictTitle.textContent = "Invalid Email Address";
-    verdictSub.textContent = "This email address does not exist on the mail server.";
-  } else {
-    verdict.classList.add("unknown");
+    verdictTitle.textContent = "Do Not Send";
+    verdictSub.textContent = "This mailbox does not exist on the mail server. Sending will bounce.";
+    verdictBadge.textContent = "Undeliverable";
+    verdictBadge.className = "verdict-pill invalid";
+
+    vContactable.textContent = "No, Will Bounce";
+    vContactable.style.color = "var(--c-danger)";
+    vContactableSub.textContent = "Do not send mail";
+
+    vInboxStatus.textContent = "Non-Existent";
+    vInboxStatus.style.color = "var(--c-danger)";
+    vInboxSub.textContent = "Rejected by mail server";
+
+    vProviderSub.textContent = "Configured Host";
+    noteEl.classList.add("hidden");
+
+  } else if (data.catchall === true) {
+    verdict.className = "verdict-banner unknown";
     verdictIcon.textContent = "⚠️";
-    verdictTitle.textContent = "Unknown / Unverifiable";
-    verdictSub.textContent = data.error || "Could not determine validity.";
+    verdictTitle.textContent = "Catch-All Server (Risky)";
+    verdictSub.textContent = "The server accepts mail sent to any name, so individual mailbox delivery cannot be guaranteed.";
+    verdictBadge.textContent = "Risky";
+    verdictBadge.className = "verdict-pill risky";
+
+    vContactable.textContent = "Send with Caution";
+    vContactable.style.color = "var(--c-warn)";
+    vContactableSub.textContent = "Catch-all configuration";
+
+    vInboxStatus.textContent = "Catch-All Domain";
+    vInboxStatus.style.color = "var(--c-warn)";
+    vInboxSub.textContent = "Accepts any address";
+
+    vProviderSub.textContent = "Configured Host";
+    noteEl.textContent = "ℹ️ Catch-all mail servers accept all inbound emails to prevent spam harvesting of employee lists. If this email was provided directly by the recipient, it is likely legitimate.";
+    noteEl.classList.remove("hidden");
+
+  } else if (isProtectedHost) {
+    verdict.className = "verdict-banner protected";
+    verdictIcon.textContent = "🛡️";
+    verdictTitle.textContent = "Server Protected (Domain Active)";
+    verdictSub.textContent = `${provider} actively receives mail, but shields individual mailbox probes from third-party scanners.`;
+    verdictBadge.textContent = "Protected";
+    verdictBadge.className = "verdict-pill protected";
+
+    vContactable.textContent = "Likely Safe";
+    vContactable.style.color = "var(--c-accent)";
+    vContactableSub.textContent = "Standard security policy";
+
+    vInboxStatus.textContent = "Protected Mailbox";
+    vInboxStatus.style.color = "var(--c-accent)";
+    vInboxSub.textContent = "Probes dropped by host";
+
+    vProviderSub.textContent = "Verified MX Host";
+    noteEl.textContent = `ℹ️ ${provider} deliberately drops automated SMTP verification handshakes to protect user privacy. Because the domain's MX servers are active and healthy, emails sent to a genuine recipient will deliver normally.`;
+    noteEl.classList.remove("hidden");
+
+  } else {
+    verdict.className = "verdict-banner unknown";
+    verdictIcon.textContent = "⚠️";
+    verdictTitle.textContent = "Unverifiable";
+    verdictSub.textContent = data.error || "Remote mail server did not respond to verification probes.";
+    verdictBadge.textContent = "Uncertain";
+    verdictBadge.className = "verdict-pill unknown";
+
+    vContactable.textContent = "Uncertain";
+    vContactable.style.color = "var(--c-muted)";
+    vContactableSub.textContent = "Could not verify";
+
+    vInboxStatus.textContent = "Unreachable";
+    vInboxStatus.style.color = "var(--c-muted)";
+    vInboxSub.textContent = "Connection timed out";
+
+    vProviderSub.textContent = "Host Service";
+    noteEl.textContent = `ℹ️ ${data.error || 'The remote mail server could not be reached.'}`;
+    noteEl.classList.remove("hidden");
   }
 
-  document.getElementById("v-provider").textContent = data.mx_provider || "—";
+  // ── Technical Diagnostics (collapsed by default) ──
   document.getElementById("v-mx").textContent = data.mx_record || "—";
 
   const catchallEl = document.getElementById("v-catchall");
   if (data.catchall === true) {
-    catchallEl.textContent = "Yes (accepts all mail)";
+    catchallEl.textContent = "Yes (Accepts all mail)";
     catchallEl.style.color = "var(--c-warn)";
   } else if (data.catchall === false) {
     catchallEl.textContent = "No";
     catchallEl.style.color = "var(--c-success)";
   } else {
-    catchallEl.textContent = "Unknown";
-    catchallEl.style.color = "";
+    catchallEl.textContent = isProtectedHost ? "Shielded / Unknown" : "Unknown";
+    catchallEl.style.color = "var(--c-muted)";
   }
 
   const confidence = data.confidence;
@@ -474,22 +602,14 @@ function renderVerifyResults(data) {
   }
 
   const METHOD_LABELS = {
-    smtp: "Direct SMTP Handshake",
-    smtp_catchall: "SMTP (Catch-All Domain)",
-    mx_only: "MX Record Only",
-    abstractapi: "AbstractAPI (Port 25 blocked)",
+    smtp: "Direct SMTP Handshake (Port 25)",
+    smtp_catchall: "SMTP (Catch-All Detected)",
+    mx_only: "MX DNS Record Only",
+    abstractapi: "AbstractAPI (Port 25 Fallback)",
   };
   document.getElementById("v-method").textContent =
     METHOD_LABELS[data.method_used] || data.method_used || "—";
 
   document.getElementById("v-time").textContent =
     data.response_time_ms !== null ? `${data.response_time_ms}ms` : "—";
-
-  const noteEl = document.getElementById("verify-note");
-  if (data.error && data.valid === null) {
-    noteEl.textContent = `ℹ️ ${data.error}`;
-    noteEl.classList.remove("hidden");
-  } else {
-    noteEl.classList.add("hidden");
-  }
 }

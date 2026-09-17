@@ -174,6 +174,15 @@ async def lookup_gravatar(email: str, client: httpx.AsyncClient) -> dict:
             result["bio"] = about
             result["location"] = location
 
+            # Extract Gravatar handle / slug for cross-referencing
+            profile_url = data.get("profile_url") or ""
+            slug = profile_url.rstrip("/").split("/")[-1] if profile_url else ""
+            raw_display = (data.get("display_name") or "").strip()
+            if raw_display and " " not in raw_display and len(raw_display) >= 3:
+                result["gravatar_handle"] = raw_display
+            elif slug and " " not in slug and len(slug) >= 3:
+                result["gravatar_handle"] = slug
+
             # Extract linked URLs & verified accounts from profile (Gravatar v3 uses verified_accounts)
             raw_accounts = []
             if isinstance(data.get("verified_accounts"), list):
@@ -233,7 +242,7 @@ async def fetch_github_readme(username: str, client: httpx.AsyncClient) -> str:
 
 # ── GitHub ────────────────────────────────────────────────────────────────────
 
-async def lookup_github(email: str, client: httpx.AsyncClient) -> Optional[dict]:
+async def lookup_github(email: str, client: httpx.AsyncClient, candidate_username: Optional[str] = None) -> Optional[dict]:
     """
     Find a verified GitHub profile from an email address.
     Strategy 1: Commit search API (100% accurate because Git commits are email-attributed).
@@ -332,6 +341,27 @@ async def lookup_github(email: str, client: httpx.AsyncClient) -> Optional[dict]
                                 username = cand_login
         except Exception:
             pass
+
+    # Strategy 4: Candidate username cross-referenced from Gravatar handle / slug
+    if not username and candidate_username:
+        cand = candidate_username.strip()
+        if re.match(r"^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$", cand):
+            try:
+                c_resp = await client.get(f"https://api.github.com/users/{cand}", headers=headers, timeout=6)
+                if c_resp.status_code == 200:
+                    c_data = c_resp.json()
+                    c_name = (c_data.get("name") or "").strip()
+                    c_email = (c_data.get("email") or "").strip().lower()
+                    local_prefix = email.split("@")[0].lower().split(".")[0].split("_")[0]
+                    if (
+                        c_email == email
+                        or (local_prefix and len(local_prefix) >= 4 and (local_prefix in cand.lower() or (c_name and local_prefix in c_name.lower())))
+                    ):
+                        username = cand
+                        if c_name and not author_name_from_commit:
+                            author_name_from_commit = c_name
+            except Exception:
+                pass
 
     if not username and not author_name_from_commit:
         return None
@@ -1114,6 +1144,16 @@ async def run_lookup(email: str) -> dict:
         if isinstance(abstract_data, Exception): abstract_data = {}
         if isinstance(company, Exception): company = None
         if isinstance(harvested, Exception): harvested = {}
+
+        # Fallback cross-reference: if GitHub was not found by direct email search,
+        # but Gravatar revealed a handle or username slug, check GitHub for that candidate
+        if not github and isinstance(gravatar, dict) and gravatar.get("gravatar_handle"):
+            try:
+                cand_gh = await lookup_github(email, client, candidate_username=gravatar.get("gravatar_handle"))
+                if cand_gh:
+                    github = cand_gh
+            except Exception:
+                pass
 
         # ── Resolve name from best source: GitHub > Gravatar > AbstractAPI sender > Harvested DB ──
         ab_first = ((abstract_data or {}).get("sender_first") or "").strip()
