@@ -152,6 +152,7 @@ function renderLookupResults(data) {
   personLocEl.textContent = person.location ? "📍 " + person.location : "";
 
   if (person.avatar) {
+    avatarEl.referrerPolicy = "no-referrer";
     avatarEl.src = person.avatar;
     avatarEl.onload = () => {
       avatarEl.classList.remove("hidden");
@@ -204,14 +205,22 @@ function renderLookupResults(data) {
 
   if (profiles.linkedin) {
     const conf = profiles.linkedin_confidence || (profiles.linkedin_verified ? 100 : 85);
-    const isDirect = conf === 100;
+    const src = profiles.linkedin_source || "";
+    let subText = "Corroborated Match →";
+    if (src === "wikidata") subText = "Authoritative Wikidata Entity →";
+    else if (src === "github") subText = "Verified in GitHub Profile →";
+    else if (src === "gravatar") subText = "Verified in Gravatar Profile →";
+    else if (src === "harvested") subText = "Verified Public Record →";
+    else if (conf === 100) subText = "100% Corroborated Match →";
+
+    const isDirect = (src === "wikidata" || src === "github" || src === "gravatar" || conf === 100);
     const badgeText = isDirect ? "✓ 100% Verified" : `★ ${conf}% Match`;
     chips.push(buildProfileChip({
       href: profiles.linkedin,
       iconClass: "linkedin-icon",
       iconContent: "in",
       name: `LinkedIn <span class="badge-confidence ${isDirect ? 'verified' : 'high'}">${badgeText}</span>`,
-      sub: isDirect ? "Verified in GitHub Profile →" : "Corroborated Match →",
+      sub: subText,
     }));
   }
 
@@ -277,14 +286,36 @@ function renderLookupResults(data) {
     contactLocEl.classList.add("not-found");
   }
 
-  // ── Company Intelligence (Simplified: Name + Logo) ──
+  // ── Company & Education Intelligence ──
   const companyCard = document.getElementById("company-card");
   const comp = data.company;
   if (companyCard && comp && (comp.name || comp.domain)) {
+    const cardTitleEl = companyCard.querySelector(".card-title");
+    if (cardTitleEl) {
+      if (comp.type === "education") {
+        cardTitleEl.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+          Education &amp; University
+        `;
+      } else if (comp.type === "academic_workplace") {
+        cardTitleEl.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+          Academic Workplace
+        `;
+      } else {
+        cardTitleEl.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M3 7v14M21 7v14M6 11h4M6 15h4M14 11h4M14 15h4M9 21v-4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4M3 7l9-4 9 4"/></svg>
+          Company &amp; Workplace
+        `;
+      }
+    }
+
     document.getElementById("company-name").textContent = comp.name || comp.domain;
     const metaParts = [];
+    if (comp.role) metaParts.push(comp.role);
     if (comp.industry) metaParts.push(comp.industry);
     if (comp.country) metaParts.push(comp.country);
+    if (comp.alma_mater) metaParts.push(`Alum: ${comp.alma_mater}`);
     if (comp.domain && comp.domain.toLowerCase() !== (comp.name || "").toLowerCase()) metaParts.push(comp.domain);
     document.getElementById("company-meta").textContent = metaParts.join(" · ") || comp.domain || "Enterprise";
 

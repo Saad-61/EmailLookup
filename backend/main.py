@@ -27,7 +27,7 @@ from pathlib import Path
 # Ensure backend directory is in sys.path when running from repository root
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"), override=True)
 
 from models import (
     LookupRequest, LookupResponse, PersonInfo, PlatformResult, BreachInfo,
@@ -127,20 +127,13 @@ async def email_lookup(request: LookupRequest):
             cached["cached"] = True
             return LookupResponse(**cached)
 
-    # Run lookup + platform check concurrently
-    github_token = os.getenv("GITHUB_TOKEN", "")
+    # Run lookup directly (platform check skipped to maximize speed since card is hidden)
+    try:
+        lookup_result = await run_lookup(email)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lookup failed: {e}")
 
-    lookup_task = run_lookup(email)
-    platform_task = check_platforms(email, github_token)
-
-    lookup_result, platform_results = await asyncio.gather(
-        lookup_task, platform_task, return_exceptions=True
-    )
-
-    if isinstance(lookup_result, Exception):
-        raise HTTPException(status_code=500, detail=f"Lookup failed: {lookup_result}")
-    if isinstance(platform_results, Exception):
-        platform_results = []
+    platform_results = []
 
     profiles_found = lookup_result.get("profiles", {})
     person_data = lookup_result.get("person", {})

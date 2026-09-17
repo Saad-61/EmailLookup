@@ -76,12 +76,17 @@ async def init_db():
                 location    TEXT,
                 company     TEXT,
                 blog        TEXT,
+                linkedin_url TEXT,
                 followers   INTEGER,
                 public_repos INTEGER,
                 source      TEXT    DEFAULT 'github_commit',
                 scraped_at  INTEGER NOT NULL
             )
         """)
+        try:
+            await db.execute("ALTER TABLE harvested_profiles ADD COLUMN linkedin_url TEXT;")
+        except Exception:
+            pass
         await db.commit()
 
 
@@ -90,8 +95,8 @@ async def upsert_profile(db, profile: dict):
     sql = """
         INSERT INTO harvested_profiles
             (email, name, github_url, username, avatar_url, bio, location,
-             company, blog, followers, public_repos, source, scraped_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+             company, blog, linkedin_url, followers, public_repos, source, scraped_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(email) DO UPDATE SET
             name        = COALESCE(excluded.name, name),
             github_url  = COALESCE(excluded.github_url, github_url),
@@ -101,6 +106,7 @@ async def upsert_profile(db, profile: dict):
             location    = COALESCE(excluded.location, location),
             company     = COALESCE(excluded.company, company),
             blog        = COALESCE(excluded.blog, blog),
+            linkedin_url= COALESCE(excluded.linkedin_url, linkedin_url),
             followers   = COALESCE(excluded.followers, followers),
             public_repos= COALESCE(excluded.public_repos, public_repos),
             scraped_at  = excluded.scraped_at
@@ -109,9 +115,10 @@ async def upsert_profile(db, profile: dict):
         profile["email"], profile.get("name"), profile.get("github_url"),
         profile.get("username"), profile.get("avatar_url"), profile.get("bio"),
         profile.get("location"), profile.get("company"), profile.get("blog"),
-        profile.get("followers"), profile.get("public_repos"),
+        profile.get("linkedin_url"), profile.get("followers"), profile.get("public_repos"),
         profile.get("source", "github_commit"), int(time.time()),
     )
+
     for attempt in range(5):
         try:
             await db.execute(sql, params)
