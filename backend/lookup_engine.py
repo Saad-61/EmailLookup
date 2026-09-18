@@ -22,6 +22,10 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"), override=True)
+try:
+    from social_finder import search_social_candidates
+except ImportError:
+    from backend.social_finder import search_social_candidates
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
@@ -446,6 +450,14 @@ async def lookup_gravatar(email: str, client: httpx.AsyncClient) -> dict:
                     result["linkedin"] = url
                 elif "github" in label or "github.com" in url:
                     result["github_url"] = url
+                elif "twitter" in label or "x.com" in url or "twitter.com" in url:
+                    result["twitter_url"] = url
+                elif "instagram" in label or "instagram.com" in url:
+                    result["instagram_url"] = url
+                elif "facebook" in label or "facebook.com" in url:
+                    result["facebook_url"] = url
+                elif "youtube" in label or "youtube.com" in url:
+                    result["youtube_url"] = url
                 elif not result.get("website") and url and not any(k in url for k in ["gravatar.com", "wordpress.com"]):
                     result["website"] = url
 
@@ -669,36 +681,52 @@ async def lookup_github(
                 if phone_match:
                     phone = phone_match.group(0).strip()
 
-                # Extract verified LinkedIn directly from GitHub profile (100% confidence):
+                # Extract verified social links directly from GitHub profile (100% confidence):
                 linkedin_direct = None
+                twitter_direct = None
+                if u.get("twitter_username"):
+                    twitter_direct = f"https://x.com/{u['twitter_username'].strip()}"
+                instagram_direct = None
+                facebook_direct = None
 
                 # 1. Official GitHub Social Accounts API
                 if not isinstance(social_resp, Exception) and getattr(social_resp, "status_code", 0) == 200:
                     try:
                         for acc in social_resp.json():
-                            if acc.get("provider") == "linkedin" or "linkedin.com/in" in (acc.get("url") or ""):
-                                linkedin_direct = acc.get("url", "").split("?")[0].rstrip("/")
-                                break
+                            prov = (acc.get("provider") or "").lower()
+                            a_url = (acc.get("url") or "").split("?")[0].rstrip("/")
+                            if not linkedin_direct and (prov == "linkedin" or "linkedin.com/in" in a_url):
+                                linkedin_direct = a_url
+                            elif not twitter_direct and (prov in ("twitter", "x") or "twitter.com/" in a_url or "x.com/" in a_url):
+                                twitter_direct = a_url
+                            elif not instagram_direct and (prov == "instagram" or "instagram.com/" in a_url):
+                                instagram_direct = a_url
+                            elif not facebook_direct and (prov == "facebook" or "facebook.com/" in a_url):
+                                facebook_direct = a_url
                     except Exception:
                         pass
 
-                # 2. Bio text link
-                if not linkedin_direct and bio_text:
-                    m = re.search(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/in/[a-zA-Z0-9_/%-]+", bio_text)
-                    if m:
-                        linkedin_direct = m.group(0).split("?")[0].rstrip(").,]>")
-
-                # 3. Blog / Website field link
-                if not linkedin_direct and blog_text:
-                    m = re.search(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/in/[a-zA-Z0-9_/%-]+", blog_text)
-                    if m:
-                        linkedin_direct = m.group(0).split("?")[0].rstrip(").,]>")
-
-                # 4. Profile README link
-                if not linkedin_direct and isinstance(readme_text, str) and readme_text:
-                    m = re.search(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/in/[a-zA-Z0-9_/%-]+", readme_text)
-                    if m:
-                        linkedin_direct = m.group(0).split("?")[0].rstrip(").,]>")
+                # 2. Bio text links
+                combined_texts = [bio_text, blog_text, (readme_text if isinstance(readme_text, str) else "")]
+                for text_block in combined_texts:
+                    if not text_block:
+                        continue
+                    if not linkedin_direct:
+                        m = re.search(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/in/[a-zA-Z0-9_/%-]+", text_block)
+                        if m:
+                            linkedin_direct = m.group(0).split("?")[0].rstrip(").,]>")
+                    if not twitter_direct:
+                        m = re.search(r"https?://(?:[a-z0-9-]+\.)?(?:x\.com|twitter\.com)/[a-zA-Z0-9_]+", text_block)
+                        if m and not any(k in m.group(0).lower() for k in ("/status", "/home", "/search", "/intent")):
+                            twitter_direct = m.group(0).split("?")[0].rstrip(").,]>")
+                    if not instagram_direct:
+                        m = re.search(r"https?://(?:www\.)?instagram\.com/[a-zA-Z0-9_.]+", text_block)
+                        if m and not any(k in m.group(0).lower() for k in ("/p/", "/reel", "/explore")):
+                            instagram_direct = m.group(0).split("?")[0].rstrip(").,]>")
+                    if not facebook_direct:
+                        m = re.search(r"https?://(?:www\.)?facebook\.com/[a-zA-Z0-9_.]+", text_block)
+                        if m and not any(k in m.group(0).lower() for k in ("/sharer", "/pages", "/groups", "/events")):
+                            facebook_direct = m.group(0).split("?")[0].rstrip(").,]>")
 
                 if not phone and isinstance(readme_text, str) and readme_text:
                     ph_match = re.search(r"\+?\d{1,4}[\s\.-]?\(?\d{2,4}\)?[\s\.-]?\d{3,4}[\s\.-]?\d{3,4}", readme_text)
@@ -725,6 +753,9 @@ async def lookup_github(
                     "blog": blog_text or None,
                     "phone_from_bio": phone,
                     "linkedin_url": linkedin_direct,
+                    "twitter_url": twitter_direct,
+                    "instagram_url": instagram_direct,
+                    "facebook_url": facebook_direct,
                     "commit_timezone": commit_tz,
                 }
         except Exception:
@@ -1651,6 +1682,7 @@ async def run_lookup(email: str) -> dict:
         }
 
     domain = email.split("@")[-1] if "@" in email else ""
+    local_part = email.split("@")[0].lower().strip() if "@" in email else ""
 
     personal_domains = {
         "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
@@ -1992,10 +2024,55 @@ async def run_lookup(email: str) -> dict:
             "commit_timezone": github.get("commit_timezone"),
         }
 
+    # Direct socials from verified GitHub & Gravatar profiles (100% confidence)
+    dir_twitter = (github.get("twitter_url") if isinstance(github, dict) else None) or (gravatar.get("twitter_url") if isinstance(gravatar, dict) else None)
+    if dir_twitter:
+        profiles["twitter"] = dir_twitter
+
+    dir_instagram = (github.get("instagram_url") if isinstance(github, dict) else None) or (gravatar.get("instagram_url") if isinstance(gravatar, dict) else None)
+    if dir_instagram:
+        profiles["instagram"] = dir_instagram
+
+    dir_facebook = (github.get("facebook_url") if isinstance(github, dict) else None) or (gravatar.get("facebook_url") if isinstance(gravatar, dict) else None)
+    if dir_facebook:
+        profiles["facebook"] = dir_facebook
+
+    dir_youtube = gravatar.get("youtube_url") if isinstance(gravatar, dict) else None
+    if dir_youtube:
+        profiles["youtube"] = dir_youtube
+
+    # ── Discover Candidate Social Accounts (Twitter/X, Instagram, Facebook) ──
+    gh_user = github.get("username") if (github and isinstance(github, dict)) else None
+    social_candidates = []
+    try:
+        raw_candidates = await search_social_candidates(
+            email=email,
+            resolved_name=resolved_name,
+            resolved_location=resolved_location,
+            gh_username=gh_user,
+            client=client,
+        )
+        verified_platforms = {
+            "twitter" if profiles.get("twitter") else None,
+            "instagram" if profiles.get("instagram") else None,
+            "facebook" if profiles.get("facebook") else None,
+        }
+        social_candidates = [
+            c for c in raw_candidates if c.get("platform") not in verified_platforms
+        ]
+    except Exception as e:
+        social_candidates = []
+
     # ── Strict Company Visibility Policy ──
     # If this is a personal email (gmail, hotmail, yahoo, etc.) and no verified social links exist,
     # NEVER show company data (it cannot be from a verified corporate domain DB).
-    has_social_links = bool(profiles.get("linkedin") or profiles.get("github"))
+    has_social_links = bool(
+        profiles.get("linkedin")
+        or profiles.get("github")
+        or profiles.get("twitter")
+        or profiles.get("instagram")
+        or profiles.get("facebook")
+    )
     if email_type == "personal" and not has_social_links:
         company = None
 
@@ -2047,16 +2124,16 @@ async def run_lookup(email: str) -> dict:
     if autocorrect_suggestion and autocorrect_suggestion.lower() == email.lower():
         autocorrect_suggestion = None
 
-    # Step 2: Auto-mine discovered profile and breach metadata to local database
-    await save_harvested_profile(email, person, profiles, company, breaches)
+    elapsed_ms = int((time.time() - start) * 1000)
 
     return {
         "email": email,
         "email_type": email_type,
         "domain": domain,
-        "query_time_ms": int((time.time() - start) * 1000),
+        "query_time_ms": elapsed_ms,
         "person": person,
         "profiles": profiles,
+        "social_candidates": social_candidates,
         "breaches": breaches,
         "phone": phone,
         "address": None,

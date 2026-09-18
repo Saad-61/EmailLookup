@@ -194,6 +194,7 @@ async def email_lookup(request: LookupRequest):
         autocorrect=lookup_result.get("autocorrect") or (lookup_result.get("email_quality") or {}).get("autocorrect"),
         company=lookup_result.get("company"),
         email_quality=lookup_result.get("email_quality"),
+        social_candidates=lookup_result.get("social_candidates", []),
     )
 
     # Cache the result

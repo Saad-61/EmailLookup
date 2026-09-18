@@ -50,6 +50,7 @@ class LookupResponse(BaseModel):
     autocorrect: Optional[str] = None
     company: Optional[dict] = None
     email_quality: Optional[dict] = None
+    social_candidates: List[dict] = []
     error: Optional[str] = None
 
 

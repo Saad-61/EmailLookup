@@ -107,6 +107,18 @@
           <div id="profiles-list" class="profiles-list">
             <p class="no-data">No social profiles found for this email.</p>
           </div>
+
+          <!-- Potential Accounts & Profiles Accordion -->
+          <div id="candidates-accordion" class="candidates-accordion hidden">
+            <button type="button" id="candidates-toggle-btn" class="candidates-toggle-btn">
+              <span class="toggle-btn-left">
+                <span class="candidates-toggle-icon">▼</span>
+                <span class="candidates-toggle-label">🔍 Potential Accounts & Profiles (<span id="candidates-count">0</span> found)</span>
+              </span>
+              <span class="candidates-toggle-pill">Click to collapse</span>
+            </button>
+            <div id="candidates-list" class="candidates-list"></div>
+          </div>
         </div>
 
         <!-- Platform Accounts & Presence (Hidden) -->

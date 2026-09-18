@@ -81,6 +81,16 @@ function hideError(containerId) {
   document.getElementById(containerId).classList.add("hidden");
 }
 
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 // ── ─────────────────────────────────────────────────────────────────────────
 //    REVERSE LOOKUP
 // ── ─────────────────────────────────────────────────────────────────────────
@@ -134,6 +144,27 @@ lookupBtn.addEventListener("click", () => doLookup(false));
 if (lookupRefreshBtn) {
   lookupRefreshBtn.addEventListener("click", () => doLookup(true));
 }
+
+// ── Candidate Accordion Toggle ──
+document.addEventListener("click", e => {
+  const btn = e.target.closest("#candidates-toggle-btn");
+  if (!btn) return;
+  const list = document.getElementById("candidates-list");
+  const pill = btn.querySelector(".candidates-toggle-pill");
+  const icon = btn.querySelector(".candidates-toggle-icon");
+  if (!list) return;
+
+  const isCollapsed = list.classList.contains("collapsed");
+  if (isCollapsed) {
+    list.classList.remove("collapsed");
+    if (icon) icon.textContent = "▼";
+    if (pill) pill.textContent = "Click to collapse";
+  } else {
+    list.classList.add("collapsed");
+    if (icon) icon.textContent = "▶";
+    if (pill) pill.textContent = "Click to expand";
+  }
+});
 
 function renderLookupResults(data) {
   // ── Person card ──
@@ -230,14 +261,77 @@ function renderLookupResults(data) {
       href: gh.url,
       iconClass: "github-icon",
       iconContent: "⌨",
-      name: `@${gh.username}`,
+      name: `@${gh.username} <span class="badge-confidence verified">✓ 100% Verified</span>`,
       sub: `${gh.repos ?? "?"} repos · ${gh.followers ?? "?"} followers`,
+    }));
+  }
+
+  if (profiles.twitter) {
+    const twUrl = profiles.twitter;
+    const twHandle = twUrl.split("/").pop().replace(/^@/, "");
+    chips.push(buildProfileChip({
+      href: twUrl,
+      iconClass: "twitter-icon",
+      iconContent: "𝕏",
+      name: `X / Twitter <span class="badge-confidence verified">✓ 100% Verified</span>`,
+      sub: `@${twHandle} · Verified Account`,
+    }));
+  }
+
+  if (profiles.instagram) {
+    const igUrl = profiles.instagram;
+    const igHandle = igUrl.split("/").pop().replace(/^@/, "");
+    chips.push(buildProfileChip({
+      href: igUrl,
+      iconClass: "instagram-icon",
+      iconContent: "📸",
+      name: `Instagram <span class="badge-confidence verified">✓ 100% Verified</span>`,
+      sub: `@${igHandle} · Verified Account`,
+    }));
+  }
+
+  if (profiles.facebook) {
+    const fbUrl = profiles.facebook;
+    const fbHandle = fbUrl.split("/").pop();
+    chips.push(buildProfileChip({
+      href: fbUrl,
+      iconClass: "facebook-icon",
+      iconContent: "fb",
+      name: `Facebook <span class="badge-confidence verified">✓ 100% Verified</span>`,
+      sub: `${fbHandle} · Verified Account`,
+    }));
+  }
+
+  if (profiles.youtube) {
+    chips.push(buildProfileChip({
+      href: profiles.youtube,
+      iconClass: "youtube-icon",
+      iconContent: "▶",
+      name: `YouTube <span class="badge-confidence verified">✓ 100% Verified</span>`,
+      sub: `Verified Channel`,
     }));
   }
 
   profilesList.innerHTML = chips.length
     ? chips.join("")
     : "<p class='no-data'>No social profiles found for this email.</p>";
+
+  // ── Candidate Social Accounts (Twitter/X, Instagram, Facebook) ──
+  const candAccordion = document.getElementById("candidates-accordion");
+  const candList = document.getElementById("candidates-list");
+  const candCount = document.getElementById("candidates-count");
+  const candidates = data.social_candidates || [];
+
+  if (candAccordion && candList) {
+    if (candidates.length > 0) {
+      if (candCount) candCount.textContent = candidates.length;
+      candList.innerHTML = candidates.map(renderCandidateCard).join("");
+      candAccordion.classList.remove("hidden");
+    } else {
+      candAccordion.classList.add("hidden");
+    }
+  }
+
 
   // ── Platform Accounts (13+ probed platforms) ──
   const platformsCard = document.getElementById("platforms-card");
@@ -467,6 +561,51 @@ function buildProfileChip({ href, iconClass, iconContent, name, sub }) {
         <line x1="10" y1="14" x2="21" y2="3"/>
       </svg>
     </a>
+  `;
+}
+
+function renderCandidateCard(c) {
+  const pIconClass = c.platform === "twitter"
+    ? "twitter-icon"
+    : c.platform === "instagram"
+    ? "instagram-icon"
+    : "facebook-icon";
+  const pIconSymbol = c.platform === "twitter"
+    ? "𝕏"
+    : c.platform === "instagram"
+    ? "📸"
+    : "ⓕ";
+
+  const badgeClass = (c.score >= 70) ? "strong" : "potential";
+  const reasonsHtml = (c.reasons || []).map(r => `<span class="reason-tag">✓ ${escapeHtml(r)}</span>`).join("");
+  const snippetHtml = c.snippet ? `<div class="candidate-snippet">${escapeHtml(c.snippet)}</div>` : "";
+
+  return `
+    <div class="candidate-card">
+      <div class="candidate-main">
+        <div class="candidate-header">
+          <div class="profile-chip-icon ${pIconClass}">${pIconSymbol}</div>
+          <div class="candidate-info">
+            <div class="candidate-name-row">
+              <span class="candidate-name">${escapeHtml(c.name || c.handle)}</span>
+              <span class="candidate-handle">${escapeHtml(c.handle)}</span>
+              <span class="badge-confidence ${badgeClass}">${c.confidence_badge}</span>
+            </div>
+            <div class="candidate-platform-sub">${escapeHtml(c.platform_label)} · Web Corroboration</div>
+          </div>
+        </div>
+        ${reasonsHtml ? `<div class="candidate-reasons">${reasonsHtml}</div>` : ""}
+        ${snippetHtml}
+      </div>
+      <a href="${c.url}" target="_blank" rel="noopener noreferrer" class="candidate-action-btn">
+        <span>View</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+          <polyline points="15 3 21 3 21 9"/>
+          <line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
+      </a>
+    </div>
   `;
 }
 
