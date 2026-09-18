@@ -28,13 +28,6 @@ class PlatformResult(BaseModel):
     url: Optional[str] = None
 
 
-class BreachInfo(BaseModel):
-    name: str
-    date: Optional[str] = None
-    data_types: List[str] = []
-    description: Optional[str] = None
-
-
 class LookupResponse(BaseModel):
     email: str
     query_time_ms: int
@@ -43,7 +36,6 @@ class LookupResponse(BaseModel):
     person: PersonInfo = PersonInfo()
     profiles: dict = {}
     platforms: List[PlatformResult] = []
-    breaches: List[BreachInfo] = []
     phone: Optional[str] = None
     address: Optional[str] = None
     deliverability: Optional[str] = None
@@ -52,7 +44,18 @@ class LookupResponse(BaseModel):
     email_quality: Optional[dict] = None
     social_candidates: List[dict] = []
     social_candidates_by_platform: dict = {}
+    cached: bool = False
     error: Optional[str] = None
+
+
+class CacheInvalidateRequest(BaseModel):
+    email: str
+
+
+class CacheInvalidateResponse(BaseModel):
+    success: bool
+    email: str
+    message: Optional[str] = None
 
 
 class VerifyRequest(BaseModel):

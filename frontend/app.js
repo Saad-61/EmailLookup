@@ -145,6 +145,30 @@ if (lookupRefreshBtn) {
   lookupRefreshBtn.addEventListener("click", () => doLookup(true));
 }
 
+// ── Cache Invalidation / Force Refresh ──
+const forceRefreshBtn = document.getElementById("force-refresh-btn");
+if (forceRefreshBtn) {
+  forceRefreshBtn.addEventListener("click", async () => {
+    const email = document.getElementById("lookup-input").value.trim();
+    if (!email) return;
+    try {
+      forceRefreshBtn.disabled = true;
+      forceRefreshBtn.classList.add("loading");
+      await fetch(`${API_BASE}/api/cache/invalidate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+    } catch (e) {
+      console.warn("Cache invalidate error:", e);
+    } finally {
+      forceRefreshBtn.disabled = false;
+      forceRefreshBtn.classList.remove("loading");
+    }
+    doLookup(true);
+  });
+}
+
 // ── Platform-Specific Candidate Accordion Toggles ──
 document.addEventListener("click", e => {
   const btn = e.target.closest(".candidates-toggle-btn");
@@ -211,10 +235,6 @@ function renderLookupResults(data) {
       identityBadge.textContent = "✓ 100% Verified Identity";
       identityBadge.className = "type-badge badge-verified";
       identityBadge.classList.remove("hidden");
-    } else if (profiles.linkedin_confidence && profiles.linkedin_confidence >= 80) {
-      identityBadge.textContent = `★ ${profiles.linkedin_confidence}% Match`;
-      identityBadge.className = "type-badge badge-match";
-      identityBadge.classList.remove("hidden");
     } else {
       identityBadge.classList.add("hidden");
     }
@@ -245,13 +265,13 @@ function renderLookupResults(data) {
     else if (src === "harvested") subText = "Verified Public Record →";
     else if (conf === 100) subText = "100% Corroborated Match →";
 
-    const isDirect = (src === "wikidata" || src === "github" || src === "gravatar" || conf === 100);
-    const badgeText = isDirect ? "✓ 100% Verified" : `★ ${conf}% Match`;
+    const isDirect = (src === "wikidata" || src === "github" || src === "gravatar" || src === "harvested" || conf === 100);
+    const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
     chips.push(buildProfileChip({
       href: profiles.linkedin,
       iconClass: "linkedin-icon",
       iconContent: "in",
-      name: `LinkedIn <span class="badge-confidence ${isDirect ? 'verified' : 'high'}">${badgeText}</span>`,
+      name: `LinkedIn ${badgeHtml}`,
       sub: subText,
     }));
   }
@@ -454,93 +474,9 @@ function renderLookupResults(data) {
     companyCard.classList.add("hidden");
   }
 
-  // ── Breaches ──
-  const breachesList = document.getElementById("breaches-list");
-  const breaches = data.breaches || [];
 
-  if (breaches.length === 0) {
-    breachesList.innerHTML = "<p class='no-data no-breach'>✅ No known data breaches found.</p>";
-  } else {
-    const top3 = breaches.slice(0, 3);
-    const rest = breaches.slice(3);
 
-    const renderBreachItem = b => `
-      <div class="breach-item">
-        <div class="breach-name">⚠️ ${b.name || "Unknown Breach"}</div>
-        <div class="breach-date">${b.date || "Unknown date"}</div>
-        <div class="breach-tags">
-          ${(b.data_types || []).map(t => `<span class="breach-tag">${t}</span>`).join("")}
-        </div>
-      </div>
-    `;
 
-    let html = top3.map(renderBreachItem).join("");
-
-    if (rest.length > 0) {
-      html += `
-        <div id="breaches-extra" class="breaches-extra collapsed">
-          ${rest.map(renderBreachItem).join("")}
-        </div>
-        <button type="button" class="btn-toggle-breaches" id="btn-toggle-breaches">
-          Show ${rest.length} more ${rest.length === 1 ? 'breach' : 'breaches'} ▼
-        </button>
-      `;
-    }
-
-    breachesList.innerHTML = html;
-
-    if (rest.length > 0) {
-      const toggleBtn = document.getElementById("btn-toggle-breaches");
-      const extraDiv = document.getElementById("breaches-extra");
-      toggleBtn.addEventListener("click", () => {
-        const isCollapsed = extraDiv.classList.contains("collapsed");
-        if (isCollapsed) {
-          extraDiv.classList.remove("collapsed");
-          toggleBtn.textContent = "Show less ▲";
-        } else {
-          extraDiv.classList.add("collapsed");
-          toggleBtn.textContent = `Show ${rest.length} more ${rest.length === 1 ? 'breach' : 'breaches'} ▼`;
-        }
-      });
-    }
-  }
-
-  // ── Email quality (AbstractAPI) ──
-  const eq = data.email_quality || {};
-  const qualityCard = document.getElementById("quality-card");
-  if (eq.quality_score !== undefined && eq.quality_score !== null) {
-    qualityCard.classList.remove("hidden");
-    const scoreEl = document.getElementById("eq-score");
-    const score = Math.round((eq.quality_score || 0) * 100);
-    scoreEl.textContent = `${score}%`;
-    scoreEl.style.color = score >= 80 ? "var(--c-success)" : score >= 50 ? "var(--c-warn)" : "var(--c-danger)";
-    document.getElementById("eq-deliverability").textContent = eq.deliverability || "—";
-    document.getElementById("eq-disposable").textContent = eq.is_disposable ? "Yes ⚠️" : "No";
-    document.getElementById("eq-provider").textContent = eq.smtp_provider || "—";
-    document.getElementById("eq-catchall").textContent = eq.is_catchall ? "Yes" : "No";
-    document.getElementById("eq-role").textContent = eq.is_role_account ? "Yes (e.g. info@, admin@)" : "No";
-
-    // Risk
-    const addrRiskEl = document.getElementById("eq-addr-risk");
-    const domainRiskEl = document.getElementById("eq-domain-risk");
-    const riskColor = r => r === "High" ? "var(--c-danger)" : r === "Medium" ? "var(--c-warn)" : "var(--c-success)";
-    addrRiskEl.textContent = eq.address_risk || "—";
-    addrRiskEl.style.color = eq.address_risk ? riskColor(eq.address_risk) : "";
-    domainRiskEl.textContent = eq.domain_risk || "—";
-    domainRiskEl.style.color = eq.domain_risk ? riskColor(eq.domain_risk) : "";
-
-    // Breach summary (kept hidden per user preference)
-    const breachSection = document.getElementById("eq-breach-section");
-    if (breachSection) {
-      breachSection.classList.add("hidden");
-    }
-
-    const acEl = document.getElementById("eq-autocorrect");
-    if (eq.autocorrect) {
-      acEl.textContent = `⚠️ Did you mean: ${eq.autocorrect}?`;
-      acEl.classList.remove("hidden");
-    }
-  }
 
   // ── Global Typo Banner ──
   const acBanner = document.getElementById("lookup-autocorrect");
@@ -593,8 +529,6 @@ function renderCandidateCard(c) {
     ? "📸"
     : "ⓕ";
 
-  const badgeClass = (c.score >= 70) ? "strong" : "potential";
-  const reasonsHtml = (c.reasons || []).map(r => `<span class="reason-tag">✓ ${escapeHtml(r)}</span>`).join("");
   const snippetHtml = c.snippet ? `<div class="candidate-snippet">${escapeHtml(c.snippet)}</div>` : "";
 
   const avatarImgHtml = c.avatar_url ? `
@@ -615,12 +549,10 @@ function renderCandidateCard(c) {
             <div class="candidate-name-row">
               <span class="candidate-name">${escapeHtml(c.name || c.handle)}</span>
               <span class="candidate-handle">${escapeHtml(c.handle)}</span>
-              <span class="badge-confidence ${badgeClass}">${c.confidence_badge}</span>
             </div>
-            <div class="candidate-platform-sub">${escapeHtml(c.platform_label)} · Web Corroboration</div>
+            <div class="candidate-platform-sub">${escapeHtml(c.platform_label)}</div>
           </div>
         </div>
-        ${reasonsHtml ? `<div class="candidate-reasons">${reasonsHtml}</div>` : ""}
         ${snippetHtml}
       </div>
       <a href="${c.url}" target="_blank" rel="noopener noreferrer" class="candidate-action-btn">

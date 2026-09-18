@@ -30,13 +30,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"), override=True)
 
 from models import (
-    LookupRequest, LookupResponse, PersonInfo, PlatformResult, BreachInfo,
+    LookupRequest, LookupResponse, PersonInfo, PlatformResult,
+    CacheInvalidateRequest, CacheInvalidateResponse,
     VerifyRequest, VerifyResponse, PortCheckResponse,
 )
 from lookup_engine import run_lookup
 from smtp_verifier import verify_email_smtp, check_port25
 from platform_checker import check_platforms
-from cache import init_db, get_lookup_cache, set_lookup_cache, get_verify_cache, set_verify_cache
+from cache import (
+    init_db, get_lookup_cache, set_lookup_cache,
+    delete_lookup_cache, get_verify_cache, set_verify_cache,
+)
 
 
 # ── App lifecycle ─────────────────────────────────────────────────────────────
@@ -120,11 +124,14 @@ async def email_lookup(request: LookupRequest):
             detail="Invalid email address syntax. Please enter a valid email (e.g. name@company.com)."
         )
 
+    start_time = time.time()
+
     # Check cache first unless force_refresh is requested
     if not request.force_refresh:
         cached = await get_lookup_cache(email)
         if cached:
             cached["cached"] = True
+            cached["query_time_ms"] = max(1, int((time.time() - start_time) * 1000))
             return LookupResponse(**cached)
 
     # Run lookup directly (platform check skipped to maximize speed since card is hidden)
@@ -168,17 +175,6 @@ async def email_lookup(request: LookupRequest):
         for p in platform_results
     ]
 
-    raw_breaches = lookup_result.get("breaches", [])
-    breaches = [
-        BreachInfo(
-            name=b.get("name", ""),
-            date=b.get("date"),
-            data_types=b.get("data_types", []),
-            description=b.get("description"),
-        )
-        for b in raw_breaches
-    ]
-
     response = LookupResponse(
         email=email,
         query_time_ms=lookup_result.get("query_time_ms", 0),
@@ -187,7 +183,6 @@ async def email_lookup(request: LookupRequest):
         person=person,
         profiles=lookup_result.get("profiles", {}),
         platforms=platforms,
-        breaches=breaches,
         phone=lookup_result.get("phone"),
         address=None,
         deliverability=(lookup_result.get("email_quality") or {}).get("deliverability"),
@@ -201,6 +196,22 @@ async def email_lookup(request: LookupRequest):
     # Cache the result
     await set_lookup_cache(email, response.model_dump())
     return response
+
+
+@app.post("/api/cache/invalidate", response_model=CacheInvalidateResponse)
+async def invalidate_cache(request: CacheInvalidateRequest):
+    """
+    Purge cached lookup result for the specified email to force a fresh live lookup.
+    """
+    email = request.email.lower().strip()
+    if not email:
+        raise HTTPException(status_code=422, detail="Email is required.")
+    success = await delete_lookup_cache(email)
+    return CacheInvalidateResponse(
+        success=success,
+        email=email,
+        message="Cache entry successfully purged." if success else "No cache entry found or error purging."
+    )
 
 
 @app.post("/api/verify", response_model=VerifyResponse)

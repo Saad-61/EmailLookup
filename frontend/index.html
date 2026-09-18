@@ -68,6 +68,7 @@
             🔄 Live Refresh
           </button>
         </div>
+        <div id="lookup-error" class="error-msg hidden"></div>
         <div id="lookup-autocorrect" class="autocorrect-banner hidden" style="margin-top: 12px; padding: 10px 14px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; color: #92400e; font-size: 13px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
           <span>⚠️ <strong>Typo in email?</strong> Did you mean <strong id="autocorrect-email" style="color: #b45309;"></strong>?</span>
           <button id="autocorrect-apply-btn" type="button" style="background: #f59e0b; color: #fff; border: none; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; white-space: nowrap;">Search this instead →</button>
@@ -200,53 +201,18 @@
           </div>
         </div>
 
-        <!-- Email Quality (AbstractAPI) -->
-        <div class="result-card hidden" id="quality-card">
-          <h3 class="card-title">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-            Email Quality &amp; Risk
-            <span class="card-subtitle">Powered by AbstractAPI</span>
-          </h3>
-          <div class="verify-grid">
-            <div class="verify-row"><span class="vl">Quality Score</span><span id="eq-score" class="vv">—</span></div>
-            <div class="verify-row"><span class="vl">Deliverability</span><span id="eq-deliverability" class="vv">—</span></div>
-            <div class="verify-row"><span class="vl">SMTP Provider</span><span id="eq-provider" class="vv">—</span></div>
-            <div class="verify-row"><span class="vl">Disposable Email</span><span id="eq-disposable" class="vv">—</span></div>
-            <div class="verify-row"><span class="vl">Catch-All</span><span id="eq-catchall" class="vv">—</span></div>
-            <div class="verify-row"><span class="vl">Role Account</span><span id="eq-role" class="vv">—</span></div>
-            <div class="verify-row"><span class="vl">Address Risk</span><span id="eq-addr-risk" class="vv">—</span></div>
-            <div class="verify-row"><span class="vl">Domain Risk</span><span id="eq-domain-risk" class="vv">—</span></div>
-          </div>
-          <!-- Breach summary from AbstractAPI -->
-          <div id="eq-breach-section" class="hidden" style="margin-top:14px">
-            <h4 style="font-size:13px;font-weight:600;color:var(--c-danger);margin-bottom:10px">⚠️ Breach Summary</h4>
-            <div class="verify-grid">
-              <div class="verify-row"><span class="vl">Total Breaches</span><span id="eq-breach-count" class="vv" style="color:var(--c-danger)">—</span></div>
-              <div class="verify-row"><span class="vl">First Breached</span><span id="eq-breach-first" class="vv">—</span></div>
-              <div class="verify-row"><span class="vl">Last Breached</span><span id="eq-breach-last" class="vv">—</span></div>
-            </div>
-          </div>
-          <p id="eq-autocorrect" class="verify-note hidden" style="margin-top:10px"></p>
-        </div>
 
-        <!-- Data Breaches (Hidden) -->
-        <div class="result-card hidden" id="breaches-card" style="display: none;">
-          <h3 class="card-title">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            Data Breaches
-          </h3>
-          <div id="breaches-list">
-            <p class="no-data no-breach">✅ No known data breaches found.</p>
-          </div>
-        </div>
 
-        <!-- Meta -->
-        <p id="query-time" class="query-time"></p>
+        <!-- Query Meta & Cache Invalidation Action -->
+        <div class="query-meta-row">
+          <p id="query-time" class="query-time"></p>
+          <button type="button" id="force-refresh-btn" class="refresh-cache-btn" title="Purge cached data and perform a fresh live search">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            <span>Report Outdated / Force Refresh</span>
+          </button>
+        </div>
 
       </div>
-
-      <!-- Error -->
-      <div id="lookup-error" class="error-msg hidden"></div>
     </section>
 
     <!-- ───── TAB 2: Email Verifier ───── -->
