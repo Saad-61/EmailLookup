@@ -53,9 +53,28 @@ def detect_mx_provider(mx_host: str) -> str:
     return "Custom / Unknown"
 
 
+def get_smtp_sender_config() -> Tuple[str, str]:
+    """
+    Get sender email and HELO hostname from environment variables,
+    falling back to sensible defaults.
+    """
+    sender = os.getenv("SMTP_SENDER_EMAIL", "").strip()
+    if not sender:
+        sender = "probe@emailverify.local"
+
+    helo = os.getenv("SMTP_HELO_HOST", "").strip()
+    if not helo:
+        if "@" in sender and "." in sender.split("@")[-1]:
+            helo = f"mail.{sender.split('@')[-1]}"
+        else:
+            helo = "mail.emailverify.local"
+
+    return sender, helo
+
+
 # ── catch-all detection ───────────────────────────────────────────────────────
 
-def _is_catchall(mx_host: str, domain: str, from_addr: str) -> Optional[bool]:
+def _is_catchall(mx_host: str, domain: str, from_addr: str, helo_host: str = "mail.emailverify.local") -> Optional[bool]:
     """
     Send an SMTP probe for a randomly generated address.
     Returns True if catch-all, False if not, None if inconclusive.
@@ -64,7 +83,7 @@ def _is_catchall(mx_host: str, domain: str, from_addr: str) -> Optional[bool]:
     try:
         with smtplib.SMTP(timeout=10) as smtp:
             smtp.connect(mx_host, 25)
-            smtp.helo("mail.emailverify.local")
+            smtp.helo(helo_host)
             smtp.mail(from_addr)
             code, _ = smtp.rcpt(random_addr)
             smtp.quit()
@@ -148,8 +167,8 @@ def verify_email_smtp(email: str) -> dict:
             return base
 
     # 3. Catch-all probe
-    from_addr = "probe@emailverify.local"
-    catchall = _is_catchall(mx_host, domain, from_addr)
+    from_addr, helo_host = get_smtp_sender_config()
+    catchall = _is_catchall(mx_host, domain, from_addr, helo_host)
     base["catchall"] = catchall
 
     if catchall is True:
@@ -163,7 +182,7 @@ def verify_email_smtp(email: str) -> dict:
     try:
         with smtplib.SMTP(timeout=10) as smtp:
             smtp.connect(mx_host, 25)
-            smtp.helo("mail.emailverify.local")
+            smtp.helo(helo_host)
             smtp.mail(from_addr)
             code, msg = smtp.rcpt(email)
             smtp.quit()
