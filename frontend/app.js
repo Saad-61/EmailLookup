@@ -145,11 +145,12 @@ if (lookupRefreshBtn) {
   lookupRefreshBtn.addEventListener("click", () => doLookup(true));
 }
 
-// ── Candidate Accordion Toggle ──
+// ── Platform-Specific Candidate Accordion Toggles ──
 document.addEventListener("click", e => {
-  const btn = e.target.closest("#candidates-toggle-btn");
+  const btn = e.target.closest(".candidates-toggle-btn");
   if (!btn) return;
-  const list = document.getElementById("candidates-list");
+  const targetId = btn.dataset.target;
+  const list = document.getElementById(targetId);
   const pill = btn.querySelector(".candidates-toggle-pill");
   const icon = btn.querySelector(".candidates-toggle-icon");
   if (!list) return;
@@ -316,19 +317,35 @@ function renderLookupResults(data) {
     ? chips.join("")
     : "<p class='no-data'>No social profiles found for this email.</p>";
 
-  // ── Candidate Social Accounts (Twitter/X, Instagram, Facebook) ──
-  const candAccordion = document.getElementById("candidates-accordion");
-  const candList = document.getElementById("candidates-list");
-  const candCount = document.getElementById("candidates-count");
-  const candidates = data.social_candidates || [];
+  // ── Candidate Social Accounts by Platform (Separate Accordions) ──
+  const candidatesWrapper = document.getElementById("candidates-wrapper");
+  const byPlat = data.social_candidates_by_platform || {};
+  let totalCandidatesFound = 0;
 
-  if (candAccordion && candList) {
-    if (candidates.length > 0) {
-      if (candCount) candCount.textContent = candidates.length;
-      candList.innerHTML = candidates.map(renderCandidateCard).join("");
-      candAccordion.classList.remove("hidden");
+  ["instagram", "twitter", "facebook"].forEach(plat => {
+    const accEl = document.getElementById(`cand-acc-${plat}`);
+    const listEl = document.getElementById(`cand-list-${plat}`);
+    const countEl = document.getElementById(`cand-count-${plat}`);
+    const candidates = byPlat[plat] || [];
+
+    if (accEl && listEl) {
+      if (candidates.length > 0) {
+        totalCandidatesFound += candidates.length;
+        if (countEl) countEl.textContent = candidates.length;
+        listEl.classList.add("collapsed"); // Collapsed by default
+        listEl.innerHTML = candidates.map(renderCandidateCard).join("");
+        accEl.classList.remove("hidden");
+      } else {
+        accEl.classList.add("hidden");
+      }
+    }
+  });
+
+  if (candidatesWrapper) {
+    if (totalCandidatesFound > 0) {
+      candidatesWrapper.classList.remove("hidden");
     } else {
-      candAccordion.classList.add("hidden");
+      candidatesWrapper.classList.add("hidden");
     }
   }
 
@@ -580,11 +597,20 @@ function renderCandidateCard(c) {
   const reasonsHtml = (c.reasons || []).map(r => `<span class="reason-tag">✓ ${escapeHtml(r)}</span>`).join("");
   const snippetHtml = c.snippet ? `<div class="candidate-snippet">${escapeHtml(c.snippet)}</div>` : "";
 
+  const avatarImgHtml = c.avatar_url ? `
+    <img src="${escapeHtml(c.avatar_url)}" class="candidate-avatar" alt="${escapeHtml(c.handle)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+    <div class="profile-chip-icon ${pIconClass}" style="display: none;">${pIconSymbol}</div>
+  ` : `
+    <div class="profile-chip-icon ${pIconClass}">${pIconSymbol}</div>
+  `;
+
   return `
     <div class="candidate-card">
       <div class="candidate-main">
         <div class="candidate-header">
-          <div class="profile-chip-icon ${pIconClass}">${pIconSymbol}</div>
+          <div class="candidate-avatar-wrapper">
+            ${avatarImgHtml}
+          </div>
           <div class="candidate-info">
             <div class="candidate-name-row">
               <span class="candidate-name">${escapeHtml(c.name || c.handle)}</span>

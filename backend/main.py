@@ -195,6 +195,7 @@ async def email_lookup(request: LookupRequest):
         company=lookup_result.get("company"),
         email_quality=lookup_result.get("email_quality"),
         social_candidates=lookup_result.get("social_candidates", []),
+        social_candidates_by_platform=lookup_result.get("social_candidates_by_platform", {}),
     )
 
     # Cache the result

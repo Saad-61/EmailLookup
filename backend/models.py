@@ -51,6 +51,7 @@ class LookupResponse(BaseModel):
     company: Optional[dict] = None
     email_quality: Optional[dict] = None
     social_candidates: List[dict] = []
+    social_candidates_by_platform: dict = {}
     error: Optional[str] = None
 
 

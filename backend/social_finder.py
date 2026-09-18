@@ -43,6 +43,13 @@ def generate_handle_variations(
         if len(clean_no_num) >= 4 and clean_no_num != clean_no_sep:
             stems.append(clean_no_num)
 
+        # Strip 1 or 2 letter prefix (e.g. rdameesha -> dameesha, msharafat -> sharafat)
+        if len(clean_no_num) >= 7:
+            for prefix_len in (1, 2):
+                prefix_stripped = clean_no_num[prefix_len:]
+                if len(prefix_stripped) >= 4 and prefix_stripped not in stems:
+                    stems.append(prefix_stripped)
+
         # Chunks separated by delimiters (e.g. sharafat.contentarcade -> sharafat)
         chunks = [c for c in re.split(r"[._+-]", local) if len(c) >= 3 and not c.isdigit()]
         for c in chunks:
@@ -246,16 +253,55 @@ def score_candidate(
     return score, reasons
 
 
+async def fetch_social_avatar(
+    url: str,
+    platform: str,
+    handle: str,
+    client: httpx.AsyncClient,
+) -> Optional[str]:
+    """
+    Fetch real user avatar URL from OpenGraph metadata or unavatar.
+    Returns direct image URL or None.
+    """
+    if not url:
+        return None
+
+    # Twitter: unavatar is instant and clean
+    if platform == "twitter" and handle:
+        clean_handle = handle.lstrip("@")
+        return f"https://unavatar.io/x/{clean_handle}"
+
+    # Instagram & Facebook: fetch og:image with crawler User-Agent
+    try:
+        headers = {
+            "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
+        resp = await client.get(url, headers=headers, timeout=2.5, follow_redirects=True)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            og_meta = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "og:image"})
+            if og_meta and og_meta.get("content"):
+                c_url = og_meta["content"]
+                # Reject generic platform branding images
+                if not any(k in c_url.lower() for k in ("fb_icon", "logo", "default", "static.xx.fbcdn")):
+                    return c_url
+    except Exception:
+        pass
+
+    return None
+
+
 async def search_social_candidates(
     email: str,
     resolved_name: Optional[str],
     resolved_location: Optional[str],
     gh_username: Optional[str],
     client: Optional[httpx.AsyncClient] = None,
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
     """
     Run platform-targeted searches across Instagram, X/Twitter, and Facebook.
-    Returns ranked candidate profiles.
+    Returns (all_sorted_candidates, candidates_by_platform).
     """
     if client is None or getattr(client, "is_closed", False):
         async with httpx.AsyncClient(timeout=8.0) as local_client:
@@ -269,12 +315,19 @@ async def search_social_candidates(
 
     raw_serper = os.getenv("SERPER_API_KEY", "")
     if not raw_serper:
-        return []
+        print("[Social Discovery] ⚠️ SERPER_API_KEY not configured. Skipping candidate discovery.", flush=True)
+        return [], {"instagram": [], "twitter": [], "facebook": []}
 
     specific_handles, stem_handles = generate_handle_variations(email, resolved_name, gh_username)
     all_variations = specific_handles + stem_handles
     if not all_variations and not resolved_name:
-        return []
+        return [], {"instagram": [], "twitter": [], "facebook": []}
+
+    print(f"\n[Social Discovery] ───────────────────────────────────────────────────", flush=True)
+    print(f"[Social Discovery] Initiating social candidate discovery for: {email}", flush=True)
+    print(f"[Social Discovery] Specific handles: {specific_handles} | Stems: {stem_handles}", flush=True)
+    if resolved_name:
+        print(f"[Social Discovery] Anchor name: '{resolved_name}' | Location: '{resolved_location or 'N/A'}'", flush=True)
 
     headers = {"X-API-KEY": raw_serper.strip(), "Content-Type": "application/json"}
 
@@ -305,6 +358,9 @@ async def search_social_candidates(
     queries = [("instagram", ig_q), ("twitter", tw_q), ("facebook", fb_q)]
     active_queries = [(p, q) for p, q in queries if q]
 
+    for p, q in active_queries:
+        print(f"[Social Discovery] Sending {p.upper()} query to Serper: {q}", flush=True)
+
     async def run_serper_q(platform_tag: str, q_str: str):
         try:
             resp = await client.post(
@@ -315,8 +371,8 @@ async def search_social_candidates(
             )
             if resp.status_code == 200:
                 return platform_tag, resp.json().get("organic", [])
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[Social Discovery] ✗ {platform_tag} query error: {e}", flush=True)
         return platform_tag, []
 
     serper_results = await asyncio.gather(*[run_serper_q(p, q) for p, q in active_queries])
@@ -324,6 +380,7 @@ async def search_social_candidates(
     candidates_map: Dict[str, Dict[str, Any]] = {}
 
     for platform_tag, items in serper_results:
+        found_on_platform = 0
         for item in items:
             link = item.get("link", "")
             title = item.get("title", "")
@@ -361,11 +418,43 @@ async def search_social_candidates(
                 "confidence_badge": conf_badge,
                 "confidence_level": conf_level,
                 "reasons": reasons,
+                "avatar_url": None,
             }
 
             if dedup_key not in candidates_map or candidates_map[dedup_key]["score"] < score:
                 candidates_map[dedup_key] = cand_obj
+                found_on_platform += 1
+
+        print(f"[Social Discovery] ✓ Discovered {found_on_platform} valid candidate(s) for {platform_tag.upper()}", flush=True)
 
     # Sort all candidates
     all_candidates = sorted(candidates_map.values(), key=lambda x: -x["score"])
-    return all_candidates[:12]
+
+    # Concurrently fetch avatars for top candidates (up to 2 per platform)
+    async def resolve_avatar(c: dict):
+        try:
+            av = await fetch_social_avatar(c["url"], c["platform"], c["handle"], client)
+            if av:
+                c["avatar_url"] = av
+        except Exception:
+            pass
+
+    top_to_fetch = all_candidates[:6]
+    if top_to_fetch:
+        await asyncio.gather(*[resolve_avatar(c) for c in top_to_fetch])
+
+    # Group by platform
+    by_platform = {
+        "instagram": [c for c in all_candidates if c["platform"] == "instagram"][:4],
+        "twitter": [c for c in all_candidates if c["platform"] == "twitter"][:4],
+        "facebook": [c for c in all_candidates if c["platform"] == "facebook"][:4],
+    }
+
+    total_count = sum(len(v) for v in by_platform.values())
+    print(f"[Social Discovery] Total ranked candidates: {total_count} (IG: {len(by_platform['instagram'])}, X: {len(by_platform['twitter'])}, FB: {len(by_platform['facebook'])})", flush=True)
+    if all_candidates:
+        top = all_candidates[0]
+        print(f"[Social Discovery] Top candidate: [{top['platform']}] {top['handle']} - {top['name']} ({top['score']}%)", flush=True)
+    print(f"[Social Discovery] ───────────────────────────────────────────────────\n", flush=True)
+
+    return all_candidates[:12], by_platform

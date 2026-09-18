@@ -400,11 +400,19 @@ body {
   border: 1px solid #fde68a;
 }
 
-/* ── Candidate Social Accounts Accordion ────────────────────────────────── */
-.candidates-accordion {
+/* ── Platform-Specific Candidate Accordions ────────────────────────────────── */
+.candidates-wrapper {
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px dashed var(--c-border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.platform-accordion {
+  display: flex;
+  flex-direction: column;
 }
 
 .candidates-toggle-btn {
@@ -432,9 +440,17 @@ body {
   gap: 8px;
 }
 
+.toggle-btn-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .candidates-toggle-icon {
   font-size: 11px;
   color: var(--c-accent);
+  display: inline-block;
+  transition: transform 0.2s ease;
 }
 
 .candidates-toggle-label {
@@ -453,11 +469,30 @@ body {
   border-radius: 12px;
 }
 
+.candidate-avatar-wrapper {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.candidate-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--c-border);
+}
+
 .candidates-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin-top: 12px;
+  transition: max-height 0.3s ease;
 }
 .candidates-list.collapsed {
   display: none !important;

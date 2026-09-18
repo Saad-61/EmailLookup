@@ -1691,7 +1691,10 @@ async def run_lookup(email: str) -> dict:
     }
     email_type = "personal" if domain in personal_domains else "corporate"
 
+    print(f"\n[Lookup Engine] >>> Starting reverse lookup for: {email} ({email_type.upper()})", flush=True)
+
     async with httpx.AsyncClient(timeout=14) as client:
+        print("[Lookup Engine] Querying base sources (Gravatar, GitHub, AbstractAPI, Company DB)...", flush=True)
         # Phase 1: Run all base enrichment sources concurrently
         gravatar, github, abstract_data, company, harvested = await asyncio.gather(
             lookup_gravatar(email, client),
@@ -2041,11 +2044,26 @@ async def run_lookup(email: str) -> dict:
     if dir_youtube:
         profiles["youtube"] = dir_youtube
 
+    if github and isinstance(github, dict) and github.get("username"):
+        print(f"[GitHub] ✓ Found user: @{github['username']} (repos={github.get('repos')}, followers={github.get('followers')})", flush=True)
+    else:
+        print("[GitHub] ✗ No verified profile found.", flush=True)
+
+    if gravatar and (gravatar.get("avatar") or gravatar.get("name")):
+        print(f"[Gravatar] ✓ Verified Gravatar profile found (name='{gravatar.get('name')}')", flush=True)
+
+    if linkedin_url:
+        print(f"[LinkedIn] ✓ Corroborated LinkedIn: {linkedin_url} (Confidence: {linkedin_confidence}%, Source: {linkedin_source})", flush=True)
+
+    if company and company.get("name"):
+        print(f"[Company] ✓ Workplace identified: {company['name']} ({company.get('domain', '')})", flush=True)
+
     # ── Discover Candidate Social Accounts (Twitter/X, Instagram, Facebook) ──
     gh_user = github.get("username") if (github and isinstance(github, dict)) else None
     social_candidates = []
+    candidates_by_platform = {"instagram": [], "twitter": [], "facebook": []}
     try:
-        raw_candidates = await search_social_candidates(
+        raw_candidates, by_plat = await search_social_candidates(
             email=email,
             resolved_name=resolved_name,
             resolved_location=resolved_location,
@@ -2060,8 +2078,31 @@ async def run_lookup(email: str) -> dict:
         social_candidates = [
             c for c in raw_candidates if c.get("platform") not in verified_platforms
         ]
+        candidates_by_platform = {
+            p: [c for c in clist if c.get("platform") not in verified_platforms]
+            for p, clist in by_plat.items()
+        }
     except Exception as e:
+        print(f"[Social Discovery] Candidate search error: {e}", flush=True)
         social_candidates = []
+        candidates_by_platform = {"instagram": [], "twitter": [], "facebook": []}
+
+    # ── Fallback Person Display Name & Avatar from Candidates / Email ──
+    if not person.get("name") and social_candidates:
+        top_cand = social_candidates[0]
+        # Promote top candidate's display name if clean human name and score >= 65
+        if top_cand.get("score", 0) >= 65 and top_cand.get("name") and top_cand["name"].lower() != top_cand.get("handle", "").lower().lstrip("@"):
+            promoted_name = " ".join(part.capitalize() for part in top_cand["name"].split())
+            person["name"] = promoted_name
+            print(f"[Lookup Engine] Promoted candidate name '{promoted_name}' to person card.", flush=True)
+            if not person.get("avatar") and top_cand.get("avatar_url"):
+                person["avatar"] = top_cand["avatar_url"]
+
+    if not person.get("name") and local_part:
+        concatenated_name = split_concatenated_name(local_part)
+        if concatenated_name:
+            person["name"] = concatenated_name
+            print(f"[Lookup Engine] Inferred name from email username: '{concatenated_name}'", flush=True)
 
     # ── Strict Company Visibility Policy ──
     # If this is a personal email (gmail, hotmail, yahoo, etc.) and no verified social links exist,
@@ -2125,6 +2166,7 @@ async def run_lookup(email: str) -> dict:
         autocorrect_suggestion = None
 
     elapsed_ms = int((time.time() - start) * 1000)
+    print(f"[Lookup Engine] <<< Reverse lookup complete for '{email}' in {elapsed_ms}ms.\n", flush=True)
 
     return {
         "email": email,
@@ -2134,6 +2176,7 @@ async def run_lookup(email: str) -> dict:
         "person": person,
         "profiles": profiles,
         "social_candidates": social_candidates,
+        "social_candidates_by_platform": candidates_by_platform,
         "breaches": breaches,
         "phone": phone,
         "address": None,
