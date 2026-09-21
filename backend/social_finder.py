@@ -608,9 +608,11 @@ async def search_social_candidates(
     # 2. Extract pattern handle terms (e.g. ahtisham.v2, ahtisham.v3, dameesha_09, _momina0, momina0_, mr.sharafat760)
     pattern_handles = [h for h in handles_to_probe if any(pat in h for pat in (".v", "_v", "_0", "0_", "09", "_01", "_02", "mr.", "mr_"))][:8]
 
-    # 3. Build Combined Platform Queries (1 Query per Platform = 1 Serper Credit per Platform)
-    # LinkedIn Query
+    # 3. Build Combined Platform Queries (EXACTLY 1 Query per Platform = 1 Serper Credit per Platform)
+    # LinkedIn Query (Work email + Full name + Handles combined into 1 single query)
     li_terms_list = []
+    if email and not any(email.endswith(d) for d in ("@gmail.com", "@yahoo.com", "@hotmail.com", "@outlook.com", "@live.com")):
+        li_terms_list.append(f'"{email}"')
     if resolved_name and len(resolved_name.split()) >= 2:
         li_terms_list.append(f'"{resolved_name}"')
     for h in clean_query_handles[:4]:
@@ -656,11 +658,6 @@ async def search_social_candidates(
     fb_q = f'(site:facebook.com OR site:facebook.com/people) ({" OR ".join(fb_terms_list)})' if fb_terms_list else ""
 
     queries = [("linkedin", li_q), ("instagram", ig_q), ("twitter", tw_q), ("facebook", fb_q)]
-
-    # Exact work email LinkedIn query if corporate
-    if email and not any(email.endswith(d) for d in ("@gmail.com", "@yahoo.com", "@hotmail.com", "@outlook.com", "@live.com")):
-        queries.append(("linkedin", f'"{email}" site:linkedin.com/in'))
-
     active_queries = [(p, q) for p, q in queries if q]
 
     for p, q in active_queries:
