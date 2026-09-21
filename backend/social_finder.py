@@ -95,21 +95,29 @@ def generate_handle_variations(
             first, last = parts[0], parts[-1]
             concat = "".join(parts)
             rev_concat = f"{last}{first}"
-            # Both forward and reverse full-name permutations and tokens are highest priority stems
-            for term in (first, concat, rev_concat, last, f"{first}_{last}", f"{last}_{first}", f"{first}.{last}", f"{last}.{first}"):
+            # Put forward and reverse permutations and tokens into stems
+            for term in (f"{first}.{last}", f"{last}.{first}", f"{first}_{last}", f"{last}_{first}", rev_concat, concat, last):
                 if term not in specific and term not in stems:
                     stems.append(term)
+            # First name is top priority stem
+            if first in stems:
+                stems.remove(first)
+            stems.insert(0, first)
         elif len(parts) == 1:
-            if parts[0] not in specific and parts[0] not in stems:
-                stems.append(parts[0])
-
-    # Strip single-letter initial prefix only (e.g. rdameesha -> dameesha, msharafat -> sharafat)
-    if local:
-        clean_no_num = re.sub(r"\d+", "", re.sub(r"[._+-]", "", local))
-        if len(clean_no_num) >= 4:
-            prefix_stripped = clean_no_num[1:]
-            if len(prefix_stripped) >= 3 and prefix_stripped not in stems:
-                stems.append(prefix_stripped)
+            first = parts[0]
+            if first in stems:
+                stems.remove(first)
+            stems.insert(0, first)
+    else:
+        # Strip single-letter initial prefix when no multi-word name is known (e.g. rdameesha -> dameesha, msharafat -> sharafat)
+        if local:
+            clean_no_num = re.sub(r"\d+", "", re.sub(r"[._+-]", "", local))
+            if len(clean_no_num) >= 4:
+                prefix_stripped = clean_no_num[1:]
+                if len(prefix_stripped) >= 3:
+                    if prefix_stripped in stems:
+                        stems.remove(prefix_stripped)
+                    stems.insert(0, prefix_stripped)
 
     generic = {
         "admin", "info", "support", "sales", "contact", "help",
@@ -612,15 +620,18 @@ async def search_social_candidates(
         core_stem = resolved_name.split()[0].lower()
     
     pattern_handles = []
-    # Check for patterns matching core stem first
-    for h in handles_to_probe:
-        if any(pat in h for pat in ("_09", "09", "0_", "_0", ".v2", ".v3", "_v2", "_v3", "mr.", "mr_")):
-            if core_stem and core_stem in h and h not in pattern_handles:
+    # Sample across diverse pattern families (underscore/number suffix, trailing zero, version dot, mr prefix)
+    priority_pattern_families = ["_09", "0_", "_0", ".v2", ".v3", "09", "_v2", "_v3", "mr."]
+    for pat in priority_pattern_families:
+        for h in handles_to_probe:
+            if pat in h and core_stem and core_stem in h and h not in pattern_handles:
                 pattern_handles.append(h)
-    for h in handles_to_probe:
-        if any(pat in h for pat in ("_09", "09", "0_", "_0", ".v2", ".v3", "_v2", "_v3", "mr.", "mr_")):
-            if h not in pattern_handles:
+                break
+    for pat in priority_pattern_families:
+        for h in handles_to_probe:
+            if pat in h and h not in pattern_handles:
                 pattern_handles.append(h)
+                break
     pattern_handles = pattern_handles[:4]
 
     # 3. High-Signal Combined Platform Queries (Max 5-6 targeted terms)
