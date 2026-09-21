@@ -605,56 +605,71 @@ async def search_social_candidates(
     print(f"[Social Discovery] Direct Instagram probes ({len(handles_to_probe)}): {handles_to_probe[:10]}...", flush=True)
     ig_probe_task = asyncio.gather(*[probe_instagram_profile(h, client) for h in handles_to_probe])
 
-    # 2. Extract pattern handle terms (e.g. ahtisham.v2, ahtisham.v3, dameesha_09, _momina0, momina0_, mr.sharafat760)
-    pattern_handles = [h for h in handles_to_probe if any(pat in h for pat in (".v", "_v", "_0", "0_", "09", "_01", "_02", "mr.", "mr_"))][:8]
+    # 2. Extract high-signal pattern handle terms (e.g. momina0_, _momina0, dameesha_09, ahtisham.v2, ahtisham.v3, mr.sharafat760)
+    pattern_handles = [h for h in handles_to_probe if any(pat in h for pat in (".v", "_v", "_0", "0_", "09", "_01", "_02", "mr.", "mr_"))][:5]
 
-    # 3. Build Combined Platform Queries (EXACTLY 1 Query per Platform = 1 Serper Credit per Platform)
-    # LinkedIn Query (Work email + Full name + Handles combined into 1 single query)
+    # 3. High-Signal Combined Platform Queries (Max 5-6 targeted terms to avoid Google SERP parser drop to 0)
+    # LinkedIn Query
     li_terms_list = []
     if email and not any(email.endswith(d) for d in ("@gmail.com", "@yahoo.com", "@hotmail.com", "@outlook.com", "@live.com")):
         li_terms_list.append(f'"{email}"')
     if resolved_name and len(resolved_name.split()) >= 2:
         li_terms_list.append(f'"{resolved_name}"')
-    for h in clean_query_handles[:4]:
-        li_terms_list.append(h)
+    for h in (specific_handles[:2] + [ch for ch in clean_query_handles if len(ch) >= 5][:2]):
+        if h not in li_terms_list and f'"{h}"' not in li_terms_list:
+            li_terms_list.append(h)
     
     if li_terms_list:
-        if company_name and len(company_name.strip()) >= 3:
-            # Use unquoted company name context to avoid strict 0-result SERP drops
+        # Only append company context if 1-2 words (avoids breaking Google with long institution names)
+        if company_name and 1 <= len(company_name.split()) <= 2:
             li_q = f'site:linkedin.com/in ({" OR ".join(li_terms_list)}) {company_name.strip()}'
         else:
             li_q = f'site:linkedin.com/in ({" OR ".join(li_terms_list)})'
     else:
         li_q = ""
 
-    # Instagram Query (Base terms + Pattern terms combined)
+    # Instagram Query: Full Name + Specific Handles + High-Signal Pattern Variations
     ig_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         ig_terms_list.append(f'"{resolved_name}"')
-    for h in clean_query_handles[:4]:
-        ig_terms_list.append(h)
-    for ph in pattern_handles:
-        ig_terms_list.append(f'"{ph}"')
+    for h in specific_handles[:2]:
+        if h not in ig_terms_list:
+            ig_terms_list.append(f'"{h}"')
+    for ph in pattern_handles[:4]:
+        if ph not in ig_terms_list and f'"{ph}"' not in ig_terms_list:
+            ig_terms_list.append(f'"{ph}"')
+    # If list is still small, add longest stem handle
+    for sh in stem_handles[:2]:
+        if len(sh) >= 6 and sh not in ig_terms_list and f'"{sh}"' not in ig_terms_list and len(ig_terms_list) < 6:
+            ig_terms_list.append(sh)
     ig_q = f'site:instagram.com ({" OR ".join(ig_terms_list)})' if ig_terms_list else ""
 
-    # Twitter / X Query (Base terms + Pattern terms combined)
+    # Twitter / X Query: Full Name + Specific Handles + Pattern Variations
     tw_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         tw_terms_list.append(f'"{resolved_name}"')
-    for h in clean_query_handles[:4]:
-        tw_terms_list.append(h)
-    for ph in pattern_handles:
-        tw_terms_list.append(f'"{ph}"')
+    for h in specific_handles[:2]:
+        if h not in tw_terms_list:
+            tw_terms_list.append(f'"{h}"')
+    for ph in pattern_handles[:4]:
+        if ph not in tw_terms_list and f'"{ph}"' not in tw_terms_list:
+            tw_terms_list.append(f'"{ph}"')
+    for sh in stem_handles[:2]:
+        if len(sh) >= 6 and sh not in tw_terms_list and f'"{sh}"' not in tw_terms_list and len(tw_terms_list) < 6:
+            tw_terms_list.append(sh)
     tw_q = f'site:x.com ({" OR ".join(tw_terms_list)})' if tw_terms_list else ""
 
-    # Facebook Query (Base terms + Pattern terms combined)
+    # Facebook Query: Full Name + Specific Handles + Pattern Variations
     fb_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         fb_terms_list.append(f'"{resolved_name}"')
-    for h in clean_query_handles[:3]:
+    for h in specific_handles[:2]:
         fb_terms_list.append(f'"{h}"')
-    for ph in pattern_handles[:4]:
+    for ph in pattern_handles[:3]:
         fb_terms_list.append(f'"{ph}"')
+    for sh in stem_handles[:2]:
+        if len(sh) >= 6 and sh not in fb_terms_list and f'"{sh}"' not in fb_terms_list and len(fb_terms_list) < 5:
+            fb_terms_list.append(f'"{sh}"')
     fb_q = f'(site:facebook.com OR site:facebook.com/people) ({" OR ".join(fb_terms_list)})' if fb_terms_list else ""
 
     queries = [("linkedin", li_q), ("instagram", ig_q), ("twitter", tw_q), ("facebook", fb_q)]
@@ -767,17 +782,30 @@ async def search_social_candidates(
                 # If link is a post/reel/status, attempt to extract authentic profile handle from title or snippet
                 combined_meta = f"{title} {snippet}"
                 if platform_tag == "instagram" and "instagram.com" in link:
-                    ig_at_matches = re.findall(r"@([a-zA-Z0-9_.]{3,30})", combined_meta)
-                    for h_cand in ig_at_matches:
-                        clean_h = h_cand.strip("._")
-                        if clean_h.lower() not in ("instagram", "reel", "reels", "p", "explore", "threads", "meta", "stories"):
+                    # 1. Prioritize any of our targeted handle variations mentioned in comments or captions
+                    for v in all_variations:
+                        vl = v.lower().strip("@")
+                        if len(vl) >= 4 and re.search(r"(?:@|\b)" + re.escape(vl) + r"\b", combined_meta, re.IGNORECASE):
                             parsed = {
                                 "platform": "instagram",
                                 "platform_label": "Instagram",
-                                "handle": h_cand,
-                                "url": f"https://www.instagram.com/{h_cand}",
+                                "handle": vl,
+                                "url": f"https://www.instagram.com/{vl}",
                             }
                             break
+                    # 2. Extract @handles from snippet
+                    if not parsed:
+                        ig_at_matches = re.findall(r"@([a-zA-Z0-9_.]{3,30})", combined_meta)
+                        for h_cand in ig_at_matches:
+                            clean_h = h_cand.strip("._")
+                            if clean_h.lower() not in ("instagram", "reel", "reels", "p", "explore", "threads", "meta", "stories"):
+                                parsed = {
+                                    "platform": "instagram",
+                                    "platform_label": "Instagram",
+                                    "handle": h_cand,
+                                    "url": f"https://www.instagram.com/{h_cand}",
+                                }
+                                break
                     if not parsed:
                         by_match = re.search(r"(?:Photos?|Reel|Video|Post)\s+by\s+([a-zA-Z0-9_.]{3,30})", combined_meta, re.IGNORECASE)
                         if by_match:
@@ -800,8 +828,8 @@ async def search_social_candidates(
                 parsed, title, snippet, all_variations, resolved_name, resolved_location, gh_username
             )
 
-            # Lowered threshold to >= 25 to capture viable candidates across all platforms
-            if score < 25:
+            # Accept all candidates with score >= 15 so no valid candidates are hidden
+            if score < 15:
                 continue
 
             display_name = extract_name_from_title(title, platform) or handle
