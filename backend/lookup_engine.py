@@ -1986,27 +1986,37 @@ async def run_lookup(email: str) -> dict:
             company_name=comp_name,
             client=client,
         )
-        # ── Single vs Multiple Candidate Promotion Rule ──
-        # If there is ONLY 1 candidate profile for a platform, promote its full details into profiles[platform]
-        # and clear by_plat[platform] so NO duplicate accordion is rendered below it.
-        # If there are MULTIPLE candidate profiles (>=2), do NOT promote a single candidate to profiles[platform].
-        # Keep all of them in candidates_by_platform[platform] to render together inside the candidate accordion.
+        # ── Strict Single vs Multiple Candidate Resolution Rule ──
+        # Rule: A platform must appear EXACTLY ONCE on the page.
+        # - If 1 candidate exists (or base search found 1 match), enrich profiles[platform] with full card details
+        #   (name, handle, snippet, avatar) and CLEAR by_plat[platform] so NO candidate accordion is rendered below.
+        # - If MULTIPLE candidates (>=2) exist, remove any speculative single chip from profiles[platform]
+        #   and keep all candidates in by_plat[platform] to render inside the accordion.
         for p in ["linkedin", "instagram", "twitter", "facebook"]:
             cands = by_plat.get(p, [])
-            if not profiles.get(p):
-                if len(cands) == 1:
-                    top_c = cands[0]
-                    profiles[p] = {
-                        "url": top_c.get("url"),
-                        "name": top_c.get("name"),
-                        "handle": top_c.get("handle"),
-                        "snippet": top_c.get("snippet") or top_c.get("title"),
-                        "title": top_c.get("title"),
-                        "avatar_url": top_c.get("avatar_url"),
-                        "confidence": top_c.get("score", 85),
-                        "source": "search",
-                    }
-                    by_plat[p] = []  # Clear list so no redundant 1-found accordion is created!
+            if len(cands) == 1:
+                top_c = cands[0]
+                existing_prof = profiles.get(p)
+                p_url = (existing_prof if isinstance(existing_prof, str) else (existing_prof.get("url") if isinstance(existing_prof, dict) else None)) or top_c.get("url")
+                p_conf = profiles.get(f"{p}_confidence", top_c.get("score", 85))
+                p_src = profiles.get(f"{p}_source", "search")
+                
+                profiles[p] = {
+                    "url": p_url,
+                    "name": top_c.get("name") or resolved_name,
+                    "handle": top_c.get("handle"),
+                    "snippet": top_c.get("snippet") or top_c.get("title"),
+                    "title": top_c.get("title"),
+                    "avatar_url": top_c.get("avatar_url"),
+                    "confidence": p_conf,
+                    "source": p_src,
+                }
+                by_plat[p] = []  # CLEAR list so no redundant candidate accordion is generated!
+            elif len(cands) >= 2:
+                # If multiple candidates exist and primary profile is not 100% verified, remove single profile entry
+                p_conf = profiles.get(f"{p}_confidence", 0)
+                if p_conf < 100:
+                    profiles.pop(p, None)
 
         verified_urls = {
             prof.get("url") for prof in profiles.values() if isinstance(prof, dict) and prof.get("url")
