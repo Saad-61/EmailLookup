@@ -36,6 +36,9 @@ data/
 *.sqlite
 *.sqlite3
 scratch_*.py
+scratch/
+CHANGES_AFTER_*.md
+*.patch
 
 # ========================
 # IDE & Editor
