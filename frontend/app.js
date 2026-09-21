@@ -333,10 +333,6 @@ function renderLookupResults(data) {
     }));
   }
 
-  profilesList.innerHTML = chips.length
-    ? chips.join("")
-    : "<p class='no-data'>No social profiles found for this email.</p>";
-
   // ── Candidate Social Accounts by Platform (Separate Accordions) ──
   const candidatesWrapper = document.getElementById("candidates-wrapper");
   const byPlat = data.social_candidates_by_platform || {};
@@ -360,6 +356,17 @@ function renderLookupResults(data) {
       }
     }
   });
+
+  if (chips.length > 0) {
+    profilesList.innerHTML = chips.join("");
+    profilesList.style.display = "flex";
+  } else if (totalCandidatesFound > 0) {
+    profilesList.innerHTML = "";
+    profilesList.style.display = "none";
+  } else {
+    profilesList.innerHTML = "<p class='no-data'>No social profiles found for this email.</p>";
+    profilesList.style.display = "block";
+  }
 
   if (candidatesWrapper) {
     if (totalCandidatesFound > 0) {
@@ -535,7 +542,6 @@ function renderCandidateCard(c) {
 
   const headlineHtml = c.title ? `<div class="candidate-headline" style="font-size:12px; color:var(--c-text-secondary); margin-top:2px; line-height:1.3;">${escapeHtml(c.title)}</div>` : "";
   const snippetHtml = c.snippet ? `<div class="candidate-snippet">${escapeHtml(c.snippet)}</div>` : "";
-  const scoreHtml = c.score ? `<span class="badge-confidence ${c.score >= 75 ? 'verified' : 'probable'}" style="font-size:11px; padding:2px 6px;">${c.score}% Match</span>` : "";
 
   const avatarImgHtml = c.avatar_url ? `
     <img src="${escapeHtml(c.avatar_url)}" class="candidate-avatar" alt="${escapeHtml(c.handle)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
@@ -555,7 +561,6 @@ function renderCandidateCard(c) {
             <div class="candidate-name-row">
               <span class="candidate-name">${escapeHtml(c.name || c.handle)}</span>
               <span class="candidate-handle">${escapeHtml(c.handle)}</span>
-              ${scoreHtml}
             </div>
             <div class="candidate-platform-sub">${escapeHtml(c.platform_label || c.platform)}</div>
             ${headlineHtml}

@@ -605,42 +605,54 @@ async def search_social_candidates(
     print(f"[Social Discovery] Direct Instagram probes ({len(handles_to_probe)}): {handles_to_probe[:10]}...", flush=True)
     ig_probe_task = asyncio.gather(*[probe_instagram_profile(h, client) for h in handles_to_probe])
 
-    # 2. LinkedIn Query (High Precision for HR, Corporate & Professional Profiles)
+    # 2. Extract pattern handle terms (e.g. ahtisham.v2, ahtisham.v3, dameesha_09, _momina0, momina0_, mr.sharafat760)
+    pattern_handles = [h for h in handles_to_probe if any(pat in h for pat in (".v", "_v", "_0", "0_", "09", "_01", "_02", "mr.", "mr_"))][:8]
+
+    # 3. Build Combined Platform Queries (1 Query per Platform = 1 Serper Credit per Platform)
+    # LinkedIn Query
     li_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         li_terms_list.append(f'"{resolved_name}"')
-    for h in clean_query_handles[:3]:
+    for h in clean_query_handles[:4]:
         li_terms_list.append(h)
     
-    if resolved_name and company_name and len(resolved_name.split()) >= 2:
-        li_q = f'site:linkedin.com/in "{resolved_name}" "{company_name}"'
-    elif li_terms_list:
-        li_q = f"site:linkedin.com/in ({' OR '.join(li_terms_list)})"
+    if li_terms_list:
+        if company_name and len(company_name.strip()) >= 3:
+            # Use unquoted company name context to avoid strict 0-result SERP drops
+            li_q = f'site:linkedin.com/in ({" OR ".join(li_terms_list)}) {company_name.strip()}'
+        else:
+            li_q = f'site:linkedin.com/in ({" OR ".join(li_terms_list)})'
     else:
         li_q = ""
 
-    # 3. Instagram Query
+    # Instagram Query (Base terms + Pattern terms combined)
     ig_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         ig_terms_list.append(f'"{resolved_name}"')
     for h in clean_query_handles[:4]:
         ig_terms_list.append(h)
-    ig_q = f"site:instagram.com ({' OR '.join(ig_terms_list)})" if ig_terms_list else ""
+    for ph in pattern_handles:
+        ig_terms_list.append(f'"{ph}"')
+    ig_q = f'site:instagram.com ({" OR ".join(ig_terms_list)})' if ig_terms_list else ""
 
-    # 4. Twitter / X Query
+    # Twitter / X Query (Base terms + Pattern terms combined)
     tw_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         tw_terms_list.append(f'"{resolved_name}"')
     for h in clean_query_handles[:4]:
         tw_terms_list.append(h)
-    tw_q = f"site:x.com ({' OR '.join(tw_terms_list)})" if tw_terms_list else ""
+    for ph in pattern_handles:
+        tw_terms_list.append(f'"{ph}"')
+    tw_q = f'site:x.com ({" OR ".join(tw_terms_list)})' if tw_terms_list else ""
 
-    # 5. Facebook Query
+    # Facebook Query (Base terms + Pattern terms combined)
     fb_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         fb_terms_list.append(f'"{resolved_name}"')
     for h in clean_query_handles[:3]:
         fb_terms_list.append(f'"{h}"')
+    for ph in pattern_handles[:4]:
+        fb_terms_list.append(f'"{ph}"')
     fb_q = f'(site:facebook.com OR site:facebook.com/people) ({" OR ".join(fb_terms_list)})' if fb_terms_list else ""
 
     queries = [("linkedin", li_q), ("instagram", ig_q), ("twitter", tw_q), ("facebook", fb_q)]
@@ -648,14 +660,6 @@ async def search_social_candidates(
     # Exact work email LinkedIn query if corporate
     if email and not any(email.endswith(d) for d in ("@gmail.com", "@yahoo.com", "@hotmail.com", "@outlook.com", "@live.com")):
         queries.append(("linkedin", f'"{email}" site:linkedin.com/in'))
-
-    # Additional targeted queries for dot/version/number patterns (e.g. ahtisham.v2, ahtisham.v3, dameesha_09, _momina0, momina0_, mr.sharafat760)
-    pattern_handles = [h for h in handles_to_probe if any(pat in h for pat in (".v", "_v", "_0", "0_", "09", "_01", "_02", "mr.", "mr_"))][:10]
-    if pattern_handles:
-        pattern_terms = " OR ".join([f'"{h}"' for h in pattern_handles])
-        queries.append(("instagram", f"site:instagram.com ({pattern_terms})"))
-        queries.append(("twitter", f"site:x.com ({pattern_terms})"))
-        queries.append(("facebook", f'(site:facebook.com OR site:facebook.com/people) ({pattern_terms})'))
 
     active_queries = [(p, q) for p, q in queries if q]
 
