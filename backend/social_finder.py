@@ -605,22 +605,38 @@ async def search_social_candidates(
     print(f"[Social Discovery] Direct Instagram probes ({len(handles_to_probe)}): {handles_to_probe[:10]}...", flush=True)
     ig_probe_task = asyncio.gather(*[probe_instagram_profile(h, client) for h in handles_to_probe])
 
-    # 2. Extract high-signal pattern handle terms (e.g. momina0_, _momina0, dameesha_09, ahtisham.v2, ahtisham.v3, mr.sharafat760)
-    pattern_handles = [h for h in handles_to_probe if any(pat in h for pat in (".v", "_v", "_0", "0_", "09", "_01", "_02", "mr.", "mr_"))][:5]
+    # 2. Extract high-signal pattern handle terms (e.g. dameesha_09, momina0_, ahtisham.v2, ahtisham.v3, mr.sharafat760)
+    # Prioritize patterns built on the core first name or clean local part
+    core_stem = stem_handles[0] if stem_handles else ""
+    if resolved_name and len(resolved_name.split()) >= 1:
+        core_stem = resolved_name.split()[0].lower()
+    
+    pattern_handles = []
+    # Check for patterns matching core stem first
+    for h in handles_to_probe:
+        if any(pat in h for pat in ("_09", "09", "0_", "_0", ".v2", ".v3", "_v2", "_v3", "mr.", "mr_")):
+            if core_stem and core_stem in h and h not in pattern_handles:
+                pattern_handles.append(h)
+    for h in handles_to_probe:
+        if any(pat in h for pat in ("_09", "09", "0_", "_0", ".v2", ".v3", "_v2", "_v3", "mr.", "mr_")):
+            if h not in pattern_handles:
+                pattern_handles.append(h)
+    pattern_handles = pattern_handles[:4]
 
-    # 3. High-Signal Combined Platform Queries (Max 5-6 targeted terms to avoid Google SERP parser drop to 0)
+    # 3. High-Signal Combined Platform Queries (Max 5-6 targeted terms)
     # LinkedIn Query
     li_terms_list = []
     if email and not any(email.endswith(d) for d in ("@gmail.com", "@yahoo.com", "@hotmail.com", "@outlook.com", "@live.com")):
         li_terms_list.append(f'"{email}"')
     if resolved_name and len(resolved_name.split()) >= 2:
         li_terms_list.append(f'"{resolved_name}"')
-    for h in (specific_handles[:2] + [ch for ch in clean_query_handles if len(ch) >= 5][:2]):
+    if core_stem and len(core_stem) >= 4 and f'"{core_stem}"' not in li_terms_list:
+        li_terms_list.append(f'"{core_stem}"')
+    for h in specific_handles[:2]:
         if h not in li_terms_list and f'"{h}"' not in li_terms_list:
             li_terms_list.append(h)
     
     if li_terms_list:
-        # Only append company context if 1-2 words (avoids breaking Google with long institution names)
         if company_name and 1 <= len(company_name.split()) <= 2:
             li_q = f'site:linkedin.com/in ({" OR ".join(li_terms_list)}) {company_name.strip()}'
         else:
@@ -628,48 +644,46 @@ async def search_social_candidates(
     else:
         li_q = ""
 
-    # Instagram Query: Full Name + Specific Handles + High-Signal Pattern Variations
+    # Instagram Query: Full Name + Core Stem + Specific Handle + Pattern Variations
     ig_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         ig_terms_list.append(f'"{resolved_name}"')
+    if core_stem and len(core_stem) >= 4 and f'"{core_stem}"' not in ig_terms_list:
+        ig_terms_list.append(f'"{core_stem}"')
     for h in specific_handles[:2]:
-        if h not in ig_terms_list:
+        if f'"{h}"' not in ig_terms_list and len(ig_terms_list) < 4:
             ig_terms_list.append(f'"{h}"')
-    for ph in pattern_handles[:4]:
-        if ph not in ig_terms_list and f'"{ph}"' not in ig_terms_list:
+    for ph in pattern_handles:
+        if f'"{ph}"' not in ig_terms_list and len(ig_terms_list) < 6:
             ig_terms_list.append(f'"{ph}"')
-    # If list is still small, add longest stem handle
-    for sh in stem_handles[:2]:
-        if len(sh) >= 6 and sh not in ig_terms_list and f'"{sh}"' not in ig_terms_list and len(ig_terms_list) < 6:
-            ig_terms_list.append(sh)
     ig_q = f'site:instagram.com ({" OR ".join(ig_terms_list)})' if ig_terms_list else ""
 
-    # Twitter / X Query: Full Name + Specific Handles + Pattern Variations
+    # Twitter / X Query: Full Name + Core Stem + Specific Handle + Pattern Variations
     tw_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         tw_terms_list.append(f'"{resolved_name}"')
+    if core_stem and len(core_stem) >= 4 and f'"{core_stem}"' not in tw_terms_list:
+        tw_terms_list.append(f'"{core_stem}"')
     for h in specific_handles[:2]:
-        if h not in tw_terms_list:
+        if f'"{h}"' not in tw_terms_list and len(tw_terms_list) < 4:
             tw_terms_list.append(f'"{h}"')
-    for ph in pattern_handles[:4]:
-        if ph not in tw_terms_list and f'"{ph}"' not in tw_terms_list:
+    for ph in pattern_handles:
+        if f'"{ph}"' not in tw_terms_list and len(tw_terms_list) < 6:
             tw_terms_list.append(f'"{ph}"')
-    for sh in stem_handles[:2]:
-        if len(sh) >= 6 and sh not in tw_terms_list and f'"{sh}"' not in tw_terms_list and len(tw_terms_list) < 6:
-            tw_terms_list.append(sh)
     tw_q = f'site:x.com ({" OR ".join(tw_terms_list)})' if tw_terms_list else ""
 
-    # Facebook Query: Full Name + Specific Handles + Pattern Variations
+    # Facebook Query: Full Name + Core Stem + Specific Handle + Pattern Variations
     fb_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         fb_terms_list.append(f'"{resolved_name}"')
+    if core_stem and len(core_stem) >= 4 and f'"{core_stem}"' not in fb_terms_list:
+        fb_terms_list.append(f'"{core_stem}"')
     for h in specific_handles[:2]:
-        fb_terms_list.append(f'"{h}"')
+        if f'"{h}"' not in fb_terms_list and len(fb_terms_list) < 4:
+            fb_terms_list.append(f'"{h}"')
     for ph in pattern_handles[:3]:
-        fb_terms_list.append(f'"{ph}"')
-    for sh in stem_handles[:2]:
-        if len(sh) >= 6 and sh not in fb_terms_list and f'"{sh}"' not in fb_terms_list and len(fb_terms_list) < 5:
-            fb_terms_list.append(f'"{sh}"')
+        if f'"{ph}"' not in fb_terms_list and len(fb_terms_list) < 5:
+            fb_terms_list.append(f'"{ph}"')
     fb_q = f'(site:facebook.com OR site:facebook.com/people) ({" OR ".join(fb_terms_list)})' if fb_terms_list else ""
 
     queries = [("linkedin", li_q), ("instagram", ig_q), ("twitter", tw_q), ("facebook", fb_q)]
