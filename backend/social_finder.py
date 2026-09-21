@@ -37,7 +37,7 @@ def generate_handle_variations(
     Returns (specific_handles, stem_handles).
     e.g. sharafat_760@hotmail.com -> specific: ['sharafat_760', 'sharafat760'], stem: ['sharafat']
          rdameesha@gmail.com     -> specific: ['rdameesha'], stem: ['dameesha']
-         atisamhameed6@gmail.com -> specific: ['atisamhameed6'], stem: ['atisamhameed', 'hameedatisam', 'atisam', 'hameed']
+         atisamhameed6@gmail.com -> specific: ['atisamhameed6'], stem: ['atisamhameed', 'atisam', 'hameedatisam', 'hameed']
     """
     specific = []
     stems = []
@@ -49,7 +49,7 @@ def generate_handle_variations(
         if clean_no_sep != local:
             specific.append(clean_no_sep)
         clean_no_num = re.sub(r"\d+", "", clean_no_sep)
-        if len(clean_no_num) >= 4 and clean_no_num != clean_no_sep:
+        if len(clean_no_num) >= 3:
             stems.append(clean_no_num)
 
         # Chunks separated by delimiters (e.g. sharafat.contentarcade -> sharafat)
@@ -96,7 +96,7 @@ def generate_handle_variations(
             concat = "".join(parts)
             rev_concat = f"{last}{first}"
             # Both forward and reverse full-name permutations and tokens are highest priority stems
-            for term in (concat, rev_concat, first, last, f"{first}_{last}", f"{last}_{first}", f"{first}.{last}", f"{last}.{first}"):
+            for term in (first, concat, rev_concat, last, f"{first}_{last}", f"{last}_{first}", f"{first}.{last}", f"{last}.{first}"):
                 if term not in specific and term not in stems:
                     stems.append(term)
         elif len(parts) == 1:
@@ -104,12 +104,11 @@ def generate_handle_variations(
                 stems.append(parts[0])
 
     # Strip single-letter initial prefix only (e.g. rdameesha -> dameesha, msharafat -> sharafat)
-    # Avoid 2-letter stripping which degrades dameesha into ameesha (causes Bollywood actress pollution)
     if local:
         clean_no_num = re.sub(r"\d+", "", re.sub(r"[._+-]", "", local))
-        if len(clean_no_num) >= 5:
+        if len(clean_no_num) >= 4:
             prefix_stripped = clean_no_num[1:]
-            if len(prefix_stripped) >= 4 and prefix_stripped not in stems:
+            if len(prefix_stripped) >= 3 and prefix_stripped not in stems:
                 stems.append(prefix_stripped)
 
     generic = {
@@ -125,10 +124,12 @@ def generate_handle_variations(
 def expand_social_probe_handles(
     specific_handles: List[str],
     stem_handles: List[str],
+    name: Optional[str] = None,
 ) -> List[str]:
     """
     Generate targeted handle permutations for direct social probing (Instagram, Twitter).
-    Prioritizes base clean handles (including reverse names) before secondary suffix variants.
+    Prioritizes clean number-stripped seeds (especially first name and clean stem)
+    to generate valid handle variations such as _momina0, momina0_, dameesha_09, ahtisham.v2, etc.
     """
     probes = []
     # 1. Base clean handles first (all specific + all top stems)
@@ -137,23 +138,50 @@ def expand_social_probe_handles(
         if clean and clean not in probes and len(clean) >= 3:
             probes.append(clean)
 
-    # 2. Pick key seeds: specific handles + single-token/short stems (first name, last name, clean stem)
+    # 2. Pick clean base seeds WITHOUT numbers for suffix/prefix variations
     seeds = []
-    for s in specific_handles:
-        clean_s = s.strip().lower()
-        if clean_s and clean_s not in seeds:
-            seeds.append(clean_s)
-    for st in stem_handles:
-        clean_st = st.strip().lower()
-        if len(clean_st) <= 10 and clean_st not in seeds:
-            seeds.append(clean_st)
+    if name:
+        parts = [p.lower() for p in re.findall(r"[a-zA-Z]+", name)]
+        if parts:
+            first = parts[0]
+            if len(first) >= 3 and first not in seeds:
+                seeds.append(first)
 
-    for s in seeds[:4]:
-        clean = s.strip("._")
-        if len(clean) >= 3:
-            for v in [f"_{clean}", f"{clean}_", f"{clean}_09", f"{clean}.v2", f"{clean}.v3", f"{clean}_v2", f"{clean}_01"]:
-                if v not in probes:
-                    probes.append(v)
+    # Add single-word / stripped stems (e.g. rdameesha -> dameesha)
+    for h in stem_handles:
+        clean = re.sub(r"\d+", "", h).strip("._-").lower()
+        if clean and len(clean) >= 3 and clean not in seeds and len(clean) <= 12:
+            seeds.append(clean)
+
+    for h in specific_handles:
+        clean = re.sub(r"\d+", "", h).strip("._-").lower()
+        if clean and len(clean) >= 3 and clean not in seeds:
+            seeds.append(clean)
+
+    variation_templates = [
+        "{clean}.v2",
+        "{clean}.v3",
+        "{clean}_v2",
+        "{clean}_v3",
+        "_{clean}0",
+        "{clean}0_",
+        "{clean}0",
+        "{clean}_09",
+        "{clean}09",
+        "mr.{clean}",
+        "mr_{clean}",
+        "{clean}_01",
+        "{clean}_02",
+        "_{clean}",
+        "{clean}_",
+        "_{clean}_",
+    ]
+
+    for s in seeds[:3]:
+        for tmpl in variation_templates:
+            v = tmpl.format(clean=s)
+            if v not in probes:
+                probes.append(v)
 
     return probes
 
@@ -187,9 +215,9 @@ def parse_social_url(url: str) -> Optional[Dict[str, str]]:
                 "url": f"https://x.com/{handle}",
             }
 
-    # Instagram
+    # Instagram (supports subdomains including www, m, www-fallback, etc.)
     ig_match = re.search(
-        r"https?://(?:www\.)?instagram\.com/([a-zA-Z0-9_.]{1,30})/?$",
+        r"https?://(?:[a-z0-9-]+\.)?instagram\.com/([a-zA-Z0-9_.]{1,30})/?$",
         clean,
         re.IGNORECASE,
     )
@@ -246,14 +274,37 @@ def parse_social_url(url: str) -> Optional[Dict[str, str]]:
 
 
 def extract_name_from_title(title: str, platform: str) -> Optional[str]:
-    """Extract display name from organic title."""
+    """Extract display name from organic title cleanly without caption blobs or hashtags."""
     if not title:
         return None
     t = title.strip()
-    t = re.sub(r"\s*[-–|•]\s*(Instagram|X|Twitter|Facebook|Photos and videos).*$", "", t, flags=re.IGNORECASE)
+    # Strip 'on Instagram: ...' or 'on Facebook: ...' or 'on X: ...'
+    t = re.sub(r"\s+on\s+(?:Instagram|Twitter|X|Facebook)\s*:.*$", "", t, flags=re.IGNORECASE)
+    # Strip after hyphen/bar/bullet platform names (e.g. " - Instagram photos and videos")
+    t = re.sub(r"\s*[-–|•·]\s*(Instagram|X|Twitter|Facebook|Photos and videos|Profile|TikTok).*$", "", t, flags=re.IGNORECASE)
+    # Strip dates (e.g. "· February 28, 2026")
+    t = re.sub(r"\s*·\s*(?:January|February|March|April|May|June|July|August|September|October|November|December|\d{1,2},?\s*\d{4}|\d{4}).*$", "", t, flags=re.IGNORECASE)
+    # Strip international headers like "Instagram 用户 Momina Sheikh : ..."
+    t = re.sub(r"^Instagram\s+[^:]+:\s*", "", t, flags=re.IGNORECASE)
+    # Strip @handle suffix e.g. 'John Doe (@johndoe)'
     t = re.sub(r"\s*\(?@[a-zA-Z0-9_.]+\)?.*$", "", t)
-    t = re.sub(r"^(Photo|Reel|Video|Post)\s+by\s+", "", t, flags=re.IGNORECASE)
-    t = t.strip()
+    # Strip 'Photo by' / 'Reel by' / 'Video by'
+    t = re.sub(r"^(?:Photos?|Reel|Video|Post)\s+by\s+", "", t, flags=re.IGNORECASE)
+    # Cut off at first slash or pipe if it contains bio/profession tags like 'Mehek Rauf / TORONTO REALTOR'
+    if "/" in t:
+        parts = t.split("/")
+        if len(parts[0].strip()) >= 2:
+            t = parts[0].strip()
+    if "|" in t:
+        parts = t.split("|")
+        if len(parts[0].strip()) >= 2:
+            t = parts[0].strip()
+    # Strip quotes and hashtags
+    t = re.sub(r'[\"\'“”]', '', t)
+    t = re.sub(r'#\w+', '', t)
+    t = t.strip(' -–|•·:/')
+    if len(t) > 35:
+        t = t[:35].strip()
     return t if (t and len(t) >= 2) else None
 
 
@@ -478,7 +529,8 @@ async def search_social_candidates(
         return [], {"instagram": [], "twitter": [], "facebook": []}
 
     specific_handles, stem_handles = generate_handle_variations(email, resolved_name, gh_username)
-    all_variations = specific_handles + stem_handles
+    handles_to_probe = expand_social_probe_handles(specific_handles, stem_handles, resolved_name)[:35]
+    all_variations = specific_handles + stem_handles + handles_to_probe[:25]
     if not all_variations and not resolved_name:
         return [], {"instagram": [], "twitter": [], "facebook": []}
 
@@ -490,42 +542,48 @@ async def search_social_candidates(
 
     headers = {"X-API-KEY": raw_serper.strip(), "Content-Type": "application/json"}
 
-    # Combine specific handles and stem handles, excluding dots/symbols to keep Google SERP queries clean
+    # Extract clean handles for search queries, stripping numbers/separators to keep queries effective
     clean_query_handles = []
-    for h in (specific_handles[:2] + stem_handles[:6]):
+    for h in (stem_handles[:4] + specific_handles[:2]):
         clean_h = re.sub(r"[._+-]", "", h)
+        clean_no_num = re.sub(r"\d+", "", clean_h)
+        if clean_no_num and clean_no_num not in clean_query_handles and len(clean_no_num) >= 3:
+            clean_query_handles.append(clean_no_num)
         if clean_h and clean_h not in clean_query_handles and len(clean_h) >= 3:
             clean_query_handles.append(clean_h)
 
     # 1. Direct Instagram Profile Probes using expanded permutations (e.g. _momina0, dameesha_09, ahtisham.v2, ahtisham.v3, hameedatisam)
-    handles_to_probe = expand_social_probe_handles(specific_handles, stem_handles)[:28]
     print(f"[Social Discovery] Direct Instagram probes ({len(handles_to_probe)}): {handles_to_probe[:10]}...", flush=True)
     ig_probe_task = asyncio.gather(*[probe_instagram_profile(h, client) for h in handles_to_probe])
 
-    # 2. Instagram Query (unquoted terms allow prefix / suffix matches like dameesha_09 or ahtisham.v2)
-    ig_terms = " OR ".join(clean_query_handles[:6]) if clean_query_handles else ""
-    ig_q = f"site:instagram.com ({ig_terms})" if ig_terms else ""
+    # 2. Instagram Query
+    ig_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
-        ig_q = f'{ig_q} OR (site:instagram.com "{resolved_name}")' if ig_q else f'site:instagram.com "{resolved_name}"'
+        ig_terms_list.append(f'"{resolved_name}"')
+    for h in clean_query_handles[:4]:
+        ig_terms_list.append(h)
+    ig_q = f"site:instagram.com ({' OR '.join(ig_terms_list)})" if ig_terms_list else ""
 
     # 3. Twitter / X Query
-    tw_terms = " OR ".join(clean_query_handles[:6]) if clean_query_handles else ""
-    tw_q = f"site:x.com ({tw_terms})" if tw_terms else ""
+    tw_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
-        tw_q = f'{tw_q} OR (site:x.com "{resolved_name}")' if tw_q else f'site:x.com "{resolved_name}"'
+        tw_terms_list.append(f'"{resolved_name}"')
+    for h in clean_query_handles[:4]:
+        tw_terms_list.append(h)
+    tw_q = f"site:x.com ({' OR '.join(tw_terms_list)})" if tw_terms_list else ""
 
     # 4. Facebook Query
-    fb_terms = []
+    fb_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
-        fb_terms.append(f'"{resolved_name}"')
+        fb_terms_list.append(f'"{resolved_name}"')
     for h in clean_query_handles[:3]:
-        fb_terms.append(f'"{h}"')
-    fb_q = f'(site:facebook.com OR site:facebook.com/people) ({" OR ".join(fb_terms)})' if fb_terms else ""
+        fb_terms_list.append(f'"{h}"')
+    fb_q = f'(site:facebook.com OR site:facebook.com/people) ({" OR ".join(fb_terms_list)})' if fb_terms_list else ""
 
     queries = [("instagram", ig_q), ("twitter", tw_q), ("facebook", fb_q)]
 
-    # Additional targeted queries for dot/version/number patterns (e.g. ahtisham.v2, ahtisham.v3, dameesha_09)
-    pattern_handles = [h for h in handles_to_probe if any(pat in h for pat in (".v", "_v", "_0", "_1", "_2"))][:6]
+    # Additional targeted queries for dot/version/number patterns (e.g. ahtisham.v2, ahtisham.v3, dameesha_09, _momina0, momina0_, mr.sharafat760)
+    pattern_handles = [h for h in handles_to_probe if any(pat in h for pat in (".v", "_v", "_0", "0_", "09", "_01", "_02", "mr.", "mr_"))][:10]
     if pattern_handles:
         pattern_terms = " OR ".join([f'"{h}"' for h in pattern_handles])
         queries.append(("instagram", f"site:instagram.com ({pattern_terms})"))
@@ -636,6 +694,32 @@ async def search_social_candidates(
             snippet = item.get("snippet", "")
 
             parsed = parse_social_url(link)
+            if not parsed:
+                # If link is a post/reel/status, attempt to extract authentic profile handle from title or snippet
+                combined_meta = f"{title} {snippet}"
+                if platform_tag == "instagram" and "instagram.com" in link:
+                    ig_at_matches = re.findall(r"@([a-zA-Z0-9_.]{3,30})", combined_meta)
+                    for h_cand in ig_at_matches:
+                        clean_h = h_cand.strip("._")
+                        if clean_h.lower() not in ("instagram", "reel", "reels", "p", "explore", "threads", "meta", "stories"):
+                            parsed = {
+                                "platform": "instagram",
+                                "platform_label": "Instagram",
+                                "handle": h_cand,
+                                "url": f"https://www.instagram.com/{h_cand}",
+                            }
+                            break
+                    if not parsed:
+                        by_match = re.search(r"(?:Photos?|Reel|Video|Post)\s+by\s+([a-zA-Z0-9_.]{3,30})", combined_meta, re.IGNORECASE)
+                        if by_match:
+                            h_by = by_match.group(1).strip("._")
+                            if h_by.lower() not in ("instagram", "reel", "reels", "p", "explore"):
+                                parsed = {
+                                "platform": "instagram",
+                                "platform_label": "Instagram",
+                                "handle": h_by,
+                                "url": f"https://www.instagram.com/{h_by}",
+                            }
             if not parsed:
                 continue
 
