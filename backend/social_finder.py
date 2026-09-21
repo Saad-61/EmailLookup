@@ -270,6 +270,23 @@ def parse_social_url(url: str) -> Optional[Dict[str, str]]:
                 "url": f"https://www.facebook.com/{handle}",
             }
 
+    # LinkedIn (e.g. linkedin.com/in/sarah-jenkins or linkedin.com/in/sarahjenkins/)
+    if "linkedin.com/in/" in clean:
+        li_match = re.search(
+            r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/in/([a-zA-Z0-9_/%-]+)",
+            clean,
+            re.IGNORECASE,
+        )
+        if li_match:
+            slug = li_match.group(1).split("?")[0].rstrip("/")
+            if slug.lower() not in ("dir", "pub", "feed", "jobs", "company", "school", "pulse", "posts", "learning"):
+                return {
+                    "platform": "linkedin",
+                    "platform_label": "LinkedIn",
+                    "handle": slug,
+                    "url": f"https://www.linkedin.com/in/{slug}",
+                }
+
     return None
 
 
@@ -278,6 +295,16 @@ def extract_name_from_title(title: str, platform: str) -> Optional[str]:
     if not title:
         return None
     t = title.strip()
+    # If LinkedIn title: e.g. "Sarah Jenkins - Senior Recruiter - Stripe | LinkedIn"
+    if platform == "linkedin" or "linkedin" in title.lower():
+        t = re.sub(r"\s*\|\s*LinkedIn.*$", "", t, flags=re.IGNORECASE)
+        t = re.sub(r"\s*-\s*LinkedIn.*$", "", t, flags=re.IGNORECASE)
+        segments = re.split(r"\s*[-–|•]\s*", t)
+        if segments and len(segments[0].strip()) >= 2:
+            name_part = segments[0].strip()
+            name_part = re.sub(r",\s*(?:MBA|PHD|PMP|MD|CPA|ESQ|SHRM-[A-Z]+|BSc|MSc).*$", "", name_part, flags=re.IGNORECASE)
+            return name_part.strip()
+
     # Strip 'on Instagram: ...' or 'on Facebook: ...' or 'on X: ...'
     t = re.sub(r"\s+on\s+(?:Instagram|Twitter|X|Facebook)\s*:.*$", "", t, flags=re.IGNORECASE)
     # Strip after hyphen/bar/bullet platform names (e.g. " - Instagram photos and videos")
@@ -348,6 +375,24 @@ def score_candidate(
         if handle in (rev_concat, f"{last}.{first}", f"{last}_{first}") or handle_norm == rev_concat:
             score += 80
             reasons.append(f"Reverse full-name handle match (@{handle})")
+
+    # 0c. LinkedIn vanity slug & handle corroboration
+    if platform_info.get("platform") == "linkedin":
+        slug_norm = re.sub(r"[-_.]", "", handle)
+        if resolved_name and len(resolved_name.split()) >= 2:
+            name_parts = [p.lower() for p in resolved_name.split() if len(p) >= 2]
+            first, last = name_parts[0], name_parts[-1]
+            concat = f"{first}{last}"
+            rev_concat = f"{last}{first}"
+            if slug_norm.startswith(concat) or slug_norm.startswith(rev_concat):
+                score += 80
+                reasons.append(f"Direct LinkedIn vanity URL match (in/{handle})")
+        for v in all_variations:
+            vl_norm = re.sub(r"[-_.]", "", v.lower())
+            if slug_norm == vl_norm or (len(vl_norm) >= 5 and vl_norm in slug_norm):
+                score += 70
+                reasons.append(f"Handle match with LinkedIn URL (in/{handle})")
+                break
 
     for v in all_variations:
         vl = v.lower()
@@ -507,10 +552,11 @@ async def search_social_candidates(
     resolved_name: Optional[str],
     resolved_location: Optional[str],
     gh_username: Optional[str],
+    company_name: Optional[str] = None,
     client: Optional[httpx.AsyncClient] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
     """
-    Run platform-targeted searches across Instagram, X/Twitter, and Facebook.
+    Run platform-targeted searches across LinkedIn, Instagram, X/Twitter, and Facebook.
     Returns (all_sorted_candidates, candidates_by_platform).
     """
     if client is None or getattr(client, "is_closed", False):
@@ -520,25 +566,28 @@ async def search_social_candidates(
                 resolved_name=resolved_name,
                 resolved_location=resolved_location,
                 gh_username=gh_username,
+                company_name=company_name,
                 client=local_client,
             )
 
     raw_serper = os.getenv("SERPER_API_KEY", "")
     if not raw_serper:
         print("[Social Discovery] ⚠️ SERPER_API_KEY not configured. Skipping candidate discovery.", flush=True)
-        return [], {"instagram": [], "twitter": [], "facebook": []}
+        return [], {"linkedin": [], "instagram": [], "twitter": [], "facebook": []}
 
     specific_handles, stem_handles = generate_handle_variations(email, resolved_name, gh_username)
     handles_to_probe = expand_social_probe_handles(specific_handles, stem_handles, resolved_name)[:35]
     all_variations = specific_handles + stem_handles + handles_to_probe[:25]
     if not all_variations and not resolved_name:
-        return [], {"instagram": [], "twitter": [], "facebook": []}
+        return [], {"linkedin": [], "instagram": [], "twitter": [], "facebook": []}
 
     print(f"\n[Social Discovery] ───────────────────────────────────────────────────", flush=True)
     print(f"[Social Discovery] Initiating social candidate discovery for: {email}", flush=True)
     print(f"[Social Discovery] Specific handles: {specific_handles} | Stems: {stem_handles}", flush=True)
     if resolved_name:
         print(f"[Social Discovery] Anchor name: '{resolved_name}' | Location: '{resolved_location or 'N/A'}'", flush=True)
+    if company_name:
+        print(f"[Social Discovery] Company Anchor: '{company_name}'", flush=True)
 
     headers = {"X-API-KEY": raw_serper.strip(), "Content-Type": "application/json"}
 
@@ -556,7 +605,21 @@ async def search_social_candidates(
     print(f"[Social Discovery] Direct Instagram probes ({len(handles_to_probe)}): {handles_to_probe[:10]}...", flush=True)
     ig_probe_task = asyncio.gather(*[probe_instagram_profile(h, client) for h in handles_to_probe])
 
-    # 2. Instagram Query
+    # 2. LinkedIn Query (High Precision for HR, Corporate & Professional Profiles)
+    li_terms_list = []
+    if resolved_name and len(resolved_name.split()) >= 2:
+        li_terms_list.append(f'"{resolved_name}"')
+    for h in clean_query_handles[:3]:
+        li_terms_list.append(h)
+    
+    if resolved_name and company_name and len(resolved_name.split()) >= 2:
+        li_q = f'site:linkedin.com/in "{resolved_name}" "{company_name}"'
+    elif li_terms_list:
+        li_q = f"site:linkedin.com/in ({' OR '.join(li_terms_list)})"
+    else:
+        li_q = ""
+
+    # 3. Instagram Query
     ig_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         ig_terms_list.append(f'"{resolved_name}"')
@@ -564,7 +627,7 @@ async def search_social_candidates(
         ig_terms_list.append(h)
     ig_q = f"site:instagram.com ({' OR '.join(ig_terms_list)})" if ig_terms_list else ""
 
-    # 3. Twitter / X Query
+    # 4. Twitter / X Query
     tw_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         tw_terms_list.append(f'"{resolved_name}"')
@@ -572,7 +635,7 @@ async def search_social_candidates(
         tw_terms_list.append(h)
     tw_q = f"site:x.com ({' OR '.join(tw_terms_list)})" if tw_terms_list else ""
 
-    # 4. Facebook Query
+    # 5. Facebook Query
     fb_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         fb_terms_list.append(f'"{resolved_name}"')
@@ -580,7 +643,11 @@ async def search_social_candidates(
         fb_terms_list.append(f'"{h}"')
     fb_q = f'(site:facebook.com OR site:facebook.com/people) ({" OR ".join(fb_terms_list)})' if fb_terms_list else ""
 
-    queries = [("instagram", ig_q), ("twitter", tw_q), ("facebook", fb_q)]
+    queries = [("linkedin", li_q), ("instagram", ig_q), ("twitter", tw_q), ("facebook", fb_q)]
+
+    # Exact work email LinkedIn query if corporate
+    if email and not any(email.endswith(d) for d in ("@gmail.com", "@yahoo.com", "@hotmail.com", "@outlook.com", "@live.com")):
+        queries.append(("linkedin", f'"{email}" site:linkedin.com/in'))
 
     # Additional targeted queries for dot/version/number patterns (e.g. ahtisham.v2, ahtisham.v3, dameesha_09, _momina0, momina0_, mr.sharafat760)
     pattern_handles = [h for h in handles_to_probe if any(pat in h for pat in (".v", "_v", "_0", "0_", "09", "_01", "_02", "mr.", "mr_"))][:10]
@@ -619,6 +686,7 @@ async def search_social_candidates(
         if raw_exa:
             try:
                 domain_map = {
+                    "linkedin": ["linkedin.com"],
                     "instagram": ["instagram.com"],
                     "twitter": ["x.com", "twitter.com"],
                     "facebook": ["facebook.com"],
@@ -820,13 +888,14 @@ async def search_social_candidates(
 
     # Group by platform (up to 10 candidates per platform accordion)
     by_platform = {
+        "linkedin": [c for c in all_candidates if c["platform"] == "linkedin"][:10],
         "instagram": [c for c in all_candidates if c["platform"] == "instagram"][:10],
         "twitter": [c for c in all_candidates if c["platform"] == "twitter"][:10],
         "facebook": [c for c in all_candidates if c["platform"] == "facebook"][:10],
     }
 
     total_count = sum(len(v) for v in by_platform.values())
-    print(f"[Social Discovery] Total ranked candidates: {total_count} (IG: {len(by_platform['instagram'])}, X: {len(by_platform['twitter'])}, FB: {len(by_platform['facebook'])})", flush=True)
+    print(f"[Social Discovery] Total ranked candidates: {total_count} (LI: {len(by_platform['linkedin'])}, IG: {len(by_platform['instagram'])}, X: {len(by_platform['twitter'])}, FB: {len(by_platform['facebook'])})", flush=True)
     if all_candidates:
         top = all_candidates[0]
         print(f"[Social Discovery] Top candidate: [{top['platform']}] {top['handle']} - {top['name']} ({top['score']}%)", flush=True)

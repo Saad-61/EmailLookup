@@ -1961,34 +1961,34 @@ async def run_lookup(email: str) -> dict:
     if company and company.get("name"):
         print(f"[Company] [+] Workplace identified: {company['name']} ({company.get('domain', '')})", flush=True)
 
-    # ── Discover Candidate Social Accounts (Twitter/X, Instagram, Facebook) ──
+    # ── Discover Candidate Social Accounts (LinkedIn, Twitter/X, Instagram, Facebook) ──
     gh_user = github.get("username") if (github and isinstance(github, dict)) else None
+    comp_name = company.get("name") if (company and isinstance(company, dict)) else None
     social_candidates = []
-    candidates_by_platform = {"instagram": [], "twitter": [], "facebook": []}
+    candidates_by_platform = {"linkedin": [], "instagram": [], "twitter": [], "facebook": []}
     try:
         raw_candidates, by_plat = await search_social_candidates(
             email=email,
             resolved_name=resolved_name,
             resolved_location=resolved_location,
             gh_username=gh_user,
+            company_name=comp_name,
             client=client,
         )
-        verified_platforms = {
-            "twitter" if profiles.get("twitter") else None,
-            "instagram" if profiles.get("instagram") else None,
-            "facebook" if profiles.get("facebook") else None,
+        verified_urls = {
+            prof.get("url") for prof in profiles.values() if isinstance(prof, dict) and prof.get("url")
         }
         social_candidates = [
-            c for c in raw_candidates if c.get("platform") not in verified_platforms
+            c for c in raw_candidates if c.get("url") not in verified_urls
         ]
         candidates_by_platform = {
-            p: [c for c in clist if c.get("platform") not in verified_platforms]
+            p: [c for c in clist if c.get("url") not in verified_urls]
             for p, clist in by_plat.items()
         }
     except Exception as e:
         print(f"[Social Discovery] Candidate search error: {e}", flush=True)
         social_candidates = []
-        candidates_by_platform = {"instagram": [], "twitter": [], "facebook": []}
+        candidates_by_platform = {"linkedin": [], "instagram": [], "twitter": [], "facebook": []}
 
     # ── Fallback Person Display Name from Clean Email Username ──
     # Note: Speculative social candidates are never promoted to the person card to prevent unverified data pollution
