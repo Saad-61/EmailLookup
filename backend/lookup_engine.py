@@ -1941,22 +1941,42 @@ async def run_lookup(email: str) -> dict:
             "commit_timezone": github.get("commit_timezone"),
         }
 
-    # Direct socials from verified GitHub & Gravatar profiles (100% confidence)
+    # Direct socials from verified GitHub & Gravatar profiles (100% confirmed)
     dir_twitter = (github.get("twitter_url") if isinstance(github, dict) else None) or (gravatar.get("twitter_url") if isinstance(gravatar, dict) else None)
     if dir_twitter:
-        profiles["twitter"] = dir_twitter
+        profiles["twitter"] = {
+            "url": dir_twitter,
+            "source": "github" if (github and github.get("twitter_url")) else "gravatar",
+            "confidence": 100,
+            "verified": True,
+        }
 
     dir_instagram = (github.get("instagram_url") if isinstance(github, dict) else None) or (gravatar.get("instagram_url") if isinstance(gravatar, dict) else None)
     if dir_instagram:
-        profiles["instagram"] = dir_instagram
+        profiles["instagram"] = {
+            "url": dir_instagram,
+            "source": "github" if (github and github.get("instagram_url")) else "gravatar",
+            "confidence": 100,
+            "verified": True,
+        }
 
     dir_facebook = (github.get("facebook_url") if isinstance(github, dict) else None) or (gravatar.get("facebook_url") if isinstance(gravatar, dict) else None)
     if dir_facebook:
-        profiles["facebook"] = dir_facebook
+        profiles["facebook"] = {
+            "url": dir_facebook,
+            "source": "github" if (github and github.get("facebook_url")) else "gravatar",
+            "confidence": 100,
+            "verified": True,
+        }
 
     dir_youtube = gravatar.get("youtube_url") if isinstance(gravatar, dict) else None
     if dir_youtube:
-        profiles["youtube"] = dir_youtube
+        profiles["youtube"] = {
+            "url": dir_youtube,
+            "source": "gravatar",
+            "confidence": 100,
+            "verified": True,
+        }
 
     if github and isinstance(github, dict) and github.get("username"):
         print(f"[GitHub] [+] Found user: @{github['username']} (repos={github.get('repos')}, followers={github.get('followers')})", flush=True)
@@ -1986,48 +2006,39 @@ async def run_lookup(email: str) -> dict:
             company_name=comp_name,
             client=client,
         )
-        # ── Strict Single vs Multiple Candidate Resolution Rule ──
-        # Rule: A platform must appear EXACTLY ONCE on the page.
-        # - If 1 candidate exists (or base search found 1 match), enrich profiles[platform] with full card details
-        #   (name, handle, snippet, avatar) and CLEAR by_plat[platform] so NO candidate accordion is rendered below.
-        # - If MULTIPLE candidates (>=2) exist, remove any speculative single chip from profiles[platform]
-        #   and keep all candidates in by_plat[platform] to render inside the accordion.
-        for p in ["linkedin", "instagram", "twitter", "facebook"]:
-            cands = by_plat.get(p, [])
-            if len(cands) == 1:
-                top_c = cands[0]
-                existing_prof = profiles.get(p)
-                p_url = (existing_prof if isinstance(existing_prof, str) else (existing_prof.get("url") if isinstance(existing_prof, dict) else None)) or top_c.get("url")
-                p_conf = profiles.get(f"{p}_confidence", top_c.get("score", 85))
-                p_src = profiles.get(f"{p}_source", "search")
-                
-                profiles[p] = {
-                    "url": p_url,
-                    "name": top_c.get("name") or resolved_name,
-                    "handle": top_c.get("handle"),
-                    "snippet": top_c.get("snippet") or top_c.get("title"),
-                    "title": top_c.get("title"),
-                    "avatar_url": top_c.get("avatar_url"),
-                    "confidence": p_conf,
-                    "source": p_src,
-                }
-                by_plat[p] = []  # CLEAR list so no redundant candidate accordion is generated!
-            elif len(cands) >= 2:
-                # If multiple candidates exist and primary profile is not 100% verified, remove single profile entry
-                p_conf = profiles.get(f"{p}_confidence", 0)
-                if p_conf < 100:
-                    profiles.pop(p, None)
 
-        verified_urls = {
-            prof.get("url") for prof in profiles.values() if isinstance(prof, dict) and prof.get("url")
-        }
-        social_candidates = [
-            c for c in raw_candidates if c.get("url") not in verified_urls
-        ]
-        candidates_by_platform = {
-            p: [c for c in clist if c.get("url") not in verified_urls]
-            for p, clist in by_plat.items()
-        }
+        # ── Zero Duplicate Platform Rule ──
+        # 1. If a platform has a direct verified link (from GitHub, Gravatar, Wikidata, or Harvested DB),
+        #    it is kept in top profiles. Any discovered candidate with that exact URL is pruned.
+        # 2. If a platform does NOT have a direct verified link from GitHub/Gravatar/Wikidata,
+        #    it is NOT put in top profiles. ALL discovered candidates are cleanly listed in the
+        #    candidate accordion for that platform (e.g. LinkedIn Candidates, Instagram Candidates).
+        for p in ["linkedin", "instagram", "twitter", "facebook"]:
+            prof = profiles.get(p)
+            is_direct_verified = False
+            if isinstance(prof, dict):
+                is_direct_verified = (
+                    prof.get("verified") is True
+                    or prof.get("source") in ("github", "gravatar", "wikidata", "harvested")
+                )
+            elif isinstance(prof, str):
+                is_direct_verified = (
+                    linkedin_source in ("wikidata", "github", "gravatar", "harvested")
+                    if p == "linkedin" else False
+                )
+
+            if is_direct_verified:
+                # Platform is already confirmed and verified in top profiles — clear candidate accordion
+                by_plat[p] = []
+            else:
+                # No confirmed direct profile exists — remove from top profiles so it only appears in candidate accordion
+                profiles.pop(p, None)
+                profiles.pop(f"{p}_confidence", None)
+                profiles.pop(f"{p}_verified", None)
+                profiles.pop(f"{p}_source", None)
+
+        social_candidates = raw_candidates
+        candidates_by_platform = by_plat
     except Exception as e:
         print(f"[Social Discovery] Candidate search error: {e}", flush=True)
         social_candidates = []

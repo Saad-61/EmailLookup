@@ -255,25 +255,27 @@ function renderLookupResults(data) {
   const profilesList = document.getElementById("profiles-list");
   const chips = [];
 
-  // Helper to parse profile values whether string URL or single candidate object
+  // Helper to parse profile values whether string URL or verified profile object
   function parseProfileVal(val, defaultLabel) {
     if (!val) return null;
     if (typeof val === "string") {
       const cleanUrl = val.trim();
       const rawHandle = (cleanUrl.split("/").filter(Boolean).pop() || "").replace(/^@/, "");
-      return { url: cleanUrl, name: defaultLabel, handle: rawHandle ? `@${rawHandle}` : "", snippet: "", avatar_url: null, isObject: false };
+      return { url: cleanUrl, name: defaultLabel, handle: rawHandle ? `@${rawHandle}` : "", snippet: "", avatar_url: null, isObject: false, verified: false, source: "" };
     }
     if (typeof val === "object") {
       const cleanUrl = (val.url || "").trim();
       const rawHandle = (val.handle || val.username || cleanUrl.split("/").filter(Boolean).pop() || "").replace(/^@/, "");
+      const isConfirmed = val.verified === true || ["github", "gravatar", "wikidata", "harvested"].includes(val.source);
       return {
         url: cleanUrl,
         name: val.name || defaultLabel,
         handle: rawHandle ? `@${rawHandle}` : "",
         snippet: val.snippet || val.title || "",
         avatar_url: val.avatar_url || null,
-        confidence: val.confidence || 100,
+        confidence: val.confidence || (isConfirmed ? 100 : 80),
         source: val.source || "",
+        verified: isConfirmed,
         isObject: true,
       };
     }
@@ -283,6 +285,8 @@ function renderLookupResults(data) {
   if (profiles.linkedin) {
     const p = parseProfileVal(profiles.linkedin, "LinkedIn Profile");
     if (p && p.url) {
+      const isDirect = p.verified || ["wikidata", "github", "gravatar", "harvested"].includes(p.source);
+      const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
       if (p.isObject && (p.snippet || p.avatar_url || p.name)) {
         chips.push(renderSingleProfileCard({
           platform: "linkedin",
@@ -292,11 +296,9 @@ function renderLookupResults(data) {
           handle: p.handle,
           snippet: p.snippet,
           avatar_url: p.avatar_url,
-          badgeHtml: p.confidence === 100 ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : ""
+          badgeHtml: badgeHtml,
         }));
       } else {
-        const isDirect = (p.source === "wikidata" || p.source === "github" || p.source === "gravatar" || p.source === "harvested" || p.confidence === 100);
-        const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
         chips.push(buildProfileChip({
           href: p.url,
           iconClass: "linkedin-icon",
@@ -324,6 +326,8 @@ function renderLookupResults(data) {
   if (profiles.twitter) {
     const p = parseProfileVal(profiles.twitter, "X / Twitter");
     if (p && p.url) {
+      const isDirect = p.verified || ["github", "gravatar"].includes(p.source);
+      const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
       if (p.isObject && (p.snippet || p.avatar_url)) {
         chips.push(renderSingleProfileCard({
           platform: "twitter",
@@ -333,15 +337,15 @@ function renderLookupResults(data) {
           handle: p.handle,
           snippet: p.snippet,
           avatar_url: p.avatar_url,
-          badgeHtml: `<span class="badge-confidence verified">✓ 100% Verified</span>`
+          badgeHtml: badgeHtml,
         }));
       } else {
         chips.push(buildProfileChip({
           href: p.url,
           iconClass: "twitter-icon",
           iconContent: "𝕏",
-          name: `X / Twitter <span class="badge-confidence verified">✓ 100% Verified</span>`,
-          sub: `${p.handle || "Verified Account"} · Profile Link →`,
+          name: `X / Twitter ${badgeHtml}`,
+          sub: `${p.handle || (isDirect ? "Verified Account" : "Profile Link")} · Profile Link →`,
         }));
       }
     }
@@ -350,6 +354,8 @@ function renderLookupResults(data) {
   if (profiles.instagram) {
     const p = parseProfileVal(profiles.instagram, "Instagram");
     if (p && p.url) {
+      const isDirect = p.verified || ["github", "gravatar"].includes(p.source);
+      const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
       if (p.isObject && (p.snippet || p.avatar_url)) {
         chips.push(renderSingleProfileCard({
           platform: "instagram",
@@ -359,15 +365,15 @@ function renderLookupResults(data) {
           handle: p.handle,
           snippet: p.snippet,
           avatar_url: p.avatar_url,
-          badgeHtml: `<span class="badge-confidence verified">✓ 100% Verified</span>`
+          badgeHtml: badgeHtml,
         }));
       } else {
         chips.push(buildProfileChip({
           href: p.url,
           iconClass: "instagram-icon",
           iconContent: "📸",
-          name: `Instagram <span class="badge-confidence verified">✓ 100% Verified</span>`,
-          sub: `${p.handle || "Verified Account"} · Profile Link →`,
+          name: `Instagram ${badgeHtml}`,
+          sub: `${p.handle || (isDirect ? "Verified Account" : "Profile Link")} · Profile Link →`,
         }));
       }
     }
@@ -376,6 +382,8 @@ function renderLookupResults(data) {
   if (profiles.facebook) {
     const p = parseProfileVal(profiles.facebook, "Facebook");
     if (p && p.url) {
+      const isDirect = p.verified || ["github", "gravatar"].includes(p.source);
+      const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
       if (p.isObject && (p.snippet || p.avatar_url)) {
         chips.push(renderSingleProfileCard({
           platform: "facebook",
@@ -385,15 +393,15 @@ function renderLookupResults(data) {
           handle: p.handle,
           snippet: p.snippet,
           avatar_url: p.avatar_url,
-          badgeHtml: `<span class="badge-confidence verified">✓ 100% Verified</span>`
+          badgeHtml: badgeHtml,
         }));
       } else {
         chips.push(buildProfileChip({
           href: p.url,
           iconClass: "facebook-icon",
           iconContent: "fb",
-          name: `Facebook <span class="badge-confidence verified">✓ 100% Verified</span>`,
-          sub: `${p.handle || "Verified Account"} · Profile Link →`,
+          name: `Facebook ${badgeHtml}`,
+          sub: `${p.handle || (isDirect ? "Verified Account" : "Profile Link")} · Profile Link →`,
         }));
       }
     }
@@ -402,12 +410,14 @@ function renderLookupResults(data) {
   if (profiles.youtube) {
     const p = parseProfileVal(profiles.youtube, "YouTube");
     if (p && p.url) {
+      const isDirect = p.verified || ["gravatar"].includes(p.source);
+      const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
       chips.push(buildProfileChip({
         href: p.url,
         iconClass: "youtube-icon",
         iconContent: "▶",
-        name: `YouTube <span class="badge-confidence verified">✓ 100% Verified</span>`,
-        sub: `Verified Channel →`,
+        name: `YouTube ${badgeHtml}`,
+        sub: isDirect ? "Verified Channel →" : "Profile Link →",
       }));
     }
   }
