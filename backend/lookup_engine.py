@@ -1183,6 +1183,8 @@ async def search_linkedin_anchored(
         target_handle = item.get("target_handle", "")
         anchor = item.get("anchor", "")
 
+        print(f"[LinkedIn Search] Sending query ({item.get('type', 'heuristic')}): {query}", flush=True)
+
         # ── Strategy 1: Serper.dev (Google Real-Time Search API: ~250ms latency) ──
         if raw_serper:
             try:
@@ -1193,7 +1195,9 @@ async def search_linkedin_anchored(
                     timeout=3.5,
                 )
                 if s_resp.status_code == 200:
-                    for r in s_resp.json().get("organic", []):
+                    org = s_resp.json().get("organic", [])
+                    print(f"[LinkedIn Search] Serper -> HTTP 200, {len(org)} organic items", flush=True)
+                    for r in org:
                         link = r.get("link", "")
                         if "linkedin.com/in/" not in link or "/in/dir/" in link or "/pub/dir/" in link:
                             continue
@@ -1202,9 +1206,12 @@ async def search_linkedin_anchored(
                         snippet = r.get("snippet", "").lower()
                         is_valid, conf = is_valid_linkedin_candidate(clean_url, title, snippet, target_handle, target_name, anchor)
                         if is_valid:
+                            print(f"[LinkedIn Search] ✓ Verified LinkedIn candidate: {clean_url} (Confidence: {conf}%)", flush=True)
                             return clean_url, None, conf
-            except Exception:
-                pass
+                else:
+                    print(f"[LinkedIn Search] [-] Serper status={s_resp.status_code}", flush=True)
+            except Exception as e:
+                print(f"[LinkedIn Search] [-] Serper error: {e}", flush=True)
 
         # ── Strategy 1.5: Exa AI Search API ──
         raw_exa = EXA_API_KEY or os.getenv("EXA_API_KEY", "")
@@ -1217,7 +1224,9 @@ async def search_linkedin_anchored(
                     timeout=4.0,
                 )
                 if e_resp.status_code == 200:
-                    for r in e_resp.json().get("results", []):
+                    exa_results = e_resp.json().get("results", [])
+                    print(f"[LinkedIn Search] Exa.ai -> HTTP 200, {len(exa_results)} results", flush=True)
+                    for r in exa_results:
                         link = r.get("url", "")
                         if "linkedin.com/in/" not in link or "/in/dir/" in link or "/pub/dir/" in link:
                             continue
@@ -1226,9 +1235,10 @@ async def search_linkedin_anchored(
                         snippet = (r.get("text") or "").lower()
                         is_valid, conf = is_valid_linkedin_candidate(clean_url, title, snippet, target_handle, target_name, anchor)
                         if is_valid:
+                            print(f"[LinkedIn Search] ✓ Verified LinkedIn candidate (Exa): {clean_url} (Confidence: {conf}%)", flush=True)
                             return clean_url, None, conf
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[LinkedIn Search] [-] Exa error: {e}", flush=True)
 
         # ── Strategy 2: DuckDuckGo Lite Fallback (Fast HTML POST) ──
         try:
@@ -1251,6 +1261,7 @@ async def search_linkedin_anchored(
                             clean_url = match.group(1).split("?")[0].rstrip("/")
                             is_valid, conf = is_valid_linkedin_candidate(clean_url, title, "", target_handle, target_name, anchor)
                             if is_valid:
+                                print(f"[LinkedIn Search] ✓ Verified LinkedIn candidate (DDG): {clean_url} (Confidence: {conf}%)", flush=True)
                                 return clean_url, None, conf
         except Exception:
             pass
