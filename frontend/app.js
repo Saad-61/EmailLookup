@@ -256,24 +256,32 @@ function renderLookupResults(data) {
   const chips = [];
 
   if (profiles.linkedin) {
-    const conf = profiles.linkedin_confidence || (profiles.linkedin_verified ? 100 : 85);
-    const src = profiles.linkedin_source || "";
-    let subText = "Corroborated Match →";
-    if (src === "wikidata") subText = "Authoritative Wikidata Entity →";
-    else if (src === "github") subText = "Verified in GitHub Profile →";
-    else if (src === "gravatar") subText = "Verified in Gravatar Profile →";
-    else if (src === "harvested") subText = "Verified Public Record →";
-    else if (conf === 100) subText = "100% Corroborated Match →";
-
-    const isDirect = (src === "wikidata" || src === "github" || src === "gravatar" || src === "harvested" || conf === 100);
-    const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
-    chips.push(buildProfileChip({
-      href: profiles.linkedin,
-      iconClass: "linkedin-icon",
-      iconContent: "in",
-      name: `LinkedIn ${badgeHtml}`,
-      sub: subText,
-    }));
+    const li = profiles.linkedin;
+    if (typeof li === "object" && (li.name || li.snippet || li.handle)) {
+      chips.push(renderSingleProfileCard({
+        platform: "linkedin",
+        platform_label: "LinkedIn Profile",
+        url: li.url,
+        name: li.name || "LinkedIn Profile",
+        handle: li.handle || "",
+        snippet: li.snippet || li.title || "",
+        avatar_url: li.avatar_url,
+        badgeHtml: li.confidence === 100 ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : ""
+      }));
+    } else {
+      const liUrl = typeof li === "string" ? li : (li.url || "");
+      const conf = profiles.linkedin_confidence || (profiles.linkedin_verified ? 100 : 85);
+      const src = profiles.linkedin_source || "";
+      const isDirect = (src === "wikidata" || src === "github" || src === "gravatar" || src === "harvested" || conf === 100);
+      const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
+      chips.push(buildProfileChip({
+        href: liUrl,
+        iconClass: "linkedin-icon",
+        iconContent: "in",
+        name: `LinkedIn ${badgeHtml}`,
+        sub: isDirect ? "Verified Account →" : "Profile Link →",
+      }));
+    }
   }
 
   if (profiles.github) {
@@ -521,6 +529,61 @@ function buildProfileChip({ href, iconClass, iconContent, name, sub }) {
         <line x1="10" y1="14" x2="21" y2="3"/>
       </svg>
     </a>
+  `;
+}
+
+function renderSingleProfileCard(c) {
+  const pIconClass = c.platform === "linkedin"
+    ? "linkedin-icon"
+    : c.platform === "twitter"
+    ? "twitter-icon"
+    : c.platform === "instagram"
+    ? "instagram-icon"
+    : "facebook-icon";
+  const pIconSymbol = c.platform === "linkedin"
+    ? "in"
+    : c.platform === "twitter"
+    ? "𝕏"
+    : c.platform === "instagram"
+    ? "📸"
+    : "fb";
+
+  const snippetHtml = c.snippet ? `<div class="candidate-snippet" style="margin-top:6px; color:var(--c-text-secondary); font-size:13px; line-height:1.4;">${escapeHtml(c.snippet)}</div>` : "";
+
+  const avatarImgHtml = c.avatar_url ? `
+    <img src="${escapeHtml(c.avatar_url)}" class="candidate-avatar" alt="${escapeHtml(c.handle || c.name)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+    <div class="profile-chip-icon ${pIconClass}" style="display: none;">${pIconSymbol}</div>
+  ` : `
+    <div class="profile-chip-icon ${pIconClass}">${pIconSymbol}</div>
+  `;
+
+  return `
+    <div class="candidate-card" style="width:100%; border:1px solid var(--c-border); border-radius:var(--radius-sm); padding:14px; background:var(--c-surface); margin-bottom:10px;">
+      <div class="candidate-main">
+        <div class="candidate-header">
+          <div class="candidate-avatar-wrapper">
+            ${avatarImgHtml}
+          </div>
+          <div class="candidate-info">
+            <div class="candidate-name-row">
+              <span class="candidate-name">${escapeHtml(c.name)}</span>
+              ${c.handle ? `<span class="candidate-handle">${escapeHtml(c.handle)}</span>` : ""}
+              ${c.badgeHtml || ""}
+            </div>
+            <div class="candidate-platform-sub" style="color:var(--c-muted); font-size:12px;">${escapeHtml(c.platform_label)}</div>
+          </div>
+        </div>
+        ${snippetHtml}
+      </div>
+      <a href="${c.url}" target="_blank" rel="noopener noreferrer" class="candidate-action-btn">
+        <span>View</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+          <polyline points="15 3 21 3 21 9"/>
+          <line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
+      </a>
+    </div>
   `;
 }
 

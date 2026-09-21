@@ -1986,6 +1986,28 @@ async def run_lookup(email: str) -> dict:
             company_name=comp_name,
             client=client,
         )
+        # ── Single vs Multiple Candidate Promotion Rule ──
+        # If there is ONLY 1 candidate profile for a platform, promote its full details into profiles[platform]
+        # and clear by_plat[platform] so NO duplicate accordion is rendered below it.
+        # If there are MULTIPLE candidate profiles (>=2), do NOT promote a single candidate to profiles[platform].
+        # Keep all of them in candidates_by_platform[platform] to render together inside the candidate accordion.
+        for p in ["linkedin", "instagram", "twitter", "facebook"]:
+            cands = by_plat.get(p, [])
+            if not profiles.get(p):
+                if len(cands) == 1:
+                    top_c = cands[0]
+                    profiles[p] = {
+                        "url": top_c.get("url"),
+                        "name": top_c.get("name"),
+                        "handle": top_c.get("handle"),
+                        "snippet": top_c.get("snippet") or top_c.get("title"),
+                        "title": top_c.get("title"),
+                        "avatar_url": top_c.get("avatar_url"),
+                        "confidence": top_c.get("score", 85),
+                        "source": "search",
+                    }
+                    by_plat[p] = []  # Clear list so no redundant 1-found accordion is created!
+
         verified_urls = {
             prof.get("url") for prof in profiles.values() if isinstance(prof, dict) and prof.get("url")
         }
