@@ -895,16 +895,16 @@ async def search_social_candidates(
                                 }
                                 break
                     if not parsed:
-                        by_match = re.search(r"(?:Photos?|Reel|Video|Post)\s+by\s+([a-zA-Z0-9_.]{3,30})", combined_meta, re.IGNORECASE)
+                        by_match = re.search(r"(?:Photos?|Reels?|Videos?|Posts?)\s+by\s+([a-zA-Z0-9_.]{3,30})", combined_meta, re.IGNORECASE)
                         if by_match:
                             h_by = by_match.group(1).strip("._")
                             if h_by.lower() not in ("instagram", "reel", "reels", "p", "explore"):
                                 parsed = {
-                                "platform": "instagram",
-                                "platform_label": "Instagram",
-                                "handle": h_by,
-                                "url": f"https://www.instagram.com/{h_by}",
-                            }
+                                    "platform": "instagram",
+                                    "platform_label": "Instagram",
+                                    "handle": h_by,
+                                    "url": f"https://www.instagram.com/{h_by}",
+                                }
             if not parsed:
                 continue
 
@@ -916,8 +916,8 @@ async def search_social_candidates(
                 parsed, title, snippet, all_variations, resolved_name, resolved_location, gh_username
             )
 
-            # Accept all candidates with score >= 15 so no valid candidates are hidden
-            if score < 15:
+            # Accept all candidates with score >= 5 so no valid candidates are hidden
+            if score < 5:
                 continue
 
             display_name = extract_name_from_title(title, platform) or handle
