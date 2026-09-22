@@ -303,6 +303,14 @@ def extract_name_from_title(title: str, platform: str) -> Optional[str]:
     if not title:
         return None
     t = title.strip()
+
+    # If 'Photo by Name' or 'Video by Name' or 'Instagram photo by Name' exists in full title, extract Name directly!
+    by_match = re.search(r"(?:Photos?|Reels?|Videos?|Posts?)\s+by\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", t, flags=re.IGNORECASE)
+    if by_match:
+        cand_name = by_match.group(1).strip()
+        if len(cand_name) >= 3 and cand_name.lower() not in ("instagram", "facebook", "twitter", "x"):
+            return cand_name
+
     # If LinkedIn title: e.g. "Sarah Jenkins - Senior Recruiter - Stripe | LinkedIn"
     if platform == "linkedin" or "linkedin" in title.lower():
         t = re.sub(r"\s*\|\s*LinkedIn.*$", "", t, flags=re.IGNORECASE)
@@ -312,6 +320,15 @@ def extract_name_from_title(title: str, platform: str) -> Optional[str]:
             name_part = segments[0].strip()
             name_part = re.sub(r",\s*(?:MBA|PHD|PMP|MD|CPA|ESQ|SHRM-[A-Z]+|BSc|MSc).*$", "", name_part, flags=re.IGNORECASE)
             return name_part.strip()
+
+    # Check across segments for a clean name if first segment is a post caption (e.g. "Getting ready for • Instagram photo by Guy Kawasaki")
+    segments = re.split(r"\s*[-–|•·]\s*", t)
+    for seg in segments:
+        seg_s = seg.strip()
+        # Look for 'by Name' in segment
+        b_m = re.search(r"\bby\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)", seg_s, flags=re.IGNORECASE)
+        if b_m:
+            return b_m.group(1).strip()
 
     # Strip 'on Instagram: ...' or 'on Facebook: ...' or 'on X: ...'
     t = re.sub(r"\s+on\s+(?:Instagram|Twitter|X|Facebook)\s*:.*$", "", t, flags=re.IGNORECASE)
@@ -324,8 +341,8 @@ def extract_name_from_title(title: str, platform: str) -> Optional[str]:
     # Strip @handle suffix e.g. 'John Doe (@johndoe)'
     t = re.sub(r"\s*\(?@[a-zA-Z0-9_.]+\)?.*$", "", t)
     # Strip 'Photo by' / 'Reel by' / 'Video by'
-    t = re.sub(r"^(?:Photos?|Reel|Video|Post)\s+by\s+", "", t, flags=re.IGNORECASE)
-    # Cut off at first slash or pipe if it contains bio/profession tags like 'Mehek Rauf / TORONTO REALTOR'
+    t = re.sub(r"^(?:Photos?|Reels?|Videos?|Posts?)\s+by\s+", "", t, flags=re.IGNORECASE)
+    # Cut off at first slash or pipe
     if "/" in t:
         parts = t.split("/")
         if len(parts[0].strip()) >= 2:
@@ -470,54 +487,39 @@ async def fetch_social_avatar(
     client: httpx.AsyncClient,
 ) -> Optional[str]:
     """
-    Fetch real user avatar URL from OpenGraph metadata or SearXNG Image Search CDN fallback.
-    Returns direct image URL or None.
+    Fetch real user avatar URL from fast direct CDN endpoints or OpenGraph metadata.
+    Returns direct image URL or None without firing additional search engine queries.
     """
-    if not url and not handle:
+    if not handle:
         return None
 
-    clean_handle = handle.lstrip("@").strip() if handle else ""
+    clean_handle = handle.lstrip("@").strip()
 
     # 1. Twitter / X: unavatar service
     if platform == "twitter" and clean_handle:
         return f"https://unavatar.io/x/{clean_handle}"
 
-    # 2. Instagram & Facebook: OpenGraph Crawler + SearXNG Image Search Fallback
-    if platform in ("instagram", "facebook"):
+    # 2. Facebook: Graph API picture URL
+    if platform == "facebook" and clean_handle:
+        return f"https://graph.facebook.com/{clean_handle}/picture?type=large"
+
+    # 3. Instagram: try Meta OpenGraph crawler og:image if url provided
+    if platform == "instagram" and url:
         try:
             headers = {
                 "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             }
-            resp = await client.get(url, headers=headers, timeout=2.5, follow_redirects=True)
+            resp = await client.get(url, headers=headers, timeout=2.0, follow_redirects=True)
             if resp.status_code == 200:
                 soup = BeautifulSoup(resp.text, "html.parser")
                 og_meta = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "og:image"})
                 if og_meta and og_meta.get("content"):
                     c_url = og_meta["content"]
-                    if not any(k in c_url.lower() for k in ("fb_icon", "logo", "default", "static.xx.fbcdn")):
+                    if not any(k in c_url.lower() for k in ("fb_icon", "logo", "default", "static.xx.fbcdn", "rsrc.php")):
                         return c_url
         except Exception:
             pass
-
-        # ── High-Speed SearXNG CDN Image Search Fallback ──
-        if clean_handle:
-            try:
-                searxng_url = os.getenv("SEARXNG_URL", "http://localhost:8888/search")
-                img_q = f"{clean_handle} {platform} profile picture"
-                sx_resp = await client.get(
-                    searxng_url,
-                    params={"q": img_q, "categories": "images", "format": "json"},
-                    timeout=3.0,
-                )
-                if sx_resp.status_code == 200:
-                    raw_results = sx_resp.json().get("results", [])
-                    for r in raw_results:
-                        img_url = r.get("thumbnail_src") or r.get("img_src") or r.get("thumbnail")
-                        if img_url and str(img_url).startswith("http"):
-                            return img_url
-            except Exception as e:
-                print(f"[Avatar Error] {platform} {clean_handle}: {e}", flush=True)
 
     return None
 
