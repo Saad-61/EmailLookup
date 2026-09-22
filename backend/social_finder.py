@@ -706,13 +706,13 @@ async def search_social_candidates(
     
     if li_terms_list:
         if company_name and 1 <= len(company_name.split()) <= 2:
-            li_q = f'site:linkedin.com/in -inurl:/posts/ -inurl:/activity/ -inurl:/pulse/ ({" OR ".join(li_terms_list)}) {company_name.strip()}'
+            li_q = f'site:linkedin.com/in ({" OR ".join(li_terms_list)}) {company_name.strip()}'
         else:
-            li_q = f'site:linkedin.com/in -inurl:/posts/ -inurl:/activity/ -inurl:/pulse/ ({" OR ".join(li_terms_list)})'
+            li_q = f'site:linkedin.com/in ({" OR ".join(li_terms_list)})'
     else:
         li_q = ""
 
-    # Instagram Query: Exclude posts/reels/stories/explore to strictly target account profile pages
+    # Instagram Query: Targeted account search
     ig_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         ig_terms_list.append(f'"{resolved_name}"')
@@ -724,9 +724,9 @@ async def search_social_candidates(
     for ph in pattern_handles:
         if f'"{ph}"' not in ig_terms_list and len(ig_terms_list) < 6:
             ig_terms_list.append(f'"{ph}"')
-    ig_q = f'site:instagram.com -inurl:/p/ -inurl:/reel/ -inurl:/reels/ -inurl:/stories/ -inurl:/explore/ ({" OR ".join(ig_terms_list)})' if ig_terms_list else ""
+    ig_q = f'site:instagram.com ({" OR ".join(ig_terms_list)})' if ig_terms_list else ""
 
-    # Twitter / X Query: Exclude status/intent to strictly target user profile pages
+    # Twitter / X Query: Targeted account search
     tw_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         tw_terms_list.append(f'"{resolved_name}"')
@@ -738,9 +738,9 @@ async def search_social_candidates(
     for ph in pattern_handles:
         if f'"{ph}"' not in tw_terms_list and len(tw_terms_list) < 6:
             tw_terms_list.append(f'"{ph}"')
-    tw_q = f'(site:x.com OR site:twitter.com) -inurl:/status/ -inurl:/statuses/ -inurl:/i/ -inurl:/intent/ ({" OR ".join(tw_terms_list)})' if tw_terms_list else ""
+    tw_q = f'(site:x.com OR site:twitter.com) ({" OR ".join(tw_terms_list)})' if tw_terms_list else ""
 
-    # Facebook Query: Exclude posts/photos/videos/reels/groups to strictly target personal profile pages
+    # Facebook Query: Targeted account search
     fb_terms_list = []
     if resolved_name and len(resolved_name.split()) >= 2:
         fb_terms_list.append(f'"{resolved_name}"')
@@ -752,7 +752,7 @@ async def search_social_candidates(
     for ph in pattern_handles[:3]:
         if f'"{ph}"' not in fb_terms_list and len(fb_terms_list) < 5:
             fb_terms_list.append(f'"{ph}"')
-    fb_q = f'(site:facebook.com OR site:facebook.com/people) -inurl:/posts/ -inurl:/photos/ -inurl:/videos/ -inurl:/reels/ -inurl:/groups/ ({" OR ".join(fb_terms_list)})' if fb_terms_list else ""
+    fb_q = f'(site:facebook.com/people OR site:facebook.com) ({" OR ".join(fb_terms_list)})' if fb_terms_list else ""
 
     if has_verified_linkedin:
         print("[Social Discovery] Skipping LinkedIn search query (verified LinkedIn profile already confirmed in base sources)", flush=True)
