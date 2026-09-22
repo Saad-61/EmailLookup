@@ -2,14 +2,79 @@ use_default_settings: true
 server:
   secret_key: "antigravity_secret_key_123"
   bind_address: "0.0.0.0"
+  limiter: false
 
 search:
   safe_search: 0
   autocomplete: ""
-  request_timeout: 4.0
+  request_timeout: 5.0
   formats:
     - html
     - json
+
+outgoing:
+  request_timeout: 4.0
+  max_request_timeout: 8.0
+  pool_connections: 100
+  pool_maxsize: 20
+  enable_http2: true
+  proxies:
+    http:
+      - http://dubai:sI8j4xRsWR@91.149.192.92:50100
+      - http://dubai:sI8j4xRsWR@77.47.212.192:50100
+      - http://dubai:sI8j4xRsWR@85.120.128.119:50100
+      - http://dubai:sI8j4xRsWR@50.114.26.171:50100
+      - http://dubai:sI8j4xRsWR@80.12.167.241:50100
+      - http://dubai:sI8j4xRsWR@77.47.212.194:50100
+      - http://dubai:sI8j4xRsWR@85.120.129.79:50100
+      - http://dubai:sI8j4xRsWR@80.12.164.176:50100
+      - http://dubai:sI8j4xRsWR@85.120.128.136:50100
+      - http://dubai:sI8j4xRsWR@80.96.236.167:50100
+      - http://dubai:sI8j4xRsWR@51.241.157.58:50100
+      - http://dubai:sI8j4xRsWR@85.120.129.61:50100
+      - http://dubai:sI8j4xRsWR@50.114.26.221:50100
+      - http://dubai:sI8j4xRsWR@80.96.237.223:50100
+      - http://dubai:sI8j4xRsWR@85.122.177.70:50100
+      - http://dubai:sI8j4xRsWR@77.47.212.191:50100
+      - http://dubai:sI8j4xRsWR@136.0.229.103:50100
+      - http://dubai:sI8j4xRsWR@51.241.157.69:50100
+      - http://dubai:sI8j4xRsWR@155.103.10.145:50100
+      - http://dubai:sI8j4xRsWR@205.186.92.167:50100
+    https:
+      - http://dubai:sI8j4xRsWR@91.149.192.92:50100
+      - http://dubai:sI8j4xRsWR@77.47.212.192:50100
+      - http://dubai:sI8j4xRsWR@85.120.128.119:50100
+      - http://dubai:sI8j4xRsWR@50.114.26.171:50100
+      - http://dubai:sI8j4xRsWR@80.12.167.241:50100
+      - http://dubai:sI8j4xRsWR@77.47.212.194:50100
+      - http://dubai:sI8j4xRsWR@85.120.129.79:50100
+      - http://dubai:sI8j4xRsWR@80.12.164.176:50100
+      - http://dubai:sI8j4xRsWR@85.120.128.136:50100
+      - http://dubai:sI8j4xRsWR@80.96.236.167:50100
+      - http://dubai:sI8j4xRsWR@51.241.157.58:50100
+      - http://dubai:sI8j4xRsWR@85.120.129.61:50100
+      - http://dubai:sI8j4xRsWR@50.114.26.221:50100
+      - http://dubai:sI8j4xRsWR@80.96.237.223:50100
+      - http://dubai:sI8j4xRsWR@85.122.177.70:50100
+      - http://dubai:sI8j4xRsWR@77.47.212.191:50100
+      - http://dubai:sI8j4xRsWR@136.0.229.103:50100
+      - http://dubai:sI8j4xRsWR@51.241.157.69:50100
+      - http://dubai:sI8j4xRsWR@155.103.10.145:50100
+      - http://dubai:sI8j4xRsWR@205.186.92.167:50100
+      - http://dubai:sI8j4xRsWR@85.120.129.79:50100
+      - http://dubai:sI8j4xRsWR@80.12.164.176:50100
+      - http://dubai:sI8j4xRsWR@85.120.128.136:50100
+      - http://dubai:sI8j4xRsWR@80.96.236.167:50100
+      - http://dubai:sI8j4xRsWR@51.241.157.58:50100
+      - http://dubai:sI8j4xRsWR@85.120.129.61:50100
+      - http://dubai:sI8j4xRsWR@50.114.26.221:50100
+      - http://dubai:sI8j4xRsWR@80.96.237.223:50100
+      - http://dubai:sI8j4xRsWR@85.122.177.70:50100
+      - http://dubai:sI8j4xRsWR@77.47.212.191:50100
+      - http://dubai:sI8j4xRsWR@136.0.229.103:50100
+      - http://dubai:sI8j4xRsWR@51.241.157.69:50100
+      - http://dubai:sI8j4xRsWR@155.103.10.145:50100
+      - http://dubai:sI8j4xRsWR@205.186.92.167:50100
 
 engines:
   - name: google

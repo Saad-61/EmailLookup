@@ -810,17 +810,18 @@ async def search_social_candidates(
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
+            "Content-Type": "application/x-www-form-urlencoded",
             "Referer": "https://duckduckgo.com/",
             "Origin": "https://duckduckgo.com",
         }
-        shuffled_ips = random.sample(PROXY_IPS, min(10, len(PROXY_IPS)))
+        shuffled_ips = random.sample(PROXY_IPS, min(3, len(PROXY_IPS)))
         for attempt_ip in shuffled_ips:
             proxy_url = f"http://dubai:sI8j4xRsWR@{attempt_ip}"
             try:
-                async with httpx.AsyncClient(proxy=proxy_url, timeout=9.0) as p_client:
-                    resp = await p_client.get(
+                async with httpx.AsyncClient(proxy=proxy_url, timeout=3.5) as p_client:
+                    resp = await p_client.post(
                         "https://html.duckduckgo.com/html/",
-                        params={"q": q_str},
+                        data={"q": q_str},
                         headers=ddg_headers,
                         follow_redirects=True,
                     )
