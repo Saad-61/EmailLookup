@@ -555,16 +555,54 @@ async def probe_instagram_profile(
     return None
 
 
+PROXY_IPS = [
+    '91.149.192.92:50100', '77.47.212.192:50100', '85.120.128.119:50100',
+    '50.114.26.171:50100', '80.12.167.241:50100', '77.47.212.194:50100',
+    '51.241.157.58:50100', '85.120.128.136:50100', '85.122.177.70:50100',
+    '85.120.129.61:50100', '51.241.157.69:50100', '77.47.212.191:50100',
+    '80.12.164.176:50100', '85.120.129.79:50100', '80.96.236.167:50100',
+    '136.0.229.103:50100', '80.96.237.223:50100', '50.114.26.221:50100',
+    '155.103.10.145:50100', '205.186.92.167:50100'
+]
+
+import urllib.parse
+import random
+
+def parse_ddg_html_response(html: str) -> List[Dict[str, str]]:
+    items = []
+    soup = BeautifulSoup(html, "lxml")
+    results = soup.select(".results .result, .result__body")
+    for r in results:
+        link_tag = r.select_one(".result__title a, a.result__url")
+        snippet_tag = r.select_one(".result__snippet, a.result__snippet")
+        raw_href = link_tag.get("href", "") if link_tag else ""
+        title = link_tag.get_text(strip=True) if link_tag else ""
+        snippet = snippet_tag.get_text(strip=True) if snippet_tag else ""
+        real_url = raw_href
+        if "uddg=" in raw_href:
+            m = re.search(r"uddg=([^&]+)", raw_href)
+            if m:
+                real_url = urllib.parse.unquote(m.group(1))
+        if real_url and real_url.startswith("http") and not real_url.startswith("https://duckduckgo.com"):
+            items.append({
+                "link": real_url,
+                "title": title,
+                "snippet": snippet,
+            })
+    return items
+
+
 async def search_social_candidates(
     email: str,
-    resolved_name: Optional[str],
-    resolved_location: Optional[str],
-    gh_username: Optional[str],
+    resolved_name: Optional[str] = None,
+    resolved_location: Optional[str] = None,
+    gh_username: Optional[str] = None,
     company_name: Optional[str] = None,
     client: Optional[httpx.AsyncClient] = None,
+    has_verified_linkedin: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
     """
-    Run platform-targeted searches across LinkedIn, Instagram, X/Twitter, and Facebook.
+    Candidate discovery engine using rotated proxy DuckDuckGo search + platform-targeted queries.
     Returns (all_sorted_candidates, candidates_by_platform).
     """
     if client is None or getattr(client, "is_closed", False):
@@ -576,12 +614,8 @@ async def search_social_candidates(
                 gh_username=gh_username,
                 company_name=company_name,
                 client=local_client,
+                has_verified_linkedin=has_verified_linkedin,
             )
-
-    raw_serper = os.getenv("SERPER_API_KEY", "")
-    if not raw_serper:
-        print("[Social Discovery] ⚠️ SERPER_API_KEY not configured. Skipping candidate discovery.", flush=True)
-        return [], {"linkedin": [], "instagram": [], "twitter": [], "facebook": []}
 
     specific_handles, stem_handles = generate_handle_variations(email, resolved_name, gh_username)
     handles_to_probe = expand_social_probe_handles(specific_handles, stem_handles, resolved_name)[:35]
@@ -589,15 +623,16 @@ async def search_social_candidates(
     if not all_variations and not resolved_name:
         return [], {"linkedin": [], "instagram": [], "twitter": [], "facebook": []}
 
+    # Select 1 primary proxy IP for this entire email lookup (used across all 4 queries)
+    lookup_proxy_ip = random.choice(PROXY_IPS)
     print(f"\n[Social Discovery] ───────────────────────────────────────────────────", flush=True)
     print(f"[Social Discovery] Initiating social candidate discovery for: {email}", flush=True)
+    print(f"[Social Discovery] Active proxy IP for lookup: {lookup_proxy_ip}", flush=True)
     print(f"[Social Discovery] Specific handles: {specific_handles} | Stems: {stem_handles}", flush=True)
     if resolved_name:
         print(f"[Social Discovery] Anchor name: '{resolved_name}' | Location: '{resolved_location or 'N/A'}'", flush=True)
     if company_name:
         print(f"[Social Discovery] Company Anchor: '{company_name}'", flush=True)
-
-    headers = {"X-API-KEY": raw_serper.strip(), "Content-Type": "application/json"}
 
     # Extract clean handles for search queries, stripping numbers/separators to keep queries effective
     clean_query_handles = []
@@ -697,70 +732,76 @@ async def search_social_candidates(
             fb_terms_list.append(f'"{ph}"')
     fb_q = f'(site:facebook.com OR site:facebook.com/people) ({" OR ".join(fb_terms_list)})' if fb_terms_list else ""
 
-    queries = [("linkedin", li_q), ("instagram", ig_q), ("twitter", tw_q), ("facebook", fb_q)]
+    if has_verified_linkedin:
+        print("[Social Discovery] Skipping LinkedIn search query (verified LinkedIn profile already confirmed in base sources)", flush=True)
+        queries = [("instagram", ig_q), ("twitter", tw_q), ("facebook", fb_q)]
+    else:
+        queries = [("linkedin", li_q), ("instagram", ig_q), ("twitter", tw_q), ("facebook", fb_q)]
+
     active_queries = [(p, q) for p, q in queries if q]
 
     for p, q in active_queries:
         print(f"[Social Discovery] Sending {p.upper()} query: {q}", flush=True)
 
-    async def run_serper_q(platform_tag: str, q_str: str):
-        # Strategy 1: Serper.dev
-        if raw_serper:
-            try:
-                resp = await client.post(
-                    "https://google.serper.dev/search",
-                    headers=headers,
-                    json={"q": q_str, "num": 10},
-                    timeout=6.0,
-                )
-                org = resp.json().get("organic", []) if resp.status_code == 200 else []
-                print(f"[Social Discovery] Serper {platform_tag.upper()} -> HTTP {resp.status_code}, {len(org)} organic items", flush=True)
-                if org:
-                    return platform_tag, org
-                elif resp.status_code != 200:
-                    print(f"[Social Discovery] [-] {platform_tag} Serper status={resp.status_code}: {resp.text[:120]}", flush=True)
-            except Exception as e:
-                print(f"[Social Discovery] [-] {platform_tag} Serper error: {e}", flush=True)
+    async def run_search_q(platform_tag: str, q_str: str):
+        # ── Strategy 1: Local SearXNG Metasearch Engine (Primary 100% Free Engine) ──
+        searxng_url = os.getenv("SEARXNG_URL", "http://localhost:8888/search")
+        try:
+            resp = await client.get(
+                searxng_url,
+                params={"q": q_str, "format": "json"},
+                timeout=7.0,
+            )
+            if resp.status_code == 200:
+                raw_results = resp.json().get("results", [])
+                items = []
+                for r in raw_results:
+                    items.append({
+                        "link": r.get("url", ""),
+                        "title": r.get("title", ""),
+                        "snippet": r.get("content", ""),
+                    })
+                if items:
+                    print(f"[Social Discovery] ✓ SearXNG (Local Metasearch) {platform_tag.upper()} -> HTTP 200, {len(items)} items found", flush=True)
+                    return platform_tag, items
+        except Exception as e:
+            print(f"[Social Discovery] [-] SearXNG error/offline: {e}", flush=True)
 
-        # Strategy 2: Exa.ai semantic search fallback
-        raw_exa = os.getenv("EXA_API_KEY", "")
-        if raw_exa:
+        # ── Strategy 2: DuckDuckGo HTML via Rotated Proxy Pool (Secondary Engine) ──
+        ddg_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://duckduckgo.com/",
+            "Origin": "https://duckduckgo.com",
+        }
+        shuffled_ips = random.sample(PROXY_IPS, min(10, len(PROXY_IPS)))
+        for attempt_ip in shuffled_ips:
+            proxy_url = f"http://dubai:sI8j4xRsWR@{attempt_ip}"
             try:
-                domain_map = {
-                    "linkedin": ["linkedin.com"],
-                    "instagram": ["instagram.com"],
-                    "twitter": ["x.com", "twitter.com"],
-                    "facebook": ["facebook.com"],
-                }
-                exa_payload = {
-                    "query": q_str,
-                    "numResults": 8,
-                    "includeDomains": domain_map.get(platform_tag, []),
-                }
-                exa_resp = await client.post(
-                    "https://api.exa.ai/search",
-                    headers={"x-api-key": raw_exa.strip(), "content-type": "application/json"},
-                    json=exa_payload,
-                    timeout=5.0,
-                )
-                if exa_resp.status_code == 200:
-                    exa_items = []
-                    for r in exa_resp.json().get("results", []):
-                        exa_items.append({
-                            "link": r.get("url", ""),
-                            "title": r.get("title", ""),
-                            "snippet": r.get("text", ""),
-                        })
-                    if exa_items:
-                        print(f"[Social Discovery] ✓ Retrieved {len(exa_items)} {platform_tag.upper()} result(s) via Exa.ai fallback", flush=True)
-                        return platform_tag, exa_items
+                async with httpx.AsyncClient(proxy=proxy_url, timeout=9.0) as p_client:
+                    resp = await p_client.get(
+                        "https://html.duckduckgo.com/html/",
+                        params={"q": q_str},
+                        headers=ddg_headers,
+                        follow_redirects=True,
+                    )
+                    if resp.status_code == 200:
+                        ddg_items = parse_ddg_html_response(resp.text)
+                        if ddg_items:
+                            print(f"[Social Discovery] ✓ DDG Proxy ({attempt_ip}) {platform_tag.upper()} -> HTTP 200, {len(ddg_items)} items found", flush=True)
+                            return platform_tag, ddg_items
+                        else:
+                            print(f"[Social Discovery] [-] DDG Proxy ({attempt_ip}) {platform_tag.upper()} -> 0 items found, trying next proxy...", flush=True)
+                    elif resp.status_code == 202:
+                        print(f"[Social Discovery] [-] DDG Proxy ({attempt_ip}) {platform_tag.upper()} -> HTTP 202 (cooldown), rotating proxy...", flush=True)
             except Exception as e:
-                print(f"[Social Discovery] ✗ {platform_tag} Exa fallback error: {e}", flush=True)
+                print(f"[Social Discovery] [-] DDG Proxy ({attempt_ip}) error: {e}", flush=True)
 
         return platform_tag, []
 
-    serper_task = asyncio.gather(*[run_serper_q(p, q) for p, q in active_queries])
-    serper_results, probed_ig_results = await asyncio.gather(serper_task, ig_probe_task)
+    search_task = asyncio.gather(*[run_search_q(p, q) for p, q in active_queries])
+    search_results, probed_ig_results = await asyncio.gather(search_task, ig_probe_task)
 
     candidates_map: Dict[str, Dict[str, Any]] = {}
 
@@ -795,7 +836,7 @@ async def search_social_candidates(
             }
             print(f"[Social Discovery] [+] Probed Instagram handle confirmed: @{h_clean} (score={score}%, name='{p_cand.get('name')}')", flush=True)
 
-    for platform_tag, items in serper_results:
+    for platform_tag, items in search_results:
         found_on_platform = 0
         for item in items:
             link = item.get("link", "")
@@ -881,7 +922,7 @@ async def search_social_candidates(
 
     # Meta cross-pollination: probe Facebook discovered handles on Instagram if not yet probed
     fb_new_handles = []
-    for platform_tag, items in serper_results:
+    for platform_tag, items in search_results:
         if platform_tag == "facebook":
             for it in items:
                 parsed = parse_social_url(it.get("link", ""))

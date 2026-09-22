@@ -39,12 +39,7 @@ EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GRAVATAR_API_KEY = os.getenv("GRAVATAR_API_KEY", "")
-ABSTRACT_API_KEY = os.getenv("ABSTRACT_API_KEY", "")
-SERPAPI_KEY = os.getenv("SERPAPI_KEY", "")
-SERPER_API_KEY = os.getenv("SERPER_API_KEY", "")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
-GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID", "")
-EXA_API_KEY = os.getenv("EXA_API_KEY", "")
+
 
 BROWSER_HEADERS = {
     "User-Agent": (
@@ -1017,14 +1012,16 @@ def is_valid_linkedin_candidate(clean_url: str, title: str, snippet: str, target
             has_first = first in title_l or first in url_l
             has_last = last in title_l or last in url_l
             if has_first and has_last:
-                if anchor and (anchor.lower() in snippet_l or anchor.lower() in title_l):
-                    return True, 90
+                if anchor:
+                    loc_tokens = [t.strip() for t in re.split(r"[,/]", anchor.lower()) if len(t.strip()) >= 3]
+                    if any(t in snippet_l or t in title_l for t in loc_tokens):
+                        return True, 90
                 return True, 80
-            if has_first and (last in snippet_l) and anchor and (anchor.lower() in snippet_l or anchor.lower() in title_l):
+            if has_first and (last in snippet_l):
                 return True, 75
         elif len(parts) == 1:
             first = parts[0]
-            if (first in title_l or first in url_l) and anchor and (anchor.lower() in title_l or anchor.lower() in snippet_l):
+            if (first in title_l or first in url_l):
                 return True, 70
 
     return False, 0
@@ -1174,7 +1171,6 @@ async def search_linkedin_anchored(
 
     # Prioritize the top 4 most targeted queries
     active_queries = unique_queries[:4]
-    raw_serper = SERPER_API_KEY or os.getenv("SERPER_API_KEY", "")
 
     # Execute search queries
     for item in active_queries:
@@ -1185,84 +1181,69 @@ async def search_linkedin_anchored(
 
         print(f"[LinkedIn Search] Sending query ({item.get('type', 'heuristic')}): {query}", flush=True)
 
-        # ── Strategy 1: Serper.dev (Google Real-Time Search API: ~250ms latency) ──
-        if raw_serper:
-            try:
-                s_resp = await client.post(
-                    "https://google.serper.dev/search",
-                    headers={"X-API-KEY": raw_serper.strip(), "Content-Type": "application/json"},
-                    json={"q": query, "num": 5},
-                    timeout=3.5,
-                )
-                if s_resp.status_code == 200:
-                    org = s_resp.json().get("organic", [])
-                    print(f"[LinkedIn Search] Serper -> HTTP 200, {len(org)} organic items", flush=True)
-                    for r in org:
-                        link = r.get("link", "")
-                        if "linkedin.com/in/" not in link or "/in/dir/" in link or "/pub/dir/" in link:
-                            continue
-                        clean_url = link.split("?")[0].rstrip("/")
-                        title = r.get("title", "").lower()
-                        snippet = r.get("snippet", "").lower()
-                        is_valid, conf = is_valid_linkedin_candidate(clean_url, title, snippet, target_handle, target_name, anchor)
-                        if is_valid:
-                            print(f"[LinkedIn Search] ✓ Verified LinkedIn candidate: {clean_url} (Confidence: {conf}%)", flush=True)
-                            return clean_url, None, conf
-                else:
-                    print(f"[LinkedIn Search] [-] Serper status={s_resp.status_code}", flush=True)
-            except Exception as e:
-                print(f"[LinkedIn Search] [-] Serper error: {e}", flush=True)
-
-        # ── Strategy 1.5: Exa AI Search API ──
-        raw_exa = EXA_API_KEY or os.getenv("EXA_API_KEY", "")
-        if raw_exa:
-            try:
-                e_resp = await client.post(
-                    "https://api.exa.ai/search",
-                    headers={"x-api-key": raw_exa.strip(), "content-type": "application/json"},
-                    json={"query": query, "numResults": 5},
-                    timeout=4.0,
-                )
-                if e_resp.status_code == 200:
-                    exa_results = e_resp.json().get("results", [])
-                    print(f"[LinkedIn Search] Exa.ai -> HTTP 200, {len(exa_results)} results", flush=True)
-                    for r in exa_results:
-                        link = r.get("url", "")
-                        if "linkedin.com/in/" not in link or "/in/dir/" in link or "/pub/dir/" in link:
-                            continue
-                        clean_url = link.split("?")[0].rstrip("/")
-                        title = (r.get("title") or "").lower()
-                        snippet = (r.get("text") or "").lower()
-                        is_valid, conf = is_valid_linkedin_candidate(clean_url, title, snippet, target_handle, target_name, anchor)
-                        if is_valid:
-                            print(f"[LinkedIn Search] ✓ Verified LinkedIn candidate (Exa): {clean_url} (Confidence: {conf}%)", flush=True)
-                            return clean_url, None, conf
-            except Exception as e:
-                print(f"[LinkedIn Search] [-] Exa error: {e}", flush=True)
-
-        # ── Strategy 2: DuckDuckGo Lite Fallback (Fast HTML POST) ──
+        # ── Strategy 1: Local SearXNG Metasearch Engine (Primary 100% Free Engine) ──
+        searxng_url = os.getenv("SEARXNG_URL", "http://localhost:8888/search")
         try:
-            ddg_resp = await client.post(
-                "https://lite.duckduckgo.com/lite/",
-                data={"q": query},
-                headers={**BROWSER_HEADERS, "Content-Type": "application/x-www-form-urlencoded"},
-                timeout=3.0,
+            sx_resp = await client.get(
+                searxng_url,
+                params={"q": query, "format": "json"},
+                timeout=7.0,
             )
-            if ddg_resp.status_code == 200:
-                soup = BeautifulSoup(ddg_resp.text, "lxml")
-                links = soup.select("a.result-link")
-                for a in links:
-                    raw_href = a.get("href", "")
-                    href = urllib.parse.unquote(raw_href)
-                    title = a.get_text(strip=True).lower()
-                    if "linkedin.com/in/" in href and "/in/dir/" not in href and "/pub/dir/" in href:
-                        match = re.search(r"(https?://(?:[a-z0-9-]+\.)?linkedin\.com/in/[^&\s\"?]+)", href)
-                        if match:
-                            clean_url = match.group(1).split("?")[0].rstrip("/")
-                            is_valid, conf = is_valid_linkedin_candidate(clean_url, title, "", target_handle, target_name, anchor)
-                            if is_valid:
-                                print(f"[LinkedIn Search] ✓ Verified LinkedIn candidate (DDG): {clean_url} (Confidence: {conf}%)", flush=True)
-                                return clean_url, None, conf
+            if sx_resp.status_code == 200:
+                sx_results = sx_resp.json().get("results", [])
+                for r in sx_results:
+                    link = r.get("url", "")
+                    if "linkedin.com/in/" not in link or "/in/dir/" in link or "/pub/dir/" in link:
+                        continue
+                    clean_url = link.split("?")[0].rstrip("/")
+                    title = (r.get("title") or "").lower()
+                    snippet = (r.get("content") or "").lower()
+                    is_valid, conf = is_valid_linkedin_candidate(clean_url, title, snippet, target_handle, target_name, anchor)
+                    if is_valid:
+                        print(f"[LinkedIn Search] ✓ Verified LinkedIn candidate (SearXNG): {clean_url} (Confidence: {conf}%)", flush=True)
+                        return clean_url, None, conf
+        except Exception as e:
+            print(f"[LinkedIn Search] [-] SearXNG error/offline: {e}", flush=True)
+
+        # ── Strategy 2: DuckDuckGo HTML via Rotated Proxy Pool (Secondary Engine) ──
+        try:
+            try:
+                from backend.social_finder import PROXY_IPS, parse_ddg_html_response
+            except ImportError:
+                from social_finder import PROXY_IPS, parse_ddg_html_response
+
+            ddg_headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://duckduckgo.com/",
+                "Origin": "https://duckduckgo.com",
+            }
+            shuffled_ips = random.sample(PROXY_IPS, min(3, len(PROXY_IPS)))
+            for attempt_ip in shuffled_ips:
+                proxy_url = f"http://dubai:sI8j4xRsWR@{attempt_ip}"
+                try:
+                    async with httpx.AsyncClient(proxy=proxy_url, timeout=9.0) as p_client:
+                        resp = await p_client.get(
+                            "https://html.duckduckgo.com/html/",
+                            params={"q": query},
+                            headers=ddg_headers,
+                            follow_redirects=True,
+                        )
+                        if resp.status_code == 200:
+                            items = parse_ddg_html_response(resp.text)
+                            for it in items:
+                                link = it.get("link", "")
+                                if "linkedin.com/in/" in link and "/in/dir/" not in link and "/pub/dir/" not in link:
+                                    clean_url = link.split("?")[0].rstrip("/")
+                                    title = (it.get("title") or "").lower()
+                                    snippet = (it.get("snippet") or "").lower()
+                                    is_valid, conf = is_valid_linkedin_candidate(clean_url, title, snippet, target_handle, target_name, anchor)
+                                    if is_valid:
+                                        print(f"[LinkedIn Search] ✓ Verified LinkedIn candidate (DDG Proxy {attempt_ip}): {clean_url} (Confidence: {conf}%)", flush=True)
+                                        return clean_url, None, conf
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -1996,7 +1977,7 @@ async def run_lookup(email: str) -> dict:
     gh_user = github.get("username") if (github and isinstance(github, dict)) else None
     comp_name = company.get("name") if (company and isinstance(company, dict)) else None
     social_candidates = []
-    candidates_by_platform = {"linkedin": [], "instagram": [], "twitter": [], "facebook": []}
+    has_verified_li = bool(linkedin_url)
     try:
         raw_candidates, by_plat = await search_social_candidates(
             email=email,
@@ -2005,6 +1986,7 @@ async def run_lookup(email: str) -> dict:
             gh_username=gh_user,
             company_name=comp_name,
             client=client,
+            has_verified_linkedin=has_verified_li,
         )
 
         # ── Zero Duplicate Platform Rule ──
@@ -2022,10 +2004,7 @@ async def run_lookup(email: str) -> dict:
                     or prof.get("source") in ("github", "gravatar", "wikidata", "harvested")
                 )
             elif isinstance(prof, str):
-                is_direct_verified = (
-                    linkedin_source in ("wikidata", "github", "gravatar", "harvested")
-                    if p == "linkedin" else False
-                )
+                is_direct_verified = bool(linkedin_url)
 
             if is_direct_verified:
                 # Platform is already confirmed and verified in top profiles — clear candidate accordion

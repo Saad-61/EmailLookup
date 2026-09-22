@@ -287,13 +287,15 @@ function renderLookupResults(data) {
     if (p && p.url) {
       const isDirect = p.verified || ["wikidata", "github", "gravatar", "harvested"].includes(p.source);
       const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
+      const rawSlug = p.url.split("/in/").pop().split("?")[0].replace(/\/$/, "");
+      const displaySlug = rawSlug ? `in/${rawSlug}` : "Profile Link";
       if (p.isObject && (p.snippet || p.avatar_url || p.name)) {
         chips.push(renderSingleProfileCard({
           platform: "linkedin",
           platform_label: "LinkedIn Profile",
           url: p.url,
           name: p.name,
-          handle: p.handle,
+          handle: p.handle || (rawSlug ? `in/${rawSlug}` : ""),
           snippet: p.snippet,
           avatar_url: p.avatar_url,
           badgeHtml: badgeHtml,
@@ -304,7 +306,7 @@ function renderLookupResults(data) {
           iconClass: "linkedin-icon",
           iconContent: "in",
           name: `LinkedIn ${badgeHtml}`,
-          sub: isDirect ? "Verified Account →" : "Profile Link →",
+          sub: `${displaySlug} →`,
         }));
       }
     }
