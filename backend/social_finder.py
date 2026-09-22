@@ -470,34 +470,54 @@ async def fetch_social_avatar(
     client: httpx.AsyncClient,
 ) -> Optional[str]:
     """
-    Fetch real user avatar URL from OpenGraph metadata or unavatar.
+    Fetch real user avatar URL from OpenGraph metadata or SearXNG Image Search CDN fallback.
     Returns direct image URL or None.
     """
-    if not url:
+    if not url and not handle:
         return None
 
-    # Twitter: unavatar is instant and clean
-    if platform == "twitter" and handle:
-        clean_handle = handle.lstrip("@")
+    clean_handle = handle.lstrip("@").strip() if handle else ""
+
+    # 1. Twitter / X: unavatar service
+    if platform == "twitter" and clean_handle:
         return f"https://unavatar.io/x/{clean_handle}"
 
-    # Instagram & Facebook: fetch og:image with crawler User-Agent
-    try:
-        headers = {
-            "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        }
-        resp = await client.get(url, headers=headers, timeout=2.5, follow_redirects=True)
-        if resp.status_code == 200:
-            soup = BeautifulSoup(resp.text, "html.parser")
-            og_meta = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "og:image"})
-            if og_meta and og_meta.get("content"):
-                c_url = og_meta["content"]
-                # Reject generic platform branding images
-                if not any(k in c_url.lower() for k in ("fb_icon", "logo", "default", "static.xx.fbcdn")):
-                    return c_url
-    except Exception:
-        pass
+    # 2. Instagram & Facebook: OpenGraph Crawler + SearXNG Image Search Fallback
+    if platform in ("instagram", "facebook"):
+        try:
+            headers = {
+                "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            }
+            resp = await client.get(url, headers=headers, timeout=2.5, follow_redirects=True)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, "html.parser")
+                og_meta = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "og:image"})
+                if og_meta and og_meta.get("content"):
+                    c_url = og_meta["content"]
+                    if not any(k in c_url.lower() for k in ("fb_icon", "logo", "default", "static.xx.fbcdn")):
+                        return c_url
+        except Exception:
+            pass
+
+        # ── High-Speed SearXNG CDN Image Search Fallback ──
+        if clean_handle:
+            try:
+                searxng_url = os.getenv("SEARXNG_URL", "http://localhost:8888/search")
+                img_q = f"{clean_handle} {platform} profile picture"
+                sx_resp = await client.get(
+                    searxng_url,
+                    params={"q": img_q, "categories": "images", "format": "json"},
+                    timeout=3.0,
+                )
+                if sx_resp.status_code == 200:
+                    raw_results = sx_resp.json().get("results", [])
+                    for r in raw_results:
+                        img_url = r.get("thumbnail_src") or r.get("img_src") or r.get("thumbnail")
+                        if img_url and str(img_url).startswith("http"):
+                            return img_url
+            except Exception as e:
+                print(f"[Avatar Error] {platform} {clean_handle}: {e}", flush=True)
 
     return None
 
