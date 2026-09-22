@@ -123,6 +123,7 @@ def generate_handle_variations(
         "admin", "info", "support", "sales", "contact", "help",
         "billing", "team", "hello", "official", "mail", "user", "test",
         "contentarcade", "gmail", "yahoo", "hotmail", "outlook", "fast",
+        "guy", "man", "boy", "girl", "profile", "account", "user", "dev",
     }
     filtered_specific = [v for v in dict.fromkeys(specific) if len(v) >= 3 and v not in generic]
     filtered_stems = [v for v in dict.fromkeys(stems) if len(v) >= 3 and v not in generic]
@@ -171,6 +172,7 @@ def expand_social_probe_handles(
         "{clean}.v3",
         "{clean}_v2",
         "{clean}_v3",
+        "{clean}_0",
         "_{clean}0",
         "{clean}0_",
         "{clean}0",
@@ -183,6 +185,7 @@ def expand_social_probe_handles(
         "_{clean}",
         "{clean}_",
         "_{clean}_",
+        "{clean}_00",
     ]
 
     for s in seeds[:3]:
@@ -553,7 +556,12 @@ async def probe_instagram_profile(
                 og_title = soup.title.string if soup.title else ""
 
             # Check if this is a genuine user profile
-            if not og_title or f"@{clean_handle}" not in og_title.lower():
+            if not og_title:
+                return None
+            og_title_l = og_title.lower()
+            if any(reject in og_title_l for reject in ("page not found", "login • instagram", "welcome back", "instagram user:", "unsupported browser")):
+                return None
+            if og_title_l in ("instagram", "instagram photos and videos"):
                 return None
 
             og_desc = (soup.find("meta", property="og:description") or {}).get("content", "")
@@ -724,7 +732,7 @@ async def search_social_candidates(
     for ph in pattern_handles:
         if f'"{ph}"' not in ig_terms_list and len(ig_terms_list) < 6:
             ig_terms_list.append(f'"{ph}"')
-    ig_q = f'site:instagram.com ({" OR ".join(ig_terms_list)})' if ig_terms_list else ""
+    ig_q = f'site:instagram.com ({" OR ".join(ig_terms_list)}) -inurl:p/ -inurl:reel/ -inurl:reels/ -inurl:stories/ -inurl:explore/' if ig_terms_list else ""
 
     # Twitter / X Query: Targeted account search
     tw_terms_list = []
@@ -738,7 +746,7 @@ async def search_social_candidates(
     for ph in pattern_handles:
         if f'"{ph}"' not in tw_terms_list and len(tw_terms_list) < 6:
             tw_terms_list.append(f'"{ph}"')
-    tw_q = f'(site:x.com OR site:twitter.com) ({" OR ".join(tw_terms_list)})' if tw_terms_list else ""
+    tw_q = f'(site:x.com OR site:twitter.com) ({" OR ".join(tw_terms_list)}) -inurl:status/ -inurl:statuses/ -inurl:i/ -inurl:intent/' if tw_terms_list else ""
 
     # Facebook Query: Targeted account search
     fb_terms_list = []
@@ -752,7 +760,7 @@ async def search_social_candidates(
     for ph in pattern_handles[:3]:
         if f'"{ph}"' not in fb_terms_list and len(fb_terms_list) < 5:
             fb_terms_list.append(f'"{ph}"')
-    fb_q = f'(site:facebook.com/people OR site:facebook.com) ({" OR ".join(fb_terms_list)})' if fb_terms_list else ""
+    fb_q = f'(site:facebook.com/people OR site:facebook.com) ({" OR ".join(fb_terms_list)}) -inurl:posts/ -inurl:photos/ -inurl:videos/ -inurl:groups/' if fb_terms_list else ""
 
     if has_verified_linkedin:
         print("[Social Discovery] Skipping LinkedIn search query (verified LinkedIn profile already confirmed in base sources)", flush=True)
