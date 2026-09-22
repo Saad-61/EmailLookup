@@ -732,7 +732,7 @@ async def search_social_candidates(
     for ph in pattern_handles:
         if f'"{ph}"' not in ig_terms_list and len(ig_terms_list) < 6:
             ig_terms_list.append(f'"{ph}"')
-    ig_q = f'site:instagram.com ({" OR ".join(ig_terms_list)}) -inurl:p/ -inurl:reel/ -inurl:reels/ -inurl:stories/ -inurl:explore/' if ig_terms_list else ""
+    ig_q = f'site:instagram.com ({" OR ".join(ig_terms_list)})' if ig_terms_list else ""
 
     # Twitter / X Query: Targeted account search
     tw_terms_list = []
@@ -746,7 +746,7 @@ async def search_social_candidates(
     for ph in pattern_handles:
         if f'"{ph}"' not in tw_terms_list and len(tw_terms_list) < 6:
             tw_terms_list.append(f'"{ph}"')
-    tw_q = f'(site:x.com OR site:twitter.com) ({" OR ".join(tw_terms_list)}) -inurl:status/ -inurl:statuses/ -inurl:i/ -inurl:intent/' if tw_terms_list else ""
+    tw_q = f'(site:x.com OR site:twitter.com) ({" OR ".join(tw_terms_list)})' if tw_terms_list else ""
 
     # Facebook Query: Targeted account search
     fb_terms_list = []
@@ -760,7 +760,7 @@ async def search_social_candidates(
     for ph in pattern_handles[:3]:
         if f'"{ph}"' not in fb_terms_list and len(fb_terms_list) < 5:
             fb_terms_list.append(f'"{ph}"')
-    fb_q = f'(site:facebook.com/people OR site:facebook.com) ({" OR ".join(fb_terms_list)}) -inurl:posts/ -inurl:photos/ -inurl:videos/ -inurl:groups/' if fb_terms_list else ""
+    fb_q = f'(site:facebook.com/people OR site:facebook.com) ({" OR ".join(fb_terms_list)})' if fb_terms_list else ""
 
     if has_verified_linkedin:
         print("[Social Discovery] Skipping LinkedIn search query (verified LinkedIn profile already confirmed in base sources)", flush=True)
@@ -774,26 +774,34 @@ async def search_social_candidates(
         print(f"[Social Discovery] Sending {p.upper()} query: {q}", flush=True)
 
     async def run_search_q(platform_tag: str, q_str: str):
-        # ── Strategy 1: Local SearXNG Metasearch Engine (Primary 100% Free Engine) ──
+        # ── Strategy 1: Local SearXNG Metasearch Engine (Multi-Page Deep Search) ──
         searxng_url = os.getenv("SEARXNG_URL", "http://localhost:8888/search")
         try:
-            resp = await client.get(
-                searxng_url,
-                params={"q": q_str, "format": "json"},
-                timeout=7.0,
-            )
-            if resp.status_code == 200:
-                raw_results = resp.json().get("results", [])
-                items = []
-                for r in raw_results:
-                    items.append({
-                        "link": r.get("url", ""),
-                        "title": r.get("title", ""),
-                        "snippet": r.get("content", ""),
-                    })
-                if items:
-                    print(f"[Social Discovery] ✓ SearXNG (Local Metasearch) {platform_tag.upper()} -> HTTP 200, {len(items)} items found", flush=True)
-                    return platform_tag, items
+            reqs = [
+                client.get(searxng_url, params={"q": q_str, "format": "json", "pageno": 1}, timeout=7.0),
+                client.get(searxng_url, params={"q": q_str, "format": "json", "pageno": 2}, timeout=7.0),
+            ]
+            resps = await asyncio.gather(*reqs, return_exceptions=True)
+            items = []
+            seen_links = set()
+            for resp in resps:
+                if isinstance(resp, httpx.Response) and resp.status_code == 200:
+                    raw_results = resp.json().get("results", [])
+                    for r in raw_results:
+                        l = r.get("url", "")
+                        if l and l not in seen_links:
+                            if parse_social_url(l) or any(dom in l.lower() for dom in ("instagram.com", "facebook.com", "x.com", "twitter.com", "linkedin.com")):
+                                seen_links.add(l)
+                                items.append({
+                                    "link": l,
+                                    "title": r.get("title", ""),
+                                    "snippet": r.get("content", ""),
+                                })
+            if items:
+                print(f"[Social Discovery] ✓ SearXNG (Local Metasearch) {platform_tag.upper()} -> HTTP 200, {len(items)} profile items found", flush=True)
+                return platform_tag, items
+            else:
+                print(f"[Social Discovery] [-] SearXNG {platform_tag.upper()} returned 0 valid social items (rate-limited/blocked). Falling back to Rotated Proxy DDG...", flush=True)
         except Exception as e:
             print(f"[Social Discovery] [-] SearXNG error/offline: {e}", flush=True)
 
