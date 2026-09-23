@@ -692,37 +692,90 @@ async def fetch_social_avatar(
     client: httpx.AsyncClient,
 ) -> Optional[str]:
     """
-    Fetch real user avatar URL from fast direct CDN endpoints or OpenGraph metadata.
-    Returns direct image URL or None without firing additional search engine queries.
+    Fetch authentic user avatar URL across all supported platforms
+    using fast CDN endpoints and OpenGraph crawler metadata.
     """
-    if not handle:
+    if not handle and not url:
         return None
 
-    clean_handle = handle.lstrip("@").strip()
+    clean_handle = (handle or "").lstrip("@").strip()
 
-    # 1. Twitter / X: unavatar service
+    # 1. Twitter / X: Unavatar CDN
     if platform == "twitter" and clean_handle:
         return f"https://unavatar.io/x/{clean_handle}"
 
-    # 2. Facebook: Graph API picture URL
-    if platform == "facebook" and clean_handle:
-        return f"https://graph.facebook.com/{clean_handle}/picture?type=large"
+    # 2. Facebook: Graph API (Numerical ID or vanity) + OpenGraph fallback
+    if platform == "facebook":
+        if url:
+            m_id = re.search(r"/(\d{8,25})", url)
+            if m_id:
+                return f"https://graph.facebook.com/{m_id.group(1)}/picture?type=large"
+        if clean_handle and not any(c in clean_handle for c in " /?#"):
+            return f"https://graph.facebook.com/{clean_handle}/picture?type=large"
+        if url:
+            try:
+                headers = {"User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"}
+                resp = await client.get(url, headers=headers, timeout=2.5, follow_redirects=True)
+                if resp.status_code == 200:
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    og_meta = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "og:image"})
+                    if og_meta and og_meta.get("content"):
+                        img_url = og_meta["content"]
+                        if not any(k in img_url.lower() for k in ("fb_icon", "logo", "default", "static.xx.fbcdn", "rsrc.php")):
+                            return img_url
+            except Exception:
+                pass
 
-    # 3. Instagram: try Meta OpenGraph crawler og:image if url provided
-    if platform == "instagram" and url:
+    # 3. Instagram: Meta OpenGraph via rotated proxy
+    if platform == "instagram" and (url or clean_handle):
+        target_url = url or f"https://www.instagram.com/{clean_handle}/"
         try:
-            headers = {
-                "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            }
-            resp = await client.get(url, headers=headers, timeout=2.0, follow_redirects=True)
+            headers = {"User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"}
+            proxy = get_random_proxy_url()
+            if proxy:
+                async with httpx.AsyncClient(proxy=proxy, timeout=3.5, follow_redirects=True) as proxied:
+                    resp = await proxied.get(target_url, headers=headers)
+            else:
+                resp = await client.get(target_url, headers=headers, timeout=3.5, follow_redirects=True)
             if resp.status_code == 200:
                 soup = BeautifulSoup(resp.text, "html.parser")
                 og_meta = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "og:image"})
                 if og_meta and og_meta.get("content"):
-                    c_url = og_meta["content"]
-                    if not any(k in c_url.lower() for k in ("fb_icon", "logo", "default", "static.xx.fbcdn", "rsrc.php")):
-                        return c_url
+                    img_url = og_meta["content"]
+                    if not any(k in img_url.lower() for k in ("fb_icon", "logo", "default", "static.xx.fbcdn", "rsrc.php")):
+                        return img_url
+        except Exception:
+            pass
+
+    # 4. TikTok: OpenGraph CDN profile image
+    if platform == "tiktok" and (url or clean_handle):
+        target_url = url or f"https://www.tiktok.com/@{clean_handle}"
+        try:
+            headers = {"User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)", "Accept-Language": "en-US,en;q=0.9"}
+            resp = await client.get(target_url, headers=headers, timeout=3.0, follow_redirects=True)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, "html.parser")
+                og_meta = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "og:image"})
+                if og_meta and og_meta.get("content"):
+                    img_url = og_meta["content"]
+                    if "static" not in img_url and not any(k in img_url.lower() for k in ("default", "logo", "placeholder")):
+                        return img_url
+        except Exception:
+            pass
+
+    # 5. Pinterest: High-Res OpenGraph Avatar
+    if platform == "pinterest" and (url or clean_handle):
+        target_url = url or f"https://www.pinterest.com/{clean_handle}/"
+        try:
+            headers = {"User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)", "Accept-Language": "en-US,en;q=0.9"}
+            resp = await client.get(target_url, headers=headers, timeout=3.0, follow_redirects=True)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, "html.parser")
+                og_meta = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "og:image"})
+                if og_meta and og_meta.get("content"):
+                    img_url = og_meta["content"]
+                    if not any(k in img_url.lower() for k in ("default_280", "default_open_graph", "logo", "placeholder")):
+                        return img_url
         except Exception:
             pass
 
