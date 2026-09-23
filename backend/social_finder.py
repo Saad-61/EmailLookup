@@ -698,115 +698,85 @@ async def search_social_candidates(
                 break
     pattern_handles = pattern_handles[:4]
 
-    # 3. High-Signal Combined Platform Queries (Max 5-6 targeted terms)
-    # LinkedIn Query
-    li_terms_list = []
-    if email and not any(email.endswith(d) for d in ("@gmail.com", "@yahoo.com", "@hotmail.com", "@outlook.com", "@live.com")):
-        li_terms_list.append(f'"{email}"')
+    # 3. High-Signal Targeted Platform Queries (Clean search strings for SearXNG)
+    search_jobs = []
+
+    # LinkedIn Queries (if not already verified in base sources)
+    if not has_verified_linkedin:
+        if resolved_name and len(resolved_name.split()) >= 2:
+            if company_name and 1 <= len(company_name.split()) <= 2:
+                search_jobs.append(("linkedin", f'site:linkedin.com/in "{resolved_name}" {company_name.strip()}'))
+            else:
+                search_jobs.append(("linkedin", f'site:linkedin.com/in "{resolved_name}"'))
+        for h in specific_handles[:2]:
+            if h and len(h) >= 3:
+                search_jobs.append(("linkedin", f'site:linkedin.com/in {h}'))
+        if core_stem and len(core_stem) >= 4 and core_stem not in specific_handles:
+            search_jobs.append(("linkedin", f'site:linkedin.com/in {core_stem}'))
+
+    # Instagram Queries
     if resolved_name and len(resolved_name.split()) >= 2:
-        li_terms_list.append(f'"{resolved_name}"')
-    if core_stem and len(core_stem) >= 4 and f'"{core_stem}"' not in li_terms_list:
-        li_terms_list.append(f'"{core_stem}"')
+        search_jobs.append(("instagram", f'site:instagram.com "{resolved_name}"'))
     for h in specific_handles[:2]:
-        if h not in li_terms_list and f'"{h}"' not in li_terms_list:
-            li_terms_list.append(h)
-    
-    if li_terms_list:
-        if company_name and 1 <= len(company_name.split()) <= 2:
-            li_q = f'site:linkedin.com/in ({" OR ".join(li_terms_list)}) {company_name.strip()}'
-        else:
-            li_q = f'site:linkedin.com/in ({" OR ".join(li_terms_list)})'
-    else:
-        li_q = ""
+        if h and len(h) >= 3:
+            search_jobs.append(("instagram", f'site:instagram.com {h}'))
+    if core_stem and len(core_stem) >= 4 and core_stem not in specific_handles:
+        search_jobs.append(("instagram", f'site:instagram.com {core_stem}'))
 
-    # Instagram Query: Targeted account search
-    ig_terms_list = []
+    # Twitter / X Queries
     if resolved_name and len(resolved_name.split()) >= 2:
-        ig_terms_list.append(f'"{resolved_name}"')
-    if core_stem and len(core_stem) >= 4 and f'"{core_stem}"' not in ig_terms_list:
-        ig_terms_list.append(f'"{core_stem}"')
+        search_jobs.append(("twitter", f'site:twitter.com "{resolved_name}"'))
     for h in specific_handles[:2]:
-        if f'"{h}"' not in ig_terms_list and len(ig_terms_list) < 4:
-            ig_terms_list.append(f'"{h}"')
-    for ph in pattern_handles:
-        if f'"{ph}"' not in ig_terms_list and len(ig_terms_list) < 6:
-            ig_terms_list.append(f'"{ph}"')
-    ig_q = f'site:instagram.com ({" OR ".join(ig_terms_list)})' if ig_terms_list else ""
+        if h and len(h) >= 3:
+            search_jobs.append(("twitter", f'site:twitter.com {h}'))
+    if core_stem and len(core_stem) >= 4 and core_stem not in specific_handles:
+        search_jobs.append(("twitter", f'site:twitter.com {core_stem}'))
 
-    # Twitter / X Query: Targeted account search
-    tw_terms_list = []
+    # Facebook Queries
     if resolved_name and len(resolved_name.split()) >= 2:
-        tw_terms_list.append(f'"{resolved_name}"')
-    if core_stem and len(core_stem) >= 4 and f'"{core_stem}"' not in tw_terms_list:
-        tw_terms_list.append(f'"{core_stem}"')
+        search_jobs.append(("facebook", f'site:facebook.com "{resolved_name}"'))
     for h in specific_handles[:2]:
-        if f'"{h}"' not in tw_terms_list and len(tw_terms_list) < 4:
-            tw_terms_list.append(f'"{h}"')
-    for ph in pattern_handles:
-        if f'"{ph}"' not in tw_terms_list and len(tw_terms_list) < 6:
-            tw_terms_list.append(f'"{ph}"')
-    tw_q = f'(site:x.com OR site:twitter.com) ({" OR ".join(tw_terms_list)})' if tw_terms_list else ""
+        if h and len(h) >= 3:
+            search_jobs.append(("facebook", f'site:facebook.com {h}'))
+    if core_stem and len(core_stem) >= 4 and core_stem not in specific_handles:
+        search_jobs.append(("facebook", f'site:facebook.com {core_stem}'))
 
-    # Facebook Query: Targeted account search
-    fb_terms_list = []
-    if resolved_name and len(resolved_name.split()) >= 2:
-        fb_terms_list.append(f'"{resolved_name}"')
-    if core_stem and len(core_stem) >= 4 and f'"{core_stem}"' not in fb_terms_list:
-        fb_terms_list.append(f'"{core_stem}"')
-    for h in specific_handles[:2]:
-        if f'"{h}"' not in fb_terms_list and len(fb_terms_list) < 4:
-            fb_terms_list.append(f'"{h}"')
-    for ph in pattern_handles[:3]:
-        if f'"{ph}"' not in fb_terms_list and len(fb_terms_list) < 5:
-            fb_terms_list.append(f'"{ph}"')
-    fb_q = f'(site:facebook.com/people OR site:facebook.com) ({" OR ".join(fb_terms_list)})' if fb_terms_list else ""
-
-    if has_verified_linkedin:
-        print("[Social Discovery] Skipping LinkedIn search query (verified LinkedIn profile already confirmed in base sources)", flush=True)
-        queries = [("instagram", ig_q), ("twitter", tw_q), ("facebook", fb_q)]
-    else:
-        queries = [("linkedin", li_q), ("instagram", ig_q), ("twitter", tw_q), ("facebook", fb_q)]
-
-    active_queries = [(p, q) for p, q in queries if q]
-
-    for p, q in active_queries:
+    for p, q in search_jobs:
         print(f"[Social Discovery] Sending {p.upper()} query: {q}", flush=True)
 
     async def run_search_q(platform_tag: str, q_str: str):
-        # ── Strategy 1: Local SearXNG Metasearch Engine (Multi-Page Deep Search) ──
         searxng_url = os.getenv("SEARXNG_URL", "http://localhost:8888/search")
         try:
-            reqs = [
-                client.get(searxng_url, params={"q": q_str, "format": "json", "pageno": 1, "engines": "yandex,bing,google"}, timeout=7.0),
-                client.get(searxng_url, params={"q": q_str, "format": "json", "pageno": 2, "engines": "yandex,bing,google"}, timeout=7.0),
-            ]
-            resps = await asyncio.gather(*reqs, return_exceptions=True)
+            req = client.get(
+                searxng_url,
+                params={"q": q_str, "format": "json", "pageno": 1, "engines": "yandex"},
+                timeout=7.0
+            )
+            resp = await req
             items = []
             seen_links = set()
-            for resp in resps:
-                if isinstance(resp, httpx.Response) and resp.status_code == 200:
-                    raw_results = resp.json().get("results", [])
-                    for r in raw_results:
-                        l = r.get("url", "")
-                        if l and l not in seen_links:
-                            if parse_social_url(l) or any(dom in l.lower() for dom in ("instagram.com", "facebook.com", "x.com", "twitter.com", "linkedin.com")):
-                                seen_links.add(l)
-                                items.append({
-                                    "link": l,
-                                    "title": r.get("title", ""),
-                                    "snippet": r.get("content", ""),
-                                })
+            if resp.status_code == 200:
+                raw_results = resp.json().get("results", [])
+                for r in raw_results:
+                    l = r.get("url", "")
+                    if l and l not in seen_links:
+                        if parse_social_url(l) or any(dom in l.lower() for dom in ("instagram.com", "facebook.com", "x.com", "twitter.com", "linkedin.com")):
+                            seen_links.add(l)
+                            items.append({
+                                "link": l,
+                                "title": r.get("title", ""),
+                                "snippet": r.get("content", ""),
+                            })
             if items:
-                print(f"[Social Discovery] ✓ SearXNG (Local Metasearch) {platform_tag.upper()} -> HTTP 200, {len(items)} profile items found", flush=True)
+                print(f"[Social Discovery] ✓ SearXNG ({platform_tag.upper()}) -> {len(items)} items for: {q_str}", flush=True)
                 return platform_tag, items
             else:
-                print(f"[Social Discovery] [-] SearXNG {platform_tag.upper()} -> 0 profile items found", flush=True)
                 return platform_tag, []
         except Exception as e:
-            print(f"[Social Discovery] [-] SearXNG error/offline: {e}", flush=True)
+            print(f"[Social Discovery] [-] SearXNG error ({platform_tag.upper()}): {e}", flush=True)
             return platform_tag, []
 
-    search_task = asyncio.gather(*[run_search_q(p, q) for p, q in active_queries])
+    search_task = asyncio.gather(*[run_search_q(p, q) for p, q in search_jobs])
     search_results, probed_ig_results = await asyncio.gather(search_task, ig_probe_task)
 
     candidates_map: Dict[str, Dict[str, Any]] = {}
