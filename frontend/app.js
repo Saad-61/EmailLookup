@@ -429,7 +429,7 @@ function renderLookupResults(data) {
   const byPlat = data.social_candidates_by_platform || {};
   let totalCandidatesFound = 0;
 
-  ["linkedin", "instagram", "twitter", "facebook"].forEach(plat => {
+  ["linkedin", "instagram", "twitter", "facebook", "tiktok", "pinterest"].forEach(plat => {
     const accEl = document.getElementById(`cand-acc-${plat}`);
     const listEl = document.getElementById(`cand-list-${plat}`);
     const countEl = document.getElementById(`cand-count-${plat}`);
@@ -677,14 +677,22 @@ function renderCandidateCard(c) {
     ? "twitter-icon"
     : c.platform === "instagram"
     ? "instagram-icon"
-    : "facebook-icon";
+    : c.platform === "facebook"
+    ? "facebook-icon"
+    : c.platform === "tiktok"
+    ? "tiktok-icon"
+    : "pinterest-icon";
   const pIconSymbol = c.platform === "linkedin"
     ? "💼"
     : c.platform === "twitter"
     ? "𝕏"
     : c.platform === "instagram"
     ? "📸"
-    : "ⓕ";
+    : c.platform === "facebook"
+    ? "ⓕ"
+    : c.platform === "tiktok"
+    ? "🎵"
+    : "📌";
 
   const headlineHtml = c.title ? `<div class="candidate-headline" style="font-size:12px; color:var(--c-text-secondary); margin-top:2px; line-height:1.3;">${escapeHtml(c.title)}</div>` : "";
   const snippetHtml = c.snippet ? `<div class="candidate-snippet">${escapeHtml(c.snippet)}</div>` : "";

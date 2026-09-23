@@ -296,6 +296,38 @@ def parse_social_url(url: str) -> Optional[Dict[str, str]]:
                     "url": f"https://www.linkedin.com/in/{slug}",
                 }
 
+    # TikTok (e.g. tiktok.com/@username)
+    tt_match = re.search(
+        r"https?://(?:[a-z0-9-]+\.)?tiktok\.com/@([a-zA-Z0-9_.]{2,30})/?$",
+        clean,
+        re.IGNORECASE,
+    )
+    if tt_match:
+        handle = tt_match.group(1)
+        if handle.lower() not in ("explore", "direct", "trending", "about", "discover", "login", "live", "tag"):
+            return {
+                "platform": "tiktok",
+                "platform_label": "TikTok",
+                "handle": handle,
+                "url": f"https://www.tiktok.com/@{handle}",
+            }
+
+    # Pinterest (e.g. pinterest.com/username/)
+    pin_match = re.search(
+        r"https?://(?:[a-z0-9-]+\.)?pinterest\.com/([a-zA-Z0-9_.]{2,30})/?$",
+        clean,
+        re.IGNORECASE,
+    )
+    if pin_match:
+        handle = pin_match.group(1)
+        if handle.lower() not in ("explore", "pin", "ideas", "business", "help", "about", "login", "today", "shop", "news"):
+            return {
+                "platform": "pinterest",
+                "platform_label": "Pinterest",
+                "handle": handle,
+                "url": f"https://www.pinterest.com/{handle}/",
+            }
+
     return None
 
 
@@ -611,6 +643,106 @@ async def probe_instagram_profile(
     return None
 
 
+async def probe_tiktok_profile(
+    handle: str,
+    client: httpx.AsyncClient,
+) -> Optional[Dict[str, Any]]:
+    """
+    Directly probe a TikTok profile using crawler User-Agent.
+    Extracts display name, followers/likes bio snippet, and CDN avatar image.
+    """
+    if not handle or len(handle) < 3:
+        return None
+    clean = handle.lower().lstrip("@").strip()
+    if clean in ("explore", "direct", "trending", "about", "discover", "login", "live", "tag"):
+        return None
+
+    try:
+        url = f"https://www.tiktok.com/@{clean}"
+        headers = {
+            "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        resp = await client.get(url, headers=headers, timeout=5.5, follow_redirects=True)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            og_title = (soup.find("meta", property="og:title") or {}).get("content", "")
+            if not og_title:
+                og_title = soup.title.string if soup.title else ""
+            
+            og_title_l = og_title.lower() if og_title else ""
+            if "on tiktok" in og_title_l and "discover profiles" not in og_title_l and "watch trending" not in og_title_l:
+                og_desc = (soup.find("meta", property="og:description") or {}).get("content", "")
+                og_img = (soup.find("meta", property="og:image") or {}).get("content", "")
+                # Extract display name: "Saad Asif on TikTok" -> "Saad Asif"
+                m = re.match(r"^(.*?)\s+on\s+TikTok", og_title, re.IGNORECASE)
+                display_name = m.group(1).strip() if m else clean
+                return {
+                    "platform": "tiktok",
+                    "platform_label": "TikTok",
+                    "handle": clean,
+                    "name": display_name,
+                    "url": url,
+                    "snippet": og_desc or f"TikTok account @{clean}",
+                    "avatar_url": og_img if og_img and "static" not in og_img else None,
+                    "title": og_title,
+                }
+    except Exception:
+        pass
+    return None
+
+
+async def probe_pinterest_profile(
+    handle: str,
+    client: httpx.AsyncClient,
+) -> Optional[Dict[str, Any]]:
+    """
+    Directly probe a Pinterest profile using crawler User-Agent.
+    Extracts display name, bio snippet, and CDN avatar image.
+    """
+    if not handle or len(handle) < 3:
+        return None
+    clean = handle.lower().lstrip("@").strip()
+    if clean in ("explore", "pin", "ideas", "business", "help", "about", "login", "today", "shop", "news"):
+        return None
+
+    try:
+        url = f"https://www.pinterest.com/{clean}/"
+        headers = {
+            "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        resp = await client.get(url, headers=headers, timeout=5.5, follow_redirects=True)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            og_title = (soup.find("meta", property="og:title") or {}).get("content", "")
+            if not og_title:
+                og_title = soup.title.string if soup.title else ""
+            
+            og_title_l = og_title.lower() if og_title else ""
+            if "- profile | pinterest" in og_title_l or "on pinterest" in og_title_l:
+                og_desc = (soup.find("meta", property="og:description") or {}).get("content", "")
+                og_img = (soup.find("meta", property="og:image") or {}).get("content", "")
+                # Extract display name: "Dameesha (rdameesha) - Profile | Pinterest" -> "Dameesha"
+                m = re.match(r"^(.*?)\s*\([a-zA-Z0-9_.]+\)\s*-\s*Profile", og_title, re.IGNORECASE)
+                display_name = m.group(1).strip() if m else clean
+                return {
+                    "platform": "pinterest",
+                    "platform_label": "Pinterest",
+                    "handle": clean,
+                    "name": display_name,
+                    "url": url,
+                    "snippet": og_desc or f"Pinterest profile for {display_name}",
+                    "avatar_url": og_img if og_img and "default_280" not in og_img and "default_open_graph" not in og_img else None,
+                    "title": og_title,
+                }
+    except Exception:
+        pass
+    return None
+
+
 PROXY_IPS = [
     '91.149.192.92:50100', '77.47.212.192:50100', '85.120.128.119:50100',
     '50.114.26.171:50100', '80.12.167.241:50100', '77.47.212.194:50100',
@@ -701,18 +833,18 @@ async def search_social_candidates(
         if clean_h and clean_h not in clean_query_handles and len(clean_h) >= 3:
             clean_query_handles.append(clean_h)
 
-    # 1. Direct Instagram Profile Probes using expanded permutations (e.g. _momina0, dameesha_09, ahtisham.v2, ahtisham.v3, hameedatisam)
-    print(f"[Social Discovery] Direct Instagram probes ({len(handles_to_probe)}): {handles_to_probe[:10]}...", flush=True)
+    # 1. Direct Social Profile Probes (Instagram, TikTok, Pinterest in parallel)
+    print(f"[Social Discovery] Direct probes ({len(handles_to_probe)}): Instagram (35), TikTok (20), Pinterest (20)...", flush=True)
     ig_probe_task = asyncio.gather(*[probe_instagram_profile(h, client) for h in handles_to_probe])
+    tt_probe_task = asyncio.gather(*[probe_tiktok_profile(h, client) for h in handles_to_probe[:20]])
+    pin_probe_task = asyncio.gather(*[probe_pinterest_profile(h, client) for h in handles_to_probe[:20]])
 
     # 2. Extract high-signal pattern handle terms (e.g. dameesha_09, momina0_, ahtisham.v2, ahtisham.v3, mr.sharafat760)
-    # Prioritize patterns built on the core first name or clean local part
     core_stem = stem_handles[0] if stem_handles else ""
     if resolved_name and len(resolved_name.split()) >= 1:
         core_stem = resolved_name.split()[0].lower()
     
     pattern_handles = []
-    # Sample across diverse pattern families (underscore/number suffix, trailing zero, version dot, mr prefix)
     priority_pattern_families = ["_09", "0_", "_0", ".v2", ".v3", "09", "_v2", "_v3", "mr."]
     for pat in priority_pattern_families:
         for h in handles_to_probe:
@@ -788,7 +920,7 @@ async def search_social_candidates(
                 for r in raw_results:
                     l = r.get("url", "")
                     if l and l not in seen_links:
-                        if parse_social_url(l) or any(dom in l.lower() for dom in ("instagram.com", "facebook.com", "x.com", "twitter.com", "linkedin.com")):
+                        if parse_social_url(l) or any(dom in l.lower() for dom in ("instagram.com", "facebook.com", "x.com", "twitter.com", "linkedin.com", "tiktok.com", "pinterest.com")):
                             seen_links.add(l)
                             items.append({
                                 "link": l,
@@ -805,18 +937,20 @@ async def search_social_candidates(
             return platform_tag, []
 
     search_task = asyncio.gather(*[run_search_q(p, q) for p, q in search_jobs])
-    search_results, probed_ig_results = await asyncio.gather(search_task, ig_probe_task)
+    search_results, probed_ig_results, probed_tt_results, probed_pin_results = await asyncio.gather(
+        search_task, ig_probe_task, tt_probe_task, pin_probe_task
+    )
 
     candidates_map: Dict[str, Dict[str, Any]] = {}
 
-    # Process direct probed Instagram profiles
-    for p_cand in probed_ig_results:
+    # Helper to ingest probed candidate
+    def ingest_probed(p_cand: Optional[Dict[str, Any]], plat: str, plat_label: str):
         if not p_cand:
-            continue
+            return
         h_clean = p_cand["handle"].lstrip("@")
         parsed = {
-            "platform": "instagram",
-            "platform_label": "Instagram",
+            "platform": plat,
+            "platform_label": plat_label,
             "handle": h_clean,
             "url": p_cand["url"],
         }
@@ -824,10 +958,10 @@ async def search_social_candidates(
             parsed, p_cand.get("title", ""), p_cand.get("snippet", ""), all_variations, resolved_name, resolved_location, gh_username
         )
         if score >= 25:
-            dedup_key = f"instagram:{h_clean.lower()}"
+            dedup_key = f"{plat}:{h_clean.lower()}"
             candidates_map[dedup_key] = {
-                "platform": "instagram",
-                "platform_label": "Instagram",
+                "platform": plat,
+                "platform_label": plat_label,
                 "handle": f"@{h_clean}",
                 "name": p_cand.get("name") or h_clean,
                 "url": p_cand["url"],
@@ -838,7 +972,15 @@ async def search_social_candidates(
                 "reasons": reasons,
                 "avatar_url": p_cand.get("avatar_url"),
             }
-            print(f"[Social Discovery] [+] Probed Instagram handle confirmed: @{h_clean} (score={score}%, name='{p_cand.get('name')}')", flush=True)
+            print(f"[Social Discovery] [+] Probed {plat_label} handle confirmed: @{h_clean} (score={score}%, name='{p_cand.get('name')}')", flush=True)
+
+    # Process direct probed profiles
+    for p_cand in probed_ig_results:
+        ingest_probed(p_cand, "instagram", "Instagram")
+    for p_cand in probed_tt_results:
+        ingest_probed(p_cand, "tiktok", "TikTok")
+    for p_cand in probed_pin_results:
+        ingest_probed(p_cand, "pinterest", "Pinterest")
 
     for platform_tag, items in search_results:
         found_on_platform = 0
@@ -852,7 +994,6 @@ async def search_social_candidates(
                 # If link is a post/reel/status, attempt to extract authentic profile handle from title or snippet
                 combined_meta = f"{title} {snippet}"
                 if platform_tag == "instagram" and "instagram.com" in link:
-                    # 1. Prioritize any of our targeted handle variations mentioned in comments or captions
                     for v in all_variations:
                         vl = v.lower().strip("@")
                         if len(vl) >= 4 and re.search(r"(?:@|\b)" + re.escape(vl) + r"\b", combined_meta, re.IGNORECASE):
@@ -863,7 +1004,6 @@ async def search_social_candidates(
                                 "url": f"https://www.instagram.com/{vl}",
                             }
                             break
-                    # 2. Extract @handles from snippet
                     if not parsed:
                         ig_at_matches = re.findall(r"@([a-zA-Z0-9_.]{3,30})", combined_meta)
                         for h_cand in ig_at_matches:
@@ -977,7 +1117,7 @@ async def search_social_candidates(
     # Sort all candidates
     all_candidates = sorted(candidates_map.values(), key=lambda x: -x["score"])
 
-    # Concurrently fetch avatars for top candidates (up to 8 candidates across platforms)
+    # Concurrently fetch avatars for top candidates (up to 12 candidates across platforms)
     async def resolve_avatar(c: dict):
         if c.get("avatar_url"):
             return
@@ -998,13 +1138,15 @@ async def search_social_candidates(
         "instagram": [c for c in all_candidates if c["platform"] == "instagram"][:10],
         "twitter": [c for c in all_candidates if c["platform"] == "twitter"][:10],
         "facebook": [c for c in all_candidates if c["platform"] == "facebook"][:10],
+        "tiktok": [c for c in all_candidates if c["platform"] == "tiktok"][:10],
+        "pinterest": [c for c in all_candidates if c["platform"] == "pinterest"][:10],
     }
 
     total_count = sum(len(v) for v in by_platform.values())
-    print(f"[Social Discovery] Total ranked candidates: {total_count} (LI: {len(by_platform['linkedin'])}, IG: {len(by_platform['instagram'])}, X: {len(by_platform['twitter'])}, FB: {len(by_platform['facebook'])})", flush=True)
+    print(f"[Social Discovery] Total ranked candidates: {total_count} (LI: {len(by_platform['linkedin'])}, IG: {len(by_platform['instagram'])}, X: {len(by_platform['twitter'])}, FB: {len(by_platform['facebook'])}, TT: {len(by_platform['tiktok'])}, PIN: {len(by_platform['pinterest'])})", flush=True)
     if all_candidates:
         top = all_candidates[0]
         print(f"[Social Discovery] Top candidate: [{top['platform']}] {top['handle']} - {top['name']} ({top['score']}%)", flush=True)
     print(f"[Social Discovery] ───────────────────────────────────────────────────\n", flush=True)
 
-    return all_candidates[:30], by_platform
+    return all_candidates[:40], by_platform
