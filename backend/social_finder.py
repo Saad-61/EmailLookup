@@ -102,35 +102,26 @@ def jaro_winkler_similarity(s1: str, s2: str, prefix_weight: float = 0.1) -> flo
     return min(1.0, j_sim + (prefix_len * prefix_weight * (1.0 - j_sim)))
 
 
-DEFAULT_PROXY_IPS = [
-    '91.149.192.92:50100', '77.47.212.192:50100', '85.120.128.119:50100',
-    '50.114.26.171:50100', '80.12.167.241:50100', '77.47.212.194:50100',
-    '51.241.157.58:50100', '85.120.128.136:50100', '85.122.177.70:50100',
-    '85.120.129.61:50100', '51.241.157.69:50100', '77.47.212.191:50100',
-    '80.12.164.176:50100', '85.120.129.79:50100', '80.96.236.167:50100',
-    '136.0.229.103:50100', '80.96.237.223:50100', '50.114.26.221:50100',
-    '155.103.10.145:50100', '205.186.92.167:50100'
-]
-
-
 def get_proxy_ips() -> List[str]:
+    """Load proxy IP list dynamically from PROXY_IPS in .env."""
     raw = os.getenv("PROXY_IPS", "").strip()
     if raw:
         return [ip.strip() for ip in raw.split(",") if ip.strip()]
-    return DEFAULT_PROXY_IPS
+    return []
 
 
 def get_random_proxy_url() -> Optional[str]:
+    """Construct randomized proxy URL from PROXY_USERNAME, PROXY_PASSWORD, and PROXY_IPS."""
     ips = get_proxy_ips()
     if not ips:
         return None
-    import random
     ip = random.choice(ips)
-    user = os.getenv("PROXY_USERNAME", "dubai").strip()
-    pwd = os.getenv("PROXY_PASSWORD", "sI8j4xRsWR").strip()
+    user = os.getenv("PROXY_USERNAME", "").strip()
+    pwd = os.getenv("PROXY_PASSWORD", "").strip()
     if user and pwd:
         return f"http://{user}:{pwd}@{ip}"
     return f"http://{ip}"
+
 
 
 

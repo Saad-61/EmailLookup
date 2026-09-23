@@ -56,9 +56,9 @@ docker run -d -p 8888:8080 -v ${PWD}/searxng:/etc/searxng searxng/searxng:latest
 Configure your `.env` with:
 ```ini
 SEARXNG_URL=http://localhost:8888/search
-PROXY_USERNAME=dubai
-PROXY_PASSWORD=sI8j4xRsWR
-PROXY_IPS=91.149.192.92:50100,77.47.212.192:50100
+PROXY_USERNAME=your_username
+PROXY_PASSWORD=your_password
+PROXY_IPS=ip1:port,ip2:port
 GOOGLE_API_KEY=your_key_here
 GOOGLE_CSE_ID=your_cse_id_here
 ```
