@@ -8,7 +8,9 @@ extraction, and multi-factor corroboration (name, handle, city/country).
 
 import asyncio
 import os
+import random
 import re
+import urllib.parse
 from typing import List, Optional, Dict, Any, Tuple
 import httpx
 from bs4 import BeautifulSoup
@@ -24,6 +26,112 @@ except Exception:
     pass
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"), override=True)
+
+
+def jaro_similarity(s1: str, s2: str) -> float:
+    """Compute the standard Jaro similarity between two strings."""
+    if not s1 or not s2:
+        return 1.0 if s1 == s2 else 0.0
+    if s1 == s2:
+        return 1.0
+
+    len1, len2 = len(s1), len(s2)
+    match_distance = max(len1, len2) // 2 - 1
+    if match_distance < 0:
+        match_distance = 0
+
+    s1_matches = [False] * len1
+    s2_matches = [False] * len2
+
+    matches = 0
+    transpositions = 0
+
+    for i in range(len1):
+        start = max(0, i - match_distance)
+        end = min(i + match_distance + 1, len2)
+        for j in range(start, end):
+            if s2_matches[j]:
+                continue
+            if s1[i] != s2[j]:
+                continue
+            s1_matches[i] = True
+            s2_matches[j] = True
+            matches += 1
+            break
+
+    if matches == 0:
+        return 0.0
+
+    k = 0
+    for i in range(len1):
+        if not s1_matches[i]:
+            continue
+        while not s2_matches[k]:
+            k += 1
+        if s1[i] != s2[k]:
+            transpositions += 1
+        k += 1
+
+    transpositions //= 2
+    return (matches / len1 + matches / len2 + (matches - transpositions) / matches) / 3.0
+
+
+def jaro_winkler_similarity(s1: str, s2: str, prefix_weight: float = 0.1) -> float:
+    """
+    Compute Jaro-Winkler similarity with prefix bonus.
+    Accounts for common transliterations and minor spelling variations
+    (e.g., Nouman vs Noman, Mohammad vs Muhammad, Dameesha vs Damesha).
+    """
+    s1_clean = (s1 or "").strip().lower()
+    s2_clean = (s2 or "").strip().lower()
+    if not s1_clean or not s2_clean:
+        return 1.0 if s1_clean == s2_clean else 0.0
+    if s1_clean == s2_clean:
+        return 1.0
+
+    j_sim = jaro_similarity(s1_clean, s2_clean)
+
+    # Prefix match up to 4 characters
+    prefix_len = 0
+    for c1, c2 in zip(s1_clean[:4], s2_clean[:4]):
+        if c1 == c2:
+            prefix_len += 1
+        else:
+            break
+
+    return min(1.0, j_sim + (prefix_len * prefix_weight * (1.0 - j_sim)))
+
+
+DEFAULT_PROXY_IPS = [
+    '91.149.192.92:50100', '77.47.212.192:50100', '85.120.128.119:50100',
+    '50.114.26.171:50100', '80.12.167.241:50100', '77.47.212.194:50100',
+    '51.241.157.58:50100', '85.120.128.136:50100', '85.122.177.70:50100',
+    '85.120.129.61:50100', '51.241.157.69:50100', '77.47.212.191:50100',
+    '80.12.164.176:50100', '85.120.129.79:50100', '80.96.236.167:50100',
+    '136.0.229.103:50100', '80.96.237.223:50100', '50.114.26.221:50100',
+    '155.103.10.145:50100', '205.186.92.167:50100'
+]
+
+
+def get_proxy_ips() -> List[str]:
+    raw = os.getenv("PROXY_IPS", "").strip()
+    if raw:
+        return [ip.strip() for ip in raw.split(",") if ip.strip()]
+    return DEFAULT_PROXY_IPS
+
+
+def get_random_proxy_url() -> Optional[str]:
+    ips = get_proxy_ips()
+    if not ips:
+        return None
+    import random
+    ip = random.choice(ips)
+    user = os.getenv("PROXY_USERNAME", "dubai").strip()
+    pwd = os.getenv("PROXY_PASSWORD", "sI8j4xRsWR").strip()
+    if user and pwd:
+        return f"http://{user}:{pwd}@{ip}"
+    return f"http://{ip}"
+
 
 
 def generate_handle_variations(
@@ -501,7 +609,7 @@ def score_candidate(
                 reasons.append(f"Handle variation match (@{handle})")
             break
 
-    # 2. Name match (Supports normal and inverted order, e.g. "Atisam Hameed" or "Hameed Atisam")
+    # 2. Name match (Supports exact, inverted, and Jaro-Winkler fuzzy transliteration)
     target_name = resolved_name
     if not target_name:
         for v in all_variations:
@@ -512,22 +620,44 @@ def score_candidate(
                         target_name = f"{v_parts[0].title()} {v_parts[1].title()}"
                         break
 
+    cand_extracted_name = extract_name_from_title(title, platform_info.get("platform", ""))
+    name_matched = False
+
     if target_name and len(target_name.split()) >= 2:
         name_parts = [p.lower() for p in target_name.split() if len(p) >= 2]
         first, last = name_parts[0], name_parts[-1]
         rev_name = f"{last} {first}".lower()
+
         if target_name.lower() in title_l or rev_name in title_l:
             score += 40
             reasons.append(f"Full name match in title ({target_name})")
+            name_matched = True
         elif first in title_l and last in title_l:
             score += 35
             reasons.append(f"First and last name in title ({first.title()} {last.title()})")
+            name_matched = True
         elif rev_name in combined_text or target_name.lower() in combined_text:
             score += 30
             reasons.append(f"Full name match in bio ({target_name})")
+            name_matched = True
         elif (first in combined_text and last in combined_text):
             score += 25
             reasons.append(f"Name corroborated in bio ({first.title()} {last.title()})")
+            name_matched = True
+        elif cand_extracted_name and len(cand_extracted_name.split()) >= 2:
+            cand_parts = [p.lower() for p in cand_extracted_name.split() if len(p) >= 2]
+            c_first, c_last = cand_parts[0], cand_parts[-1]
+            jw_f = jaro_winkler_similarity(c_first, first)
+            jw_l = jaro_winkler_similarity(c_last, last)
+            # Check inverted as well (e.g. Last First)
+            jw_f_inv = jaro_winkler_similarity(c_first, last)
+            jw_l_inv = jaro_winkler_similarity(c_last, first)
+
+            if (jw_f >= 0.88 and jw_l >= 0.88) or (jw_f_inv >= 0.88 and jw_l_inv >= 0.88):
+                score += 25
+                best_sim = max((jw_f + jw_l) / 2.0, (jw_f_inv + jw_l_inv) / 2.0)
+                reasons.append(f"Fuzzy name match (Jaro-Winkler {best_sim:.0%}: '{cand_extracted_name}' ~ '{target_name}')")
+                name_matched = True
 
     # 3. Location match
     if resolved_location:
@@ -537,8 +667,22 @@ def score_candidate(
             score += 20
             reasons.append(f"Location match ({', '.join([l.title() for l in matched_locs])})")
 
+    # 4. Conflicting Given Name Penalty (Rule 3.1)
+    # If surname matches but given name is completely contradictory (e.g. Haseeb Hameed vs Atisam Hameed), cap score at 15
+    if target_name and len(target_name.split()) >= 2 and cand_extracted_name and len(cand_extracted_name.split()) >= 2:
+        name_parts = [p.lower() for p in target_name.split() if len(p) >= 2]
+        cand_parts = [p.lower() for p in cand_extracted_name.split() if len(p) >= 2]
+        first, last = name_parts[0], name_parts[-1]
+        c_first, c_last = cand_parts[0], cand_parts[-1]
+        surname_match = (c_last == last or jaro_winkler_similarity(c_last, last) >= 0.90)
+        given_conflict = (c_first != first and jaro_winkler_similarity(c_first, first) < 0.65 and len(c_first) >= 3 and len(first) >= 3)
+        if surname_match and given_conflict:
+            score = min(score, 15)
+            reasons.append(f"Conflicting given name penalty ({c_first.title()} vs {first.title()})")
+
     score = min(score, 95)
     return score, reasons
+
 
 
 async def fetch_social_avatar(
@@ -606,9 +750,12 @@ async def probe_instagram_profile(
             "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         }
-        proxy = f"http://dubai:sI8j4xRsWR@{random.choice(PROXY_IPS)}"
-        async with httpx.AsyncClient(proxy=proxy, timeout=5.5, follow_redirects=True) as proxied_client:
-            resp = await proxied_client.get(url, headers=headers)
+        proxy = get_random_proxy_url()
+        if proxy:
+            async with httpx.AsyncClient(proxy=proxy, timeout=5.5, follow_redirects=True) as proxied_client:
+                resp = await proxied_client.get(url, headers=headers)
+        else:
+            resp = await client.get(url, headers=headers, timeout=5.5, follow_redirects=True)
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
             og_title = (soup.find("meta", property="og:title") or {}).get("content", "")
@@ -745,41 +892,35 @@ async def probe_pinterest_profile(
     return None
 
 
-PROXY_IPS = [
-    '91.149.192.92:50100', '77.47.212.192:50100', '85.120.128.119:50100',
-    '50.114.26.171:50100', '80.12.167.241:50100', '77.47.212.194:50100',
-    '51.241.157.58:50100', '85.120.128.136:50100', '85.122.177.70:50100',
-    '85.120.129.61:50100', '51.241.157.69:50100', '77.47.212.191:50100',
-    '80.12.164.176:50100', '85.120.129.79:50100', '80.96.236.167:50100',
-    '136.0.229.103:50100', '80.96.237.223:50100', '50.114.26.221:50100',
-    '155.103.10.145:50100', '205.186.92.167:50100'
-]
-
-import urllib.parse
-import random
-
-def parse_ddg_html_response(html: str) -> List[Dict[str, str]]:
-    items = []
-    soup = BeautifulSoup(html, "lxml")
-    results = soup.select(".results .result, .result__body")
-    for r in results:
-        link_tag = r.select_one(".result__title a, a.result__url")
-        snippet_tag = r.select_one(".result__snippet, a.result__snippet")
-        raw_href = link_tag.get("href", "") if link_tag else ""
-        title = link_tag.get_text(strip=True) if link_tag else ""
-        snippet = snippet_tag.get_text(strip=True) if snippet_tag else ""
-        real_url = raw_href
-        if "uddg=" in raw_href:
-            m = re.search(r"uddg=([^&]+)", raw_href)
-            if m:
-                real_url = urllib.parse.unquote(m.group(1))
-        if real_url and real_url.startswith("http") and not real_url.startswith("https://duckduckgo.com"):
-            items.append({
-                "link": real_url,
-                "title": title,
-                "snippet": snippet,
-            })
-    return items
+async def query_google_cse(q_str: str, client: httpx.AsyncClient) -> List[Dict[str, str]]:
+    """
+    Query Google Programmable Search JSON API (100 free queries/day).
+    Gracefully returns [] if unconfigured or on any quota/authentication error.
+    """
+    api_key = os.getenv("GOOGLE_API_KEY", "").strip()
+    cse_id = os.getenv("GOOGLE_CSE_ID", "").strip()
+    if not api_key or not cse_id:
+        return []
+    try:
+        url = f"https://www.googleapis.com/customsearch/v1?key={api_key}&cx={cse_id}&q={urllib.parse.quote(q_str)}"
+        resp = await client.get(url, timeout=4.5)
+        if resp.status_code == 200:
+            data = resp.json()
+            items = []
+            for item in data.get("items", []):
+                l = item.get("link", "")
+                if l and (parse_social_url(l) or any(dom in l.lower() for dom in ("instagram.com", "facebook.com", "x.com", "twitter.com", "linkedin.com", "tiktok.com", "pinterest.com"))):
+                    items.append({
+                        "link": l,
+                        "title": item.get("title", ""),
+                        "snippet": item.get("snippet", ""),
+                    })
+            if items:
+                print(f"[Social Discovery] ✓ Google CSE -> {len(items)} items for: {q_str}", flush=True)
+                return items
+    except Exception as e:
+        print(f"[Social Discovery] [-] Google CSE query error: {e}", flush=True)
+    return []
 
 
 async def search_social_candidates(
@@ -814,7 +955,7 @@ async def search_social_candidates(
         return [], {"linkedin": [], "instagram": [], "twitter": [], "facebook": []}
 
     # Select 1 primary proxy (or direct host IP) for this email lookup
-    lookup_pool = ["DIRECT (Host IP)"] + PROXY_IPS
+    lookup_pool = ["DIRECT (Host IP)"] + get_proxy_ips()
     lookup_proxy_ip = random.choice(lookup_pool)
     print(f"\n[Social Discovery] ───────────────────────────────────────────────────", flush=True)
     print(f"[Social Discovery] Initiating social candidate discovery for: {email}", flush=True)
@@ -907,6 +1048,12 @@ async def search_social_candidates(
         print(f"[Social Discovery] Sending {p.upper()} query: {q}", flush=True)
 
     async def run_search_q(platform_tag: str, q_str: str):
+        # 1. Direct Google Custom Search JSON API if configured
+        cse_items = await query_google_cse(q_str, client)
+        if cse_items:
+            return platform_tag, cse_items
+
+        # 2. Seamless fallback to SearXNG / Yandex
         searxng_url = os.getenv("SEARXNG_URL", "http://localhost:8888/search")
         try:
             req = client.get(

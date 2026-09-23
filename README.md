@@ -1,95 +1,92 @@
-# Email Lookup Tool
+# Email Lookup & Verification Tool
 
-A reverse email lookup tool that finds publicly available information linked to any email address. Also includes an SMTP email verifier.
+A reverse email lookup and SMTP verifier application built with FastAPI, SQLite, and vanilla JS/CSS.
 
-## Features
+---
 
-- **Reverse Lookup** — enter any email, get: name, avatar, LinkedIn, GitHub, platform presence (13+ platforms), data breach history
-- **Email Verifier** — SMTP handshake verification with catch-all detection, MX provider identification, and AbstractAPI fallback when port 25 is blocked
-- Results cached in SQLite (24h for lookups, 6h for verifications)
+## Key Features
 
-## Setup
+- **Reverse Email Lookup**:
+  - Discovers full name, avatar, bio, location, and website.
+  - Extracts GitHub profiles, repositories, and commit history.
+  - Detects account existence across 30+ platforms (Holehe method).
+  - Searches and ranks candidate social media profiles (LinkedIn, Instagram, Twitter/X, etc.).
+  - Applies given name conflict penalties to prevent false positive matches.
+- **SMTP Email Verifier**:
+  - Outbound Port 25 availability check.
+  - Real-time SMTP handshake verification (`HELO` / `MAIL FROM` / `RCPT TO`).
+  - MX provider identification & Catch-all server detection.
+- **High Performance Caching**:
+  - SQLite persistent cache with WAL mode enabled (`data/cache.db`).
+  - Cached lookup results (24h default) with force-refresh and cache invalidation endpoint support.
 
-### 1. Clone & install dependencies
+---
+
+## Technical Stack
+
+- **Backend**: Python 3.11+, FastAPI, `httpx`, `aiosqlite`, `dnspython`, `beautifulsoup4`.
+- **Frontend**: Vanilla HTML5, CSS3, JavaScript (Fetch API).
+- **Database**: SQLite3 (`data/cache.db`).
+
+---
+
+## Quickstart Setup
+
+### 1. Clone & Install Dependencies
 
 ```bash
+# Create virtual environment
 python -m venv .venv
-# Windows:
+
+# Activate virtual environment
+# On Windows:
 .\.venv\Scripts\activate
-# Mac/Linux:
+# On Linux/macOS:
 source .venv/bin/activate
 
+# Install required packages
 pip install -r requirements.txt
 ```
 
-### 2. Configure API keys
+### 2. Configure Environment
 
-Copy `example.env` to `.env` and fill in your keys:
-
-```bash
-copy example.env .env   # Windows
-cp example.env .env     # Mac/Linux
-```
-
-| Key | Where to get it | Required? |
-|-----|----------------|-----------|
-| `GITHUB_TOKEN` | github.com/settings/tokens (no scopes needed) | Strongly recommended |
-| `GRAVATAR_API_KEY` | gravatar.com/developers | Optional (increases rate limit) |
-| `ABSTRACT_API_KEY` | app.abstractapi.com/api/email-validation | Needed if port 25 is blocked |
-| `HIBP_API_KEY` | haveibeenpwned.com/API/Key | Optional (breach lookups) |
-
-### 3. Check if port 25 is blocked (quick test)
-
-```python
-import socket
-s = socket.socket(); s.settimeout(5)
-print("OPEN" if s.connect_ex(("aspmx.l.google.com", 25)) == 0 else "BLOCKED")
-s.close()
-```
-
-If it prints `BLOCKED`, add an `ABSTRACT_API_KEY` in `.env` for email verification to work.
-
-### 4. Run the server
+Copy `example.env` to `.env`:
 
 ```bash
-python -m uvicorn backend.main:app --reload --port 8000
+# On Windows:
+copy example.env .env
+# On Linux/macOS:
+cp example.env .env
 ```
 
-Open **http://127.0.0.1:8000** in your browser.
+*(Optional configuration such as `HOST`, `PORT`, and SMTP sender details can be customized in `.env` if needed).*
 
-## Project Structure
+### 3. Run the Application
 
-```
-EmailLookup/
-├── backend/
-│   ├── main.py              # FastAPI server
-│   ├── lookup_engine.py     # Gravatar, GitHub, LinkedIn, breach sources
-│   ├── smtp_verifier.py     # SMTP verification + port 25 check
-│   ├── platform_checker.py  # 13+ platform presence detection
-│   ├── models.py            # Pydantic data models
-│   ├── cache.py             # SQLite caching layer
-│   └── requirements.txt
-├── frontend/
-│   ├── index.html           # Two-tab UI
-│   ├── style.css            # Light mode styles
-│   └── app.js               # API fetch + DOM rendering
-├── example.env              # API key template
-└── README.md
+Start the server using `uvicorn`:
+
+```bash
+uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-## Data Sources
+Open your browser and navigate to:
+[http://127.0.0.1:8000](http://127.0.0.1:8000)
 
-| Source | What we get | Notes |
-|--------|------------|-------|
-| Gravatar | Name, avatar, bio, linked URLs | Free, 100 req/hr unauthenticated |
-| GitHub API | Username, profile, repos, bio | Free, needs token for 5000 req/hr |
-| DuckDuckGo | LinkedIn URL | No API key needed |
-| Platform checks | Account existence on 13+ platforms | Holehe-style forgot-password probing |
-| Have I Been Pwned | Data breach history | Needs API key |
+---
 
-## Notes
+## Core Pipeline Architecture
 
-- Platform presence checks use the "forgot password" flow technique — no email is sent to the target
-- LinkedIn is found via Google dork through DuckDuckGo (no LinkedIn login required)
-- Phone numbers are only shown if publicly listed in a GitHub or Gravatar bio
-- Address lookups are not supported (requires paid data brokers)
+For in-depth details on how the pipelines, scoring algorithms, and database cache operate:
+- See **[PROJECT_SPEC.md](PROJECT_SPEC.md)** for master architecture and pipeline details.
+- See **[DEVELOPMENT.md](DEVELOPMENT.md)** for developer setup and testing commands.
+- See **[AGENTS.md](AGENTS.md)** for AI agent guidelines and code standards.
+
+---
+
+## Testing
+
+Run the automated test suite to check reverse lookup accuracy:
+
+```bash
+python tests/test_lookup.py
+```
