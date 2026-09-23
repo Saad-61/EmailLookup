@@ -936,15 +936,22 @@ async def probe_pinterest_profile(
     return None
 
 
+_google_cse_disabled_reason: Optional[str] = None
+
+
 async def query_google_cse(q_str: str, client: httpx.AsyncClient) -> List[Dict[str, str]]:
     """
     Query Google Programmable Search JSON API (100 free queries/day).
     Gracefully returns [] if unconfigured or on any quota/authentication error.
     """
+    global _google_cse_disabled_reason
     api_key = os.getenv("GOOGLE_API_KEY", "").strip()
     cse_id = os.getenv("GOOGLE_CSE_ID", "").strip()
     if not api_key or not cse_id:
         return []
+    if _google_cse_disabled_reason:
+        return []
+
     try:
         url = f"https://www.googleapis.com/customsearch/v1?key={api_key}&cx={cse_id}&q={urllib.parse.quote(q_str)}"
         resp = await client.get(url, timeout=4.5)
@@ -960,10 +967,20 @@ async def query_google_cse(q_str: str, client: httpx.AsyncClient) -> List[Dict[s
                         "snippet": item.get("snippet", ""),
                     })
             if items:
-                print(f"[Social Discovery] ✓ Google CSE -> {len(items)} items for: {q_str}", flush=True)
+                print(f"[Google CSE] ✓ 200 OK -> {len(items)} items for: {q_str}", flush=True)
                 return items
+            else:
+                print(f"[Google CSE] ✓ 200 OK (0 relevant social items) -> Falling back to SearXNG", flush=True)
+        elif resp.status_code == 403:
+            _google_cse_disabled_reason = "HTTP 403 Permission Denied (Custom Search API not enabled in Google Cloud Console for this key)"
+            print(f"[Google CSE] ✗ {_google_cse_disabled_reason} -> Seamlessly falling back to SearXNG/Yandex", flush=True)
+        elif resp.status_code == 429:
+            _google_cse_disabled_reason = "HTTP 429 Rate Limit (100 free daily queries exhausted)"
+            print(f"[Google CSE] ✗ {_google_cse_disabled_reason} -> Seamlessly falling back to SearXNG/Yandex", flush=True)
+        else:
+            print(f"[Google CSE] ✗ HTTP {resp.status_code} error -> Falling back to SearXNG", flush=True)
     except Exception as e:
-        print(f"[Social Discovery] [-] Google CSE query error: {e}", flush=True)
+        print(f"[Google CSE] ✗ Query exception: {e} -> Falling back to SearXNG", flush=True)
     return []
 
 
