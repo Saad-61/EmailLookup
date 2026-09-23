@@ -606,7 +606,9 @@ async def probe_instagram_profile(
             "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         }
-        resp = await client.get(url, headers=headers, timeout=5.5, follow_redirects=True)
+        proxy = f"http://dubai:sI8j4xRsWR@{random.choice(PROXY_IPS)}"
+        async with httpx.AsyncClient(proxy=proxy, timeout=5.5, follow_redirects=True) as proxied_client:
+            resp = await proxied_client.get(url, headers=headers)
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
             og_title = (soup.find("meta", property="og:title") or {}).get("content", "")
