@@ -109,15 +109,13 @@ def generate_handle_variations(
                 stems.remove(first)
             stems.insert(0, first)
     else:
-        # Strip single-letter initial prefix when no multi-word name is known (e.g. rdameesha -> dameesha, msharafat -> sharafat)
+        # Fallback: if single-letter initial prefix might exist (e.g. rdameesha -> dameesha), append as secondary stem
         if local:
             clean_no_num = re.sub(r"\d+", "", re.sub(r"[._+-]", "", local))
-            if len(clean_no_num) >= 4:
+            if len(clean_no_num) >= 5:
                 prefix_stripped = clean_no_num[1:]
-                if len(prefix_stripped) >= 3:
-                    if prefix_stripped in stems:
-                        stems.remove(prefix_stripped)
-                    stems.insert(0, prefix_stripped)
+                if len(prefix_stripped) >= 4 and prefix_stripped not in stems:
+                    stems.append(prefix_stripped)
 
     generic = {
         "admin", "info", "support", "sales", "contact", "help",
@@ -653,11 +651,12 @@ async def search_social_candidates(
     if not all_variations and not resolved_name:
         return [], {"linkedin": [], "instagram": [], "twitter": [], "facebook": []}
 
-    # Select 1 primary proxy IP for this entire email lookup (used across all 4 queries)
-    lookup_proxy_ip = random.choice(PROXY_IPS)
+    # Select 1 primary proxy (or direct host IP) for this email lookup
+    lookup_pool = ["DIRECT (Host IP)"] + PROXY_IPS
+    lookup_proxy_ip = random.choice(lookup_pool)
     print(f"\n[Social Discovery] ───────────────────────────────────────────────────", flush=True)
     print(f"[Social Discovery] Initiating social candidate discovery for: {email}", flush=True)
-    print(f"[Social Discovery] Active proxy IP for lookup: {lookup_proxy_ip}", flush=True)
+    print(f"[Social Discovery] Active proxy/route for lookup: {lookup_proxy_ip}", flush=True)
     print(f"[Social Discovery] Specific handles: {specific_handles} | Stems: {stem_handles}", flush=True)
     if resolved_name:
         print(f"[Social Discovery] Anchor name: '{resolved_name}' | Location: '{resolved_location or 'N/A'}'", flush=True)

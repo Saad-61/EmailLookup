@@ -116,6 +116,9 @@ def detect_email_typo(email: str) -> Optional[str]:
 COMMON_FIRST_NAMES = {
     "muhammad", "mohammed", "mohammad", "hassan", "hasan", "ali", "ahmed", "ahmad",
     "umar", "omer", "usman", "osman", "hamza", "bilal", "saad", "usama", "osama",
+    "noman", "nouman", "dameesha", "zohaib", "shahzaib", "tariq", "waseem", "danish",
+    "raza", "faisal", "farhan", "kamran", "adeel", "zeeshan", "asif", "kashif",
+    "arslan", "waqas", "waqar", "ghaffar", "imran", "irfan", "rehman", "salman",
     "david", "john", "michael", "james", "robert", "william", "joseph", "thomas",
     "charles", "daniel", "matthew", "anthony", "donald", "mark", "paul", "steven",
     "andrew", "joshua", "kevin", "brian", "george", "edward", "ronald", "timothy",
