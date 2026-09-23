@@ -7,41 +7,42 @@ server:
 search:
   safe_search: 0
   autocomplete: ""
-  request_timeout: 5.0
+  request_timeout: 4.0
   formats:
     - html
     - json
 
 outgoing:
-  request_timeout: 4.0
-  max_request_timeout: 8.0
+  request_timeout: 3.5
+  max_request_timeout: 6.0
   pool_connections: 100
   pool_maxsize: 20
   enable_http2: true
-  proxies:
-    http:
-      - http://username:password@proxy_ip:port
-    https:
-      - http://username:password@proxy_ip:port
 
 engines:
   - name: yandex
     engine: yandex
     shortcut: yx
+    timeout: 3.0
+    disabled: false
+
+  - name: startpage
+    engine: startpage
+    shortcut: sp
+    timeout: 3.5
+    disabled: false
+
+  - name: mojeek
+    engine: mojeek
+    shortcut: mj
     timeout: 3.5
     disabled: false
 
   - name: bing
-    engine: bing
-    shortcut: b
-    timeout: 3.5
-    disabled: false
+    disabled: true
 
   - name: google
-    engine: google
-    shortcut: g
-    timeout: 3.5
-    disabled: false
+    disabled: true
 
   - name: duckduckgo
     disabled: true
@@ -49,13 +50,7 @@ engines:
   - name: qwant
     disabled: true
 
-  - name: startpage
-    disabled: true
-
   - name: yahoo
-    disabled: true
-
-  - name: mojeek
     disabled: true
 
   - name: seznam

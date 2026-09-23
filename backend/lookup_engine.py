@@ -130,24 +130,28 @@ COMMON_FIRST_NAMES = {
     "sean", "gerald", "carl", "harold", "dylan", "arthur", "lawrence", "jordan", "jesse",
     "bryan", "billy", "bruce", "gabriel", "joe", "logan", "alan", "juan", "albert",
     "willie", "elijah", "wayne", "randy", "vincent", "mason", "roy", "ralph", "bobby",
-    "eugene", "sharafat", "momina", "sundar", "satya", "elon", "atisam", "ahtisham"
+    "eugene", "sharafat", "momina", "sundar", "satya", "elon", "atisam", "ahtisham",
+    "noman", "nouman", "nauman", "saad", "ali", "muhammad", "mohammad", "ahmed", "ahmad",
+    "dameesha", "hamza", "usman", "bilal", "hassan", "hussain", "zain", "omer", "umar",
+    "faisal", "farhan", "kashif", "patrick", "john", "david", "michael", "sarah", "emma",
+    "alex", "daniel", "haseeb", "asif", "dilawar", "rauf", "hameed", "collison", "ghaffar"
 }
 
 
 def split_concatenated_name(local_part: str) -> Optional[str]:
     """
     Parses concatenated names from personal email usernames without delimiters.
-    e.g. 'hassanrashid55' -> 'Hassan Rashid'
+    e.g. 'nomanghaffar074' -> 'Noman Ghaffar'
          'satyanadella' -> 'Satya Nadella'
          'mominawaqar18' -> 'Momina Waqar'
     """
     if not local_part:
         return None
-    s = re.sub(r"\d+", "", local_part.lower()).strip("._-")
+    s = re.sub(r"[\d._+-]+", "", local_part.lower()).strip()
     if len(s) < 5:
         return None
-    for fn in COMMON_FIRST_NAMES:
-        if s.startswith(fn) and len(s) > len(fn) + 1:
+    for fn in sorted(COMMON_FIRST_NAMES, key=len, reverse=True):
+        if s.startswith(fn) and len(s) > len(fn):
             remainder = s[len(fn):]
             if remainder.isalpha() and len(remainder) >= 2:
                 return f"{fn.capitalize()} {remainder.capitalize()}"
@@ -1208,48 +1212,6 @@ async def search_linkedin_anchored(
         except Exception as e:
             print(f"[LinkedIn Search] [-] SearXNG error/offline: {e}", flush=True)
 
-        # ── Strategy 2: DuckDuckGo HTML via Rotated Proxy Pool (Secondary Engine) ──
-        try:
-            try:
-                from backend.social_finder import PROXY_IPS, parse_ddg_html_response
-            except ImportError:
-                from social_finder import PROXY_IPS, parse_ddg_html_response
-
-            ddg_headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": "https://duckduckgo.com/",
-                "Origin": "https://duckduckgo.com",
-            }
-            shuffled_ips = random.sample(PROXY_IPS, min(3, len(PROXY_IPS)))
-            for attempt_ip in shuffled_ips:
-                proxy_url = f"http://dubai:sI8j4xRsWR@{attempt_ip}"
-                try:
-                    async with httpx.AsyncClient(proxy=proxy_url, timeout=9.0) as p_client:
-                        resp = await p_client.get(
-                            "https://html.duckduckgo.com/html/",
-                            params={"q": query},
-                            headers=ddg_headers,
-                            follow_redirects=True,
-                        )
-                        if resp.status_code == 200:
-                            items = parse_ddg_html_response(resp.text)
-                            for it in items:
-                                link = it.get("link", "")
-                                if "linkedin.com/in/" in link and "/in/dir/" not in link and "/pub/dir/" not in link:
-                                    clean_url = link.split("?")[0].rstrip("/")
-                                    title = (it.get("title") or "").lower()
-                                    snippet = (it.get("snippet") or "").lower()
-                                    is_valid, conf = is_valid_linkedin_candidate(clean_url, title, snippet, target_handle, target_name, anchor)
-                                    if is_valid:
-                                        print(f"[LinkedIn Search] ✓ Verified LinkedIn candidate (DDG Proxy {attempt_ip}): {clean_url} (Confidence: {conf}%)", flush=True)
-                                        return clean_url, None, conf
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
     return None, None, 0
 
 
@@ -2065,7 +2027,7 @@ async def run_lookup(email: str) -> dict:
         company = None
 
     # ── Phone from GitHub bio ──
-    phone = github.get("phone_from_bio") if github else None
+    phone = github.get("phone_froAm_bio") if github else None
 
     # ── Email quality & deliverability (Instant Local Calculation) ──
     email_quality = {

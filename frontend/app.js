@@ -634,7 +634,7 @@ function renderSingleProfileCard(c) {
   const snippetHtml = c.snippet ? `<div class="candidate-snippet" style="margin-top:6px; color:var(--c-text-secondary); font-size:13px; line-height:1.4;">${escapeHtml(c.snippet)}</div>` : "";
 
   const avatarImgHtml = c.avatar_url ? `
-    <img src="${escapeHtml(c.avatar_url)}" class="candidate-avatar" alt="${escapeHtml(c.handle || c.name)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+    <img src="${escapeHtml(c.avatar_url)}" class="candidate-avatar" referrerpolicy="no-referrer" alt="${escapeHtml(c.handle || c.name)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
     <div class="profile-chip-icon ${pIconClass}" style="display: none;">${pIconSymbol}</div>
   ` : `
     <div class="profile-chip-icon ${pIconClass}">${pIconSymbol}</div>
@@ -698,7 +698,7 @@ function renderCandidateCard(c) {
   const snippetHtml = c.snippet ? `<div class="candidate-snippet">${escapeHtml(c.snippet)}</div>` : "";
 
   const avatarImgHtml = c.avatar_url ? `
-    <img src="${escapeHtml(c.avatar_url)}" class="candidate-avatar" alt="${escapeHtml(c.handle)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+    <img src="${escapeHtml(c.avatar_url)}" class="candidate-avatar" referrerpolicy="no-referrer" alt="${escapeHtml(c.handle)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
     <div class="profile-chip-icon ${pIconClass}" style="display: none;">${pIconSymbol}</div>
   ` : `
     <div class="profile-chip-icon ${pIconClass}">${pIconSymbol}</div>
