@@ -358,7 +358,35 @@ def extract_name_from_title(title: str, platform: str) -> Optional[str]:
     t = t.strip(' -–|•·:/')
     if len(t) > 35:
         t = t[:35].strip()
+
+    # Reject generic placeholders
+    tl = t.lower()
+    if any(rej in tl for rej in (
+        "link to facebook", "link to instagram", "link to twitter", "link to linkedin",
+        "facebook", "instagram", "twitter", "linkedin", "x.com", "threads.net",
+        "log in", "sign up", "page not found", "the site owner hides", "welcome back"
+    )):
+        return None
+
     return t if (t and len(t) >= 2) else None
+
+
+def format_handle_to_name(handle: str, resolved_name: Optional[str] = None) -> str:
+    """Format a social handle into a human-readable display name when title is missing/generic."""
+    if not handle:
+        return ""
+    clean = handle.lstrip("@").strip()
+    # Strip trailing numbers
+    name_clean = re.sub(r"\d+$", "", clean).strip("._-")
+    # Split by dot or underscore
+    parts = [p.capitalize() for p in re.split(r"[._-]+", name_clean) if len(p) >= 2]
+    if len(parts) >= 2:
+        return " ".join(parts)
+    elif len(parts) == 1:
+        if resolved_name and parts[0].lower() in resolved_name.lower():
+            return resolved_name
+        return parts[0]
+    return clean
 
 
 def score_candidate(
@@ -874,7 +902,14 @@ async def search_social_candidates(
             if score < 5:
                 continue
 
-            display_name = extract_name_from_title(title, platform) or handle
+            raw_name = extract_name_from_title(title, platform)
+            display_name = raw_name if raw_name else format_handle_to_name(handle, resolved_name)
+            if not display_name:
+                display_name = handle
+
+            clean_snippet = (snippet or "").strip()
+            if any(bad in clean_snippet.lower() for bad in ("the site owner hides", "link to facebook", "link to instagram", "welcome back", "log in")):
+                clean_snippet = f"{parsed['platform_label']} profile for @{handle.lstrip('@')}"
 
             cand_obj = {
                 "platform": platform,
@@ -882,7 +917,7 @@ async def search_social_candidates(
                 "handle": f"@{handle}" if not handle.startswith("@") else handle,
                 "name": display_name,
                 "url": parsed["url"],
-                "snippet": snippet,
+                "snippet": clean_snippet or f"{parsed['platform_label']} account @{handle.lstrip('@')}",
                 "score": score,
                 "confidence_badge": "",
                 "confidence_level": "strong" if score >= 70 else "potential",
