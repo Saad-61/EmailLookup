@@ -1980,7 +1980,8 @@ async def run_lookup(email: str) -> dict:
     gh_user = github.get("username") if (github and isinstance(github, dict)) else None
     comp_name = company.get("name") if (company and isinstance(company, dict)) else None
     social_candidates = []
-    has_verified_li = bool(linkedin_url)
+    # Only treat LinkedIn as 100% verified if corroborated by an authoritative source
+    has_verified_li = bool(linkedin_url and linkedin_confidence == 100 and linkedin_source in ("github", "gravatar", "wikidata", "harvested"))
     try:
         raw_candidates, by_plat = await search_social_candidates(
             email=email,
@@ -1992,12 +1993,28 @@ async def run_lookup(email: str) -> dict:
             has_verified_linkedin=has_verified_li,
         )
 
+        # If a search-discovered LinkedIn candidate was found during base checks, add it to candidates list if not present
+        if linkedin_url and not has_verified_li:
+            li_slug = linkedin_url.split("linkedin.com/in/")[-1].strip("/")
+            existing_li_urls = [c.get("url") for c in by_plat.get("linkedin", [])]
+            if linkedin_url not in existing_li_urls:
+                cand_li = {
+                    "platform": "linkedin",
+                    "platform_label": "LinkedIn",
+                    "handle": f"@{li_slug}",
+                    "name": resolved_name or li_slug,
+                    "url": linkedin_url,
+                    "snippet": f"LinkedIn profile for {resolved_name or li_slug}",
+                    "score": linkedin_confidence or 80,
+                    "confidence_badge": "",
+                    "confidence_level": "strong" if (linkedin_confidence or 80) >= 70 else "potential",
+                    "reasons": [f"Discovered via name anchor search ({linkedin_source})"],
+                    "avatar_url": li_avatar,
+                }
+                by_plat.setdefault("linkedin", []).insert(0, cand_li)
+                raw_candidates.insert(0, cand_li)
+
         # ── Zero Duplicate Platform Rule ──
-        # 1. If a platform has a direct verified link (from GitHub, Gravatar, Wikidata, or Harvested DB),
-        #    it is kept in top profiles. Any discovered candidate with that exact URL is pruned.
-        # 2. If a platform does NOT have a direct verified link from GitHub/Gravatar/Wikidata,
-        #    it is NOT put in top profiles. ALL discovered candidates are cleanly listed in the
-        #    candidate accordion for that platform (e.g. LinkedIn Candidates, Instagram Candidates).
         for p in ["linkedin", "instagram", "twitter", "facebook"]:
             prof = profiles.get(p)
             is_direct_verified = False
@@ -2006,8 +2023,8 @@ async def run_lookup(email: str) -> dict:
                     prof.get("verified") is True
                     or prof.get("source") in ("github", "gravatar", "wikidata", "harvested")
                 )
-            elif isinstance(prof, str):
-                is_direct_verified = bool(linkedin_url)
+            elif isinstance(prof, str) and p == "linkedin":
+                is_direct_verified = has_verified_li
 
             if is_direct_verified:
                 # Platform is already confirmed and verified in top profiles — clear candidate accordion

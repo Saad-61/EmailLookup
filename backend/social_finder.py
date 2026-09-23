@@ -777,8 +777,8 @@ async def search_social_candidates(
         searxng_url = os.getenv("SEARXNG_URL", "http://localhost:8888/search")
         try:
             reqs = [
-                client.get(searxng_url, params={"q": q_str, "format": "json", "pageno": 1}, timeout=7.0),
-                client.get(searxng_url, params={"q": q_str, "format": "json", "pageno": 2}, timeout=7.0),
+                client.get(searxng_url, params={"q": q_str, "format": "json", "pageno": 1, "engines": "yandex,bing,google"}, timeout=7.0),
+                client.get(searxng_url, params={"q": q_str, "format": "json", "pageno": 2, "engines": "yandex,bing,google"}, timeout=7.0),
             ]
             resps = await asyncio.gather(*reqs, return_exceptions=True)
             items = []
@@ -800,43 +800,11 @@ async def search_social_candidates(
                 print(f"[Social Discovery] ✓ SearXNG (Local Metasearch) {platform_tag.upper()} -> HTTP 200, {len(items)} profile items found", flush=True)
                 return platform_tag, items
             else:
-                print(f"[Social Discovery] [-] SearXNG {platform_tag.upper()} returned 0 valid social items (rate-limited/blocked). Falling back to Rotated Proxy DDG...", flush=True)
+                print(f"[Social Discovery] [-] SearXNG {platform_tag.upper()} -> 0 profile items found", flush=True)
+                return platform_tag, []
         except Exception as e:
             print(f"[Social Discovery] [-] SearXNG error/offline: {e}", flush=True)
-
-        # ── Strategy 2: DuckDuckGo HTML via Rotated Proxy Pool (Secondary Engine) ──
-        ddg_headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Referer": "https://duckduckgo.com/",
-            "Origin": "https://duckduckgo.com",
-        }
-        shuffled_ips = random.sample(PROXY_IPS, min(3, len(PROXY_IPS)))
-        for attempt_ip in shuffled_ips:
-            proxy_url = f"http://dubai:sI8j4xRsWR@{attempt_ip}"
-            try:
-                async with httpx.AsyncClient(proxy=proxy_url, timeout=3.5) as p_client:
-                    resp = await p_client.post(
-                        "https://html.duckduckgo.com/html/",
-                        data={"q": q_str},
-                        headers=ddg_headers,
-                        follow_redirects=True,
-                    )
-                    if resp.status_code == 200:
-                        ddg_items = parse_ddg_html_response(resp.text)
-                        if ddg_items:
-                            print(f"[Social Discovery] ✓ DDG Proxy ({attempt_ip}) {platform_tag.upper()} -> HTTP 200, {len(ddg_items)} items found", flush=True)
-                            return platform_tag, ddg_items
-                        else:
-                            print(f"[Social Discovery] [-] DDG Proxy ({attempt_ip}) {platform_tag.upper()} -> 0 items found, trying next proxy...", flush=True)
-                    elif resp.status_code == 202:
-                        print(f"[Social Discovery] [-] DDG Proxy ({attempt_ip}) {platform_tag.upper()} -> HTTP 202 (cooldown), rotating proxy...", flush=True)
-            except Exception as e:
-                print(f"[Social Discovery] [-] DDG Proxy ({attempt_ip}) error: {e}", flush=True)
-
-        return platform_tag, []
+            return platform_tag, []
 
     search_task = asyncio.gather(*[run_search_q(p, q) for p, q in active_queries])
     search_results, probed_ig_results = await asyncio.gather(search_task, ig_probe_task)

@@ -77,35 +77,41 @@ outgoing:
       - http://dubai:sI8j4xRsWR@205.186.92.167:50100
 
 engines:
-  - name: google
-    engine: google
-    shortcut: g
-    timeout: 3.0
-    disabled: false
-
-  - name: duckduckgo
-    engine: duckduckgo
-    shortcut: ddg
-    timeout: 3.0
+  - name: yandex
+    engine: yandex
+    shortcut: yx
+    timeout: 3.5
     disabled: false
 
   - name: bing
     engine: bing
     shortcut: b
-    timeout: 3.0
+    timeout: 3.5
     disabled: false
+
+  - name: google
+    engine: google
+    shortcut: g
+    timeout: 3.5
+    disabled: false
+
+  - name: duckduckgo
+    disabled: true
 
   - name: qwant
-    engine: qwant
-    shortcut: qw
-    timeout: 3.0
-    disabled: false
+    disabled: true
 
   - name: startpage
-    engine: startpage
-    shortcut: sp
-    timeout: 3.0
-    disabled: false
+    disabled: true
+
+  - name: yahoo
+    disabled: true
+
+  - name: mojeek
+    disabled: true
+
+  - name: seznam
+    disabled: true
 
   - name: brave
     disabled: true
