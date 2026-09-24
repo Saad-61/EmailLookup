@@ -723,12 +723,16 @@ async def probe_instagram_profile(handle: str, client: httpx.AsyncClient) -> Opt
         resp = await client.get(url, headers=CRAWLER_HEADERS, timeout=2.5, follow_redirects=True)
         if resp.status_code == 200:
             text = resp.text
-            if "Sorry, this page isn't available" in text or "The link you followed may be broken" in text:
+            if any(bad in text for bad in ("Sorry, this page isn't available", "The link you followed may be broken", "Page Not Found")):
                 return None
             
             soup = BeautifulSoup(text, "html.parser")
             og_title = soup.find("meta", property="og:title")
-            raw_title = og_title.get("content") if og_title else (soup.title.string if soup.title else "")
+            raw_title = og_title.get("content").strip() if (og_title and og_title.get("content")) else (soup.title.string.strip() if soup.title and soup.title.string else "")
+            
+            # Reject non-existent Instagram profiles (generic "Instagram" title, missing og:title)
+            if not raw_title or raw_title.lower() in ("instagram", "login • instagram", "sign up • instagram", "page not found"):
+                return None
             
             og_img = soup.find("meta", property="og:image")
             raw_img = og_img.get("content") if og_img else None
@@ -736,8 +740,12 @@ async def probe_instagram_profile(handle: str, client: httpx.AsyncClient) -> Opt
 
             og_desc = soup.find("meta", property="og:description")
             raw_desc = og_desc.get("content") if og_desc else ""
-            bio = clean_bio_snippet(raw_desc, "instagram", clean)
+            
+            # If no real description and no authentic avatar, account is not valid
+            if not raw_desc and not avatar_url:
+                return None
 
+            bio = clean_bio_snippet(raw_desc, "instagram", clean)
             display_name = clean_display_name(raw_title, clean, "instagram")
 
             print(f"[Prober] [INSTAGRAM] @{clean} -> ✓ Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
