@@ -303,12 +303,17 @@ function renderLookupResults(data) {
 
   // ── Integrated Workplace Panel inside Hero Person Card ──
   const comp = data.company;
+  const workplaceSideEl = document.getElementById("person-workplace-side");
   const compNameEl = document.getElementById("company-name");
   const compMetaEl = document.getElementById("company-meta");
   const compLogoEl = document.getElementById("company-logo");
   const compLogoFallback = document.getElementById("company-logo-fallback");
 
-  if (comp && (comp.name || comp.domain)) {
+  const hasRealWorkplace = Boolean(
+    comp && (comp.name || (comp.domain && data.email_type === "corporate"))
+  );
+
+  if (hasRealWorkplace && workplaceSideEl) {
     compNameEl.textContent = comp.name || comp.domain;
     const metaParts = [];
     if (comp.role) metaParts.push(comp.role);
@@ -341,13 +346,9 @@ function renderLookupResults(data) {
       compLogoEl.classList.add("hidden");
       compLogoFallback.classList.remove("hidden");
     }
-  } else {
-    // Default personal mailbox
-    compNameEl.textContent = data.email_type === "corporate" ? "Enterprise Workplace" : "Personal Mailbox";
-    compMetaEl.textContent = data.email ? `${data.email.split('@')[1] || 'Domain'} service` : "No corporate affiliation";
-    compLogoEl.classList.add("hidden");
-    compLogoFallback.classList.remove("hidden");
-    compLogoFallback.textContent = data.email_type === "corporate" ? "🏢" : "👤";
+    workplaceSideEl.classList.remove("hidden");
+  } else if (workplaceSideEl) {
+    workplaceSideEl.classList.add("hidden");
   }
 
   // ── Social Profiles Chips (with Headshot Avatar Rendering) ──

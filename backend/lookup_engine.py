@@ -113,48 +113,73 @@ def detect_email_typo(email: str) -> Optional[str]:
     return None
 
 
+TITLE_PREFIXES = {
+    "ch", "chaudhry", "chaudhary", "dr", "engr", "eng", "mr", "ms", "mrs", 
+    "prof", "syed", "sh", "sk", "sheikh", "md", "muhd", "malik", "adv", "al", "el", "haj", "haji"
+}
+
 COMMON_FIRST_NAMES = {
-    "muhammad", "mohammed", "mohammad", "hassan", "hasan", "ali", "ahmed", "ahmad",
-    "umar", "omer", "usman", "osman", "hamza", "bilal", "saad", "usama", "osama",
-    "noman", "nouman", "dameesha", "zohaib", "shahzaib", "tariq", "waseem", "danish",
-    "raza", "faisal", "farhan", "kamran", "adeel", "zeeshan", "asif", "kashif",
-    "arslan", "waqas", "waqar", "ghaffar", "imran", "irfan", "rehman", "salman",
-    "david", "john", "michael", "james", "robert", "william", "joseph", "thomas",
-    "charles", "daniel", "matthew", "anthony", "donald", "mark", "paul", "steven",
-    "andrew", "joshua", "kevin", "brian", "george", "edward", "ronald", "timothy",
-    "jason", "jeffrey", "ryan", "jacob", "gary", "nicholas", "eric", "jonathan",
-    "stephen", "larry", "justin", "scott", "brandon", "benjamin", "samuel", "gregory",
-    "alexander", "frank", "patrick", "raymond", "jack", "dennis", "jerry", "tyler",
-    "aaron", "jose", "adam", "nathan", "henry", "douglas", "zachary", "peter", "kyle",
-    "noah", "ethan", "jeremy", "walter", "christian", "keith", "roger", "terry", "austin",
-    "sean", "gerald", "carl", "harold", "dylan", "arthur", "lawrence", "jordan", "jesse",
-    "bryan", "billy", "bruce", "gabriel", "joe", "logan", "alan", "juan", "albert",
-    "willie", "elijah", "wayne", "randy", "vincent", "mason", "roy", "ralph", "bobby",
-    "eugene", "sharafat", "momina", "sundar", "satya", "elon", "atisam", "ahtisham",
-    "noman", "nouman", "nauman", "saad", "ali", "muhammad", "mohammad", "ahmed", "ahmad",
-    "dameesha", "hamza", "usman", "bilal", "hassan", "hussain", "zain", "omer", "umar",
-    "faisal", "farhan", "kashif", "patrick", "john", "david", "michael", "sarah", "emma",
-    "alex", "daniel", "haseeb", "asif", "dilawar", "rauf", "hameed", "collison", "ghaffar"
+    "fahad", "ahmad", "ahmed", "saad", "noman", "nouman", "nauman", "ali", "hamza", "usman", "osman",
+    "bilal", "hassan", "hasan", "hussain", "zain", "omer", "umar", "faisal", "farhan", 
+    "kashif", "tariq", "asif", "dameesha", "ahtisham", "atisam", "dilawar", "hameed",
+    "ghaffar", "rashid", "tahir", "nasir", "amir", "aamir", "sami", "haris", "junaid",
+    "waseem", "wasim", "naveed", "navid", "arshad", "akram", "aslam", "iqbal", "anwar",
+    "akhtar", "latif", "mahmood", "mehmood", "butt", "dar", "bhatti", "rana", "khan",
+    "chaudhry", "malik", "sheikh", "syed", "shah", "javed", "javaid", "siddiqui",
+    "qureshi", "ansari", "farooqi", "abbasi", "mirza", "baig", "mughal", "rehman",
+    "rahman", "aziz", "khalid", "sultan", "alam", "raza", "ashraf", "munir", "zafar",
+    "nawaz", "sarwar", "liaquat", "abid", "sajid", "majid", "zahid", "shahzad",
+    "khurram", "shahbaz", "tanveer", "tanvir", "waheed", "wahid", "yousaf", "yusuf",
+    "yaqoob", "ayub", "arouba", "ayesha", "fatima", "zainab", "maryam", "mariam",
+    "hira", "sana", "iqra", "amna", "sadia", "mahnoor", "anmol", "noor", "rabia",
+    "sidra", "kinza", "alishba", "hafsa", "laiba", "bisma", "aiman", "nimra",
+    "bushra", "sumaira", "shazia", "rubina", "farzana", "tahira", "samina", "yasmeen",
+    "shabnam", "nasreen", "parveen", "uzma", "fauzia", "fozia", "saima", "asifa",
+    "nida", "fariha", "hina", "madiha", "kiran", "mehwish", "komal", "natasha", "sonia",
+    "erik", "john", "david", "michael", "james", "robert", "william", "richard",
+    "thomas", "charles", "daniel", "matthew", "anthony", "mark", "donald", "steven",
+    "paul", "andrew", "joshua", "kenneth", "kevin", "brian", "george", "timothy",
+    "ronald", "jason", "jeffrey", "ryan", "jacob", "gary", "nicholas", "eric",
+    "jonathan", "stephen", "larry", "justin", "scott", "brandon", "benjamin", "samuel",
+    "gregory", "alexander", "frank", "patrick", "raymond", "jack", "dennis", "jerry",
+    "tyler", "aaron", "jose", "adam", "nathan", "henry", "douglas", "zachary", "peter",
+    "kyle", "walter", "ethan", "jeremy", "harold", "keith", "christian", "roger", "noah",
+    "gerald", "carl", "terry", "sean", "austin", "arthur", "lawrence", "jesse", "dylan",
+    "bryan", "joe", "jordan", "billy", "albert", "bruce", "willie", "gabriel", "logan",
+    "alan", "juan", "wayne", "roy", "ralph", "randy", "eugene", "vincent", "russell",
+    "louis", "philip", "bobby", "johnny", "bradley", "haseeb", "rauf", "collison"
 }
 
 
 def split_concatenated_name(local_part: str) -> Optional[str]:
     """
-    Parses concatenated names from personal email usernames without delimiters.
+    Parses concatenated names from personal email usernames with or without delimiters and titles.
     e.g. 'nomanghaffar074' -> 'Noman Ghaffar'
-         'satyanadella' -> 'Satya Nadella'
-         'mominawaqar18' -> 'Momina Waqar'
+         'ch.fahadahmad11' -> 'Ch Fahad Ahmad'
+         'dr.saadasif99'   -> 'Dr Saad Asif'
+         'mominawaqar18'   -> 'Momina Waqar'
     """
     if not local_part:
         return None
-    s = re.sub(r"[\d._+-]+", "", local_part.lower()).strip()
-    if len(s) < 5:
+    clean = re.sub(r"[\d._+-]+", "", local_part.lower()).strip()
+    if len(clean) < 4:
         return None
+
+    # Check for title prefix
+    title = ""
+    s = clean
+    for t in sorted(TITLE_PREFIXES, key=len, reverse=True):
+        if s.startswith(t) and len(s) >= len(t) + 4:
+            title = t.capitalize()
+            s = s[len(t):]
+            break
+
     for fn in sorted(COMMON_FIRST_NAMES, key=len, reverse=True):
         if s.startswith(fn) and len(s) > len(fn):
             remainder = s[len(fn):]
             if remainder.isalpha() and len(remainder) >= 2:
-                return f"{fn.capitalize()} {remainder.capitalize()}"
+                core = f"{fn.capitalize()} {remainder.capitalize()}"
+                return f"{title} {core}".strip() if title else core
     return None
 
 
@@ -1604,12 +1629,24 @@ async def run_lookup(email: str) -> dict:
                 if remainder.isalpha():
                     resolved_name = f"{resolved_name} {remainder.capitalize()}"
         elif not resolved_name and local_part:
-            if "." in local_part or "_" in local_part:
-                clean_parts = local_part.replace(".", " ").replace("_", " ").split()
-                if all(p.isalpha() for p in clean_parts):
-                    resolved_name = " ".join(p.capitalize() for p in clean_parts)
+            if "." in local_part or "_" in local_part or "-" in local_part:
+                raw_parts = [re.sub(r"\d+", "", p).strip("._-") for p in re.split(r"[._+-]", local_part)]
+                clean_parts = [p for p in raw_parts if p and len(p) >= 2]
+                if clean_parts:
+                    parsed_chunks = []
+                    for i, cp in enumerate(clean_parts):
+                        if i == 0 and cp.lower() in TITLE_PREFIXES:
+                            parsed_chunks.append(cp.capitalize())
+                            continue
+                        sub_split = split_concatenated_name(cp)
+                        if sub_split:
+                            parsed_chunks.extend(sub_split.split())
+                        elif cp.isalpha():
+                            parsed_chunks.append(cp.capitalize())
+                    if len(parsed_chunks) >= 2 or (parsed_chunks and parsed_chunks[0].lower() not in TITLE_PREFIXES):
+                        resolved_name = " ".join(parsed_chunks)
 
-        # Parse concatenated names without delimiters (e.g. hassanrashid55 -> Hassan Rashid)
+        # Parse concatenated names without delimiters (e.g. hassanrashid55 -> Hassan Rashid, chfahadahmad11 -> Ch Fahad Ahmad)
         if not resolved_name or not is_clean_human_name(resolved_name):
             cat_name = split_concatenated_name(local_part)
             if cat_name:
@@ -1931,6 +1968,11 @@ async def run_lookup(email: str) -> dict:
     social_candidates = []
     # Only treat LinkedIn as 100% verified if corroborated by an authoritative source
     has_verified_li = bool(linkedin_url and linkedin_confidence == 100 and linkedin_source in ("github", "gravatar", "wikidata", "harvested"))
+
+    phase1_elapsed_ms = int((time.time() - start) * 1000)
+    print(f"\n[Lookup Engine] ⏱ Base Enrichment (Phase 1 & 2) completed in {phase1_elapsed_ms}ms (Gravatar, GitHub, Wikidata, Company, DB)", flush=True)
+    print(f"[Lookup Engine] ⏱ Launching Phase 3: High-Concurrency Social Discovery...", flush=True)
+
     try:
         raw_candidates, by_plat = await search_social_candidates(
             email=email,

@@ -139,31 +139,70 @@ def get_random_proxy_url() -> Optional[str]:
 # ==========================================
 # 3. COMPOUND NAME PARSER & HANDLE GENERATION
 # ==========================================
+TITLE_PREFIXES = {
+    "ch", "chaudhry", "chaudhary", "dr", "engr", "eng", "mr", "ms", "mrs", 
+    "prof", "syed", "sh", "sk", "sheikh", "md", "muhd", "malik", "adv", "al", "el", "haj", "haji"
+}
+
 COMMON_FIRST_NAMES = {
-    "noman", "nouman", "nauman", "saad", "ahtisham", "atisam", "ali", "muhammad", 
-    "mohammad", "ahmed", "ahmad", "dameesha", "momina", "hamza", "usman", "bilal",
-    "hassan", "hussain", "zain", "omer", "umar", "faisal", "farhan", "kashif",
-    "patrick", "john", "david", "michael", "sarah", "emma", "alex", "daniel",
-    "sharafat", "haseeb", "asif", "dilawar", "rauf", "hameed", "collison", "ghaffar"
+    "fahad", "ahmad", "ahmed", "saad", "noman", "nouman", "nauman", "ali", "hamza", "usman", "osman",
+    "bilal", "hassan", "hasan", "hussain", "zain", "omer", "umar", "faisal", "farhan", 
+    "kashif", "tariq", "asif", "dameesha", "ahtisham", "atisam", "dilawar", "hameed",
+    "ghaffar", "rashid", "tahir", "nasir", "amir", "aamir", "sami", "haris", "junaid",
+    "waseem", "wasim", "naveed", "navid", "arshad", "akram", "aslam", "iqbal", "anwar",
+    "akhtar", "latif", "mahmood", "mehmood", "butt", "dar", "bhatti", "rana", "khan",
+    "chaudhry", "malik", "sheikh", "syed", "shah", "javed", "javaid", "siddiqui",
+    "qureshi", "ansari", "farooqi", "abbasi", "mirza", "baig", "mughal", "rehman",
+    "rahman", "aziz", "khalid", "sultan", "alam", "raza", "ashraf", "munir", "zafar",
+    "nawaz", "sarwar", "liaquat", "abid", "sajid", "majid", "zahid", "shahzad",
+    "khurram", "shahbaz", "tanveer", "tanvir", "waheed", "wahid", "yousaf", "yusuf",
+    "yaqoob", "ayub", "arouba", "ayesha", "fatima", "zainab", "maryam", "mariam",
+    "hira", "sana", "iqra", "amna", "sadia", "mahnoor", "anmol", "noor", "rabia",
+    "sidra", "kinza", "alishba", "hafsa", "laiba", "bisma", "aiman", "nimra",
+    "bushra", "sumaira", "shazia", "rubina", "farzana", "tahira", "samina", "yasmeen",
+    "shabnam", "nasreen", "parveen", "uzma", "fauzia", "fozia", "saima", "asifa",
+    "nida", "fariha", "hina", "madiha", "kiran", "mehwish", "komal", "natasha", "sonia",
+    "erik", "john", "david", "michael", "james", "robert", "william", "richard",
+    "thomas", "charles", "daniel", "matthew", "anthony", "mark", "donald", "steven",
+    "paul", "andrew", "joshua", "kenneth", "kevin", "brian", "george", "timothy",
+    "ronald", "jason", "jeffrey", "ryan", "jacob", "gary", "nicholas", "eric",
+    "jonathan", "stephen", "larry", "justin", "scott", "brandon", "benjamin", "samuel",
+    "gregory", "alexander", "frank", "patrick", "raymond", "jack", "dennis", "jerry",
+    "tyler", "aaron", "jose", "adam", "nathan", "henry", "douglas", "zachary", "peter",
+    "kyle", "walter", "ethan", "jeremy", "harold", "keith", "christian", "roger", "noah",
+    "gerald", "carl", "terry", "sean", "austin", "arthur", "lawrence", "jesse", "dylan",
+    "bryan", "joe", "jordan", "billy", "albert", "bruce", "willie", "gabriel", "logan",
+    "alan", "juan", "wayne", "roy", "ralph", "randy", "eugene", "vincent", "russell",
+    "louis", "philip", "bobby", "johnny", "bradley", "haseeb", "rauf", "collison"
 }
 
 
 def split_compound_name(local_part: str) -> Tuple[str, str]:
     """
-    Splits compound local-part (e.g. nomanghaffar074 -> Noman Ghaffar, saadasif78656 -> Saad Asif).
+    Splits compound local-part (e.g. ch.fahadahmad11 -> Ch Fahad Ahmad, nomanghaffar074 -> Noman Ghaffar).
+    Returns (first_name, last_name) or (full_inferred_name, "").
     """
-    clean = re.sub(r'[\d._+-]+', '', local_part).lower()
-    if not clean:
+    clean = re.sub(r'[\d._+-]+', '', local_part).lower().strip()
+    if not clean or len(clean) < 3:
         return "", ""
 
-    if len(clean) >= 5 and clean[0] == 'r' and clean[1:] in COMMON_FIRST_NAMES:
-        return clean[1:].capitalize(), ""
+    title = ""
+    s = clean
+    for t in sorted(TITLE_PREFIXES, key=len, reverse=True):
+        if s.startswith(t) and len(s) >= len(t) + 4:
+            title = t.capitalize()
+            s = s[len(t):]
+            break
+
+    if len(s) >= 5 and s[0] == 'r' and s[1:] in COMMON_FIRST_NAMES:
+        return s[1:].capitalize(), ""
 
     for fn in sorted(COMMON_FIRST_NAMES, key=len, reverse=True):
-        if clean.startswith(fn) and len(clean) > len(fn):
-            rem = clean[len(fn):]
+        if s.startswith(fn) and len(s) > len(fn):
+            rem = s[len(fn):]
             if len(rem) >= 2:
-                return fn.capitalize(), rem.capitalize()
+                fn_cap = f"{title} {fn.capitalize()}".strip() if title else fn.capitalize()
+                return fn_cap, rem.capitalize()
 
     return clean.capitalize(), ""
 
@@ -187,11 +226,12 @@ def generate_handle_variations(
         if len(clean_no_num) >= 3:
             stems.append(clean_no_num)
 
-        chunks = [c for c in re.split(r"[._+-]", local) if len(c) >= 3 and not c.isdigit()]
+        chunks = [re.sub(r"\d+", "", c).strip("._-") for c in re.split(r"[._+-]", local)]
+        chunks = [c for c in chunks if len(c) >= 2]
+
         for c in chunks:
-            c_no_num = re.sub(r"\d+", "", c)
-            if len(c_no_num) >= 3:
-                stems.append(c_no_num)
+            if len(c) >= 3 and c not in stems:
+                stems.append(c)
 
         if len(chunks) >= 2:
             stems.append("".join(chunks))
@@ -216,11 +256,17 @@ def generate_handle_variations(
 
     if name:
         parts = [p.lower() for p in re.findall(r"[a-zA-Z]+", name)]
-        if len(parts) >= 2:
-            first, last = parts[0], parts[-1]
-            concat = "".join(parts)
+        title = ""
+        core_parts = parts
+        if parts and parts[0] in TITLE_PREFIXES and len(parts) > 1:
+            title = parts[0]
+            core_parts = parts[1:]
+
+        if len(core_parts) >= 2:
+            first, last = core_parts[0], core_parts[-1]
+            concat = "".join(core_parts)
             rev_concat = f"{last}{first}"
-            # Add forward and reverse two-token permutations (EXCLUDE bare single surname 'last')
+            # Core name permutations
             for term in (
                 f"{first}.{last}", f"{last}.{first}",
                 f"{first}_{last}", f"{last}_{first}",
@@ -230,11 +276,22 @@ def generate_handle_variations(
             ):
                 if term not in specific and term not in stems:
                     stems.append(term)
+
+            # Permutations with Title prefix
+            if title:
+                for term in (
+                    f"{title}{concat}", f"{title}.{first}.{last}",
+                    f"{title}_{concat}", f"{title}.{concat}",
+                    f"{title}_{first}_{last}", f"{title}{first}"
+                ):
+                    if term not in specific and term not in stems:
+                        stems.append(term)
+
             if first in stems:
                 stems.remove(first)
             stems.insert(0, first)
-        elif len(parts) == 1:
-            first = parts[0]
+        elif len(core_parts) == 1:
+            first = core_parts[0]
             if first in stems:
                 stems.remove(first)
             stems.insert(0, first)
@@ -1123,24 +1180,36 @@ async def search_social_candidates(
 
     # 2. Build Focused Search Queries (One high-signal query per platform using Full Name)
     search_queries = []
-    query_target = resolved_name if (resolved_name and len(resolved_name.split()) >= 2) else local_part
+
+    # Extract core human name by stripping any title/honorific prefix for broad matching (e.g. 'Ch Fahad Ahmad' -> 'Fahad Ahmad')
+    name_tokens = [p for p in re.findall(r"[a-zA-Z]+", resolved_name or "")]
+    if name_tokens and name_tokens[0].lower() in TITLE_PREFIXES and len(name_tokens) > 1:
+        core_human_name = " ".join(p.capitalize() for p in name_tokens[1:])
+    else:
+        core_human_name = resolved_name
+
+    query_target = core_human_name if (core_human_name and len(core_human_name.split()) >= 2) else (resolved_name or local_part)
 
     # Q1: LinkedIn (if not already corroborated via direct lookup)
     if not has_verified_linkedin:
         if company_name and len(company_name.strip()) >= 2:
             search_queries.append(("linkedin", f'site:linkedin.com/in "{query_target}" "{company_name.strip()}"'))
         search_queries.append(("linkedin", f'site:linkedin.com/in "{query_target}"'))
+        if resolved_name and resolved_name != query_target:
+            search_queries.append(("linkedin", f'site:linkedin.com/in "{resolved_name}"'))
 
     # Q2: Instagram (broad query to catch vanity accounts where real name is in bio)
     search_queries.append(("instagram", f'site:instagram.com {query_target}'))
 
-    # Q3: Facebook (query full name e.g. "Atisam Hameed")
+    # Q3: Facebook (query full name e.g. "Fahad Ahmad")
     search_queries.append(("facebook", f'site:facebook.com "{query_target}"'))
+    if resolved_name and resolved_name != query_target:
+        search_queries.append(("facebook", f'site:facebook.com "{resolved_name}"'))
 
-    # Q4: TikTok (query full name e.g. "Atisam Hameed")
+    # Q4: TikTok (query full name e.g. "Fahad Ahmad")
     search_queries.append(("tiktok", f'site:tiktok.com "{query_target}"'))
 
-    # Q5: Pinterest (query full name e.g. "Atisam Hameed")
+    # Q5: Pinterest (query full name e.g. "Fahad Ahmad")
     search_queries.append(("pinterest", f'site:pinterest.com "{query_target}"'))
 
     print(f"[Social Discovery] 🔍 Launching {len(search_queries)} focused SearXNG queries for '{query_target}' (Startpage + Yandex + Yahoo + Mojeek)...", flush=True)
