@@ -285,17 +285,17 @@ def expand_social_probe_handles(
         if clean and len(clean) >= 3 and clean not in seeds and clean != bare_surname:
             seeds.append(clean)
 
-    # High-signal handle templates ({clean}_, _{clean}, momina0_, _momina0, dameesha_09, ahtisham.v2)
+    # High-signal handle templates ({clean}_, _{clean}, momina0_, _momina0, ahtisham.v2, ahtisham_v2, dameesha_09)
     variation_templates = [
         "{clean}_",
         "_{clean}",
         "{clean}0_",
         "_{clean}0",
         "{clean}_0",
-        "{clean}_09",
-        "{clean}09",
         "{clean}.v2",
         "{clean}_v2",
+        "{clean}_09",
+        "{clean}09",
         "{clean}_01",
     ]
 
@@ -1090,12 +1090,14 @@ async def search_social_candidates(
     print(f"[Social Discovery] Inferred Target Name: '{resolved_name or 'N/A'}'", flush=True)
     print(f"[Social Discovery] 📡 Launching 5-Platform Probing ({len(probe_seeds) * 5} direct probes across Instagram, TikTok, Pinterest, Twitter, Facebook)...", flush=True)
 
-    # 1. Build Direct Probe Tasks with Pooled Clients (Deduplicated per platform character rules)
-    ig_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip() for s in probe_seeds if len(s) >= 3))
-    tt_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip() for s in probe_seeds if len(s) >= 3))
-    pin_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip() for s in probe_seeds if len(s) >= 3))
-    tw_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_]', '', s).lstrip("@").strip() for s in probe_seeds if len(s) >= 3))
-    fb_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip() for s in probe_seeds if len(s) >= 3))
+    # 1. Build Direct Probe Tasks with Pooled Clients (Strictly formatted per platform constraints)
+    ig_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
+    tt_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 2 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 24))
+    pin_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
+    # Twitter: No dots allowed, max 15 chars (convert dots to underscores)
+    tw_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_") for s in probe_seeds if 4 <= len(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_")) <= 15))
+    # Facebook: Alphanumeric and dots only, min 5 chars
+    fb_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".") for s in probe_seeds if 5 <= len(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".")) <= 50))
 
     probe_tasks = []
     for s in ig_seeds:
