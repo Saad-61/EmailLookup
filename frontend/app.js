@@ -230,10 +230,23 @@ function renderLookupResults(data) {
 
   const profiles = data.profiles || {};
   const identityBadge = document.getElementById("identity-badge");
+  const hasVerifiedIdentity = Boolean(
+    profiles.linkedin_verified ||
+    (profiles.linkedin_confidence === 100 && ["wikidata", "github", "gravatar", "harvested"].includes(profiles.linkedin_source)) ||
+    (profiles.github && typeof profiles.github === "object" && profiles.github.username) ||
+    (profiles.gravatar && typeof profiles.gravatar === "object" && (profiles.gravatar.name || profiles.gravatar.avatar))
+  );
+
   if (identityBadge) {
-    if (profiles.linkedin_verified || profiles.linkedin_confidence === 100) {
+    if (hasVerifiedIdentity) {
       identityBadge.textContent = "✓ 100% Verified Identity";
       identityBadge.className = "type-badge badge-verified";
+      identityBadge.title = "Identity verified through authoritative profile records";
+      identityBadge.classList.remove("hidden");
+    } else if (person.name) {
+      identityBadge.textContent = "Inferred Name";
+      identityBadge.className = "type-badge badge-inferred";
+      identityBadge.title = "Name derived from email address; see potential matching candidate profiles below";
       identityBadge.classList.remove("hidden");
     } else {
       identityBadge.classList.add("hidden");
@@ -285,29 +298,31 @@ function renderLookupResults(data) {
   if (profiles.linkedin) {
     const p = parseProfileVal(profiles.linkedin, "LinkedIn Profile");
     if (p && p.url) {
-      const isDirect = p.verified || ["wikidata", "github", "gravatar", "harvested"].includes(p.source);
+      const isDirect = p.verified || ["wikidata", "github", "gravatar", "harvested"].includes(p.source || profiles.linkedin_source);
       const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
       const rawSlug = p.url.split("/in/").pop().split("?")[0].replace(/\/$/, "");
       const displaySlug = rawSlug ? `in/${rawSlug}` : "Profile Link";
-      if (p.isObject && (p.snippet || p.avatar_url || p.name)) {
-        chips.push(renderSingleProfileCard({
-          platform: "linkedin",
-          platform_label: "LinkedIn Profile",
-          url: p.url,
-          name: p.name,
-          handle: p.handle || (rawSlug ? `in/${rawSlug}` : ""),
-          snippet: p.snippet,
-          avatar_url: p.avatar_url,
-          badgeHtml: badgeHtml,
-        }));
-      } else {
-        chips.push(buildProfileChip({
-          href: p.url,
-          iconClass: "linkedin-icon",
-          iconContent: "in",
-          name: `LinkedIn ${badgeHtml}`,
-          sub: `${displaySlug} →`,
-        }));
+      if (isDirect) {
+        if (p.isObject && (p.snippet || p.avatar_url || p.name)) {
+          chips.push(renderSingleProfileCard({
+            platform: "linkedin",
+            platform_label: "LinkedIn Profile",
+            url: p.url,
+            name: p.name,
+            handle: p.handle || (rawSlug ? `in/${rawSlug}` : ""),
+            snippet: p.snippet,
+            avatar_url: p.avatar_url,
+            badgeHtml: badgeHtml,
+          }));
+        } else {
+          chips.push(buildProfileChip({
+            href: p.url,
+            iconClass: "linkedin-icon",
+            iconContent: "in",
+            name: `LinkedIn ${badgeHtml}`,
+            sub: `${displaySlug} →`,
+          }));
+        }
       }
     }
   }

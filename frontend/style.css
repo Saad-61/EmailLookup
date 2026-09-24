@@ -334,6 +334,7 @@ body {
 .type-badge.corporate { background: #f0fdf4; color: var(--c-success); }
 .type-badge.badge-verified { background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; font-weight: 700; }
 .type-badge.badge-match { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-weight: 700; }
+.type-badge.badge-inferred { background: #f8fafc; color: #64748b; border: 1px solid #cbd5e1; font-weight: 600; }
 .type-badge.badge-undeliverable { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
 
 /* ── Profiles ──────────────────────────────────────────────────────────────── */
