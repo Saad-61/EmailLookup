@@ -1082,7 +1082,7 @@ async def search_social_candidates(
             resolved_name = compound_name
 
     specific_handles, stem_handles = generate_handle_variations(email, resolved_name, gh_username)
-    probe_seeds = expand_social_probe_handles(specific_handles, stem_handles, resolved_name)[:18]
+    probe_seeds = expand_social_probe_handles(specific_handles, stem_handles, resolved_name)[:25]
     all_variations = specific_handles + stem_handles + probe_seeds
 
     print(f"\n[Social Discovery] ───────────────────────────────────────────────────", flush=True)
