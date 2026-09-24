@@ -921,6 +921,16 @@ async def probe_facebook_profile(handle: str, client: httpx.AsyncClient) -> Opti
             # If no og:title or generic "Facebook" title, account is not publicly confirmed
             if not raw_title or raw_title.lower() in ("facebook", "log in to facebook", "log into facebook", "welcome to facebook"):
                 return None
+
+            # Extract authentic canonical URL & handle from og:url or final redirected resp.url
+            og_url = soup.find("meta", property="og:url")
+            canonical_url = og_url.get("content").strip() if (og_url and og_url.get("content")) else str(resp.url)
+            m_handle = re.search(r"facebook\.com/([a-zA-Z0-9._-]+)/?$", canonical_url, re.IGNORECASE)
+            if m_handle:
+                c_cand = m_handle.group(1).rstrip("/")
+                if c_cand.lower() not in ("profile.php", "pages", "people", "sharer", "share", "login"):
+                    clean = c_cand
+                    url = f"https://www.facebook.com/{clean}"
             
             og_img = soup.find("meta", property="og:image")
             raw_img = og_img.get("content") if og_img else None
@@ -1149,6 +1159,13 @@ async def search_social_candidates(
 
     candidates_map: Dict[str, Dict[str, Any]] = {}
 
+    def make_candidate_dedup_key(p_plat: str, p_handle: str) -> str:
+        h = p_handle.lstrip("@").strip().lower()
+        if p_plat == "facebook":
+            # Facebook usernames are strictly dot-insensitive (ahtisham.v2 == ahtishamv2)
+            return f"facebook:{h.replace('.', '')}"
+        return f"{p_plat}:{h}"
+
     # Ingest Probe Hits
     for p_cand in probe_results_raw:
         if not isinstance(p_cand, dict) or not p_cand.get("url"):
@@ -1172,8 +1189,8 @@ async def search_social_candidates(
             company_name
         )
         if score >= 15:
-            dedup_key = f"{plat}:{h_clean.lower()}"
-            candidates_map[dedup_key] = {
+            dedup_key = make_candidate_dedup_key(plat, h_clean)
+            cand_obj = {
                 "platform": plat,
                 "platform_label": p_cand["platform_label"],
                 "handle": f"@{h_clean}",
@@ -1189,6 +1206,14 @@ async def search_social_candidates(
                 "avatar_url": p_cand.get("avatar_url"),
                 "discovery_method": "probing"
             }
+            if dedup_key not in candidates_map:
+                candidates_map[dedup_key] = cand_obj
+            else:
+                existing = candidates_map[dedup_key]
+                has_better_avatar = not existing.get("avatar_url") and p_cand.get("avatar_url")
+                has_better_dots = ("." in h_clean and "." not in existing.get("handle", ""))
+                if score > existing.get("score", 0) or has_better_avatar or (score == existing.get("score", 0) and has_better_dots):
+                    candidates_map[dedup_key] = cand_obj
 
     # Ingest Query Hits
     for q_res in query_results_raw:
@@ -1205,7 +1230,7 @@ async def search_social_candidates(
 
             plat = parsed["platform"]
             h_clean = parsed["handle"].lstrip("@")
-            dedup_key = f"{plat}:{h_clean.lower()}"
+            dedup_key = make_candidate_dedup_key(plat, h_clean)
 
             score, reasons, sub_scores, evidence = score_candidate(
                 parsed,
@@ -1223,8 +1248,7 @@ async def search_social_candidates(
             display_name = clean_display_name(title, h_clean, plat, resolved_name)
             bio_clean = clean_bio_snippet(snippet, plat, h_clean)
 
-            if dedup_key not in candidates_map or candidates_map[dedup_key]["score"] < score:
-                existing_avatar = candidates_map.get(dedup_key, {}).get("avatar_url")
+            if dedup_key not in candidates_map:
                 candidates_map[dedup_key] = {
                     "platform": plat,
                     "platform_label": parsed["platform_label"],
@@ -1238,8 +1262,28 @@ async def search_social_candidates(
                     "reasons": reasons,
                     "sub_scores": sub_scores,
                     "evidence": evidence,
-                    "avatar_url": existing_avatar,
+                    "avatar_url": None,
                 }
+            else:
+                existing = candidates_map[dedup_key]
+                has_better_dots = ("." in h_clean and "." not in existing.get("handle", ""))
+                if score > existing.get("score", 0) or (score == existing.get("score", 0) and has_better_dots):
+                    existing_avatar = existing.get("avatar_url")
+                    candidates_map[dedup_key] = {
+                        "platform": plat,
+                        "platform_label": parsed["platform_label"],
+                        "handle": f"@{h_clean}",
+                        "name": display_name or h_clean,
+                        "url": parsed["url"],
+                        "snippet": bio_clean,
+                        "score": max(score, existing.get("score", 0)),
+                        "confidence_badge": "",
+                        "confidence_level": "strong" if max(score, existing.get("score", 0)) >= 70 else "potential",
+                        "reasons": reasons,
+                        "sub_scores": sub_scores,
+                        "evidence": evidence,
+                        "avatar_url": existing_avatar,
+                    }
 
     # Concurrent Avatar Enrichment (LinkedIn + Facebook candidates via crawler headers)
     enrich_tasks = []
