@@ -1020,9 +1020,10 @@ def is_valid_linkedin_candidate(clean_url: str, title: str, snippet: str, target
             has_last = last in title_l or last in url_l
             if has_first and has_last:
                 if anchor:
-                    loc_tokens = [t.strip() for t in re.split(r"[,/]", anchor.lower()) if len(t.strip()) >= 3]
-                    if any(t in snippet_l or t in title_l for t in loc_tokens):
+                    anchor_tokens = [t.strip() for t in re.split(r"[,/]", anchor.lower()) if len(t.strip()) >= 3]
+                    if any(t in snippet_l or t in title_l for t in anchor_tokens):
                         return True, 90
+                    return False, 0
                 return True, 80
             if has_first and (last in snippet_l):
                 return True, 75
@@ -1677,27 +1678,7 @@ async def run_lookup(email: str) -> dict:
         linkedin_loc = None
         linkedin_confidence = 100 if linkedin_url else 0
 
-        if not linkedin_url:
-            comp_name = (
-                (company.get("name") if isinstance(company, dict) else None)
-                or (github.get("company") if isinstance(github, dict) else None)
-            )
-            raw_loc_anchor = (
-                (github.get("explicit_location") if isinstance(github, dict) else None)
-                or (gravatar.get("location") if isinstance(gravatar, dict) else None)
-            )
-            linkedin_url, linkedin_loc, linkedin_confidence = await search_linkedin_anchored(
-                email=email,
-                email_type=email_type,
-                domain=domain,
-                resolved_name=resolved_name,
-                resolved_location=raw_loc_anchor,
-                company_name=comp_name,
-                gh_data=github if isinstance(github, dict) else None,
-                client=client,
-            )
-            if linkedin_url:
-                linkedin_source = "search"
+        # If not direct/authoritative, LinkedIn candidate discovery is handled concurrently in Phase 3 (Social Discovery)
 
         # Fetch authentic LinkedIn details (avatar, human location, full name, headline, company, education, role)
         li_avatar = None
@@ -1722,83 +1703,94 @@ async def run_lookup(email: str) -> dict:
             resolved_name = li_name
 
         # ── Persona Role and Workplace / Education Card Resolution ──
-        if li_role == "student" and li_edu:
-            s_name = li_edu.get("name", "University")
-            s_logo = li_edu.get("logo")
-            s_dom = "fast.nu.edu.pk" if ("fast" in s_name.lower() or "emerging sciences" in s_name.lower()) else None
-            company = {
-                "name": s_name,
-                "domain": s_dom,
-                "logo": s_logo or (f"https://www.google.com/s2/favicons?domain={s_dom}&sz=128" if s_dom else None),
-                "type": "education",
-                "role": "Student",
-                "industry": "Higher Education",
-                "country": None,
-                "rank": None,
-                "email_format": None,
-                "mx_provider": None,
-            }
-        elif li_role == "faculty" and (li_edu or li_comp):
-            f_target = li_edu or li_comp
-            f_name = f_target.get("name", "University")
-            f_logo = f_target.get("logo")
-            f_dom = "fast.nu.edu.pk" if ("fast" in f_name.lower() or "emerging sciences" in f_name.lower()) else None
-            company = {
-                "name": f_name,
-                "domain": f_dom,
-                "logo": f_logo or (f"https://www.google.com/s2/favicons?domain={f_dom}&sz=128" if f_dom else None),
-                "type": "academic_workplace",
-                "role": "Faculty / Academic",
-                "industry": "Higher Education & Research",
-                "country": None,
-                "rank": None,
-                "email_format": None,
-                "mx_provider": None,
-            }
+        has_verified_li = bool(linkedin_url and linkedin_confidence == 100 and linkedin_source in ("github", "gravatar", "wikidata", "harvested"))
+        is_corporate_domain_company = bool(email_type == "corporate" and company and isinstance(company, dict) and (company.get("domain") == domain or company.get("rank") is not None))
+
+        if not is_corporate_domain_company:
+            if li_role == "student" and li_edu:
+                s_name = li_edu.get("name", "University")
+                s_logo = li_edu.get("logo")
+                s_dom = "fast.nu.edu.pk" if ("fast" in s_name.lower() or "emerging sciences" in s_name.lower()) else None
+                company = {
+                    "name": s_name,
+                    "domain": s_dom,
+                    "logo": s_logo or (f"https://www.google.com/s2/favicons?domain={s_dom}&sz=128" if s_dom else None),
+                    "type": "education",
+                    "role": "Student",
+                    "industry": "Higher Education",
+                    "country": None,
+                    "rank": None,
+                    "email_format": None,
+                    "mx_provider": None,
+                }
+            elif li_role == "faculty" and (li_edu or li_comp):
+                f_target = li_edu or li_comp
+                f_name = f_target.get("name", "University")
+                f_logo = f_target.get("logo")
+                f_dom = "fast.nu.edu.pk" if ("fast" in f_name.lower() or "emerging sciences" in f_name.lower()) else None
+                company = {
+                    "name": f_name,
+                    "domain": f_dom,
+                    "logo": f_logo or (f"https://www.google.com/s2/favicons?domain={f_dom}&sz=128" if f_dom else None),
+                    "type": "academic_workplace",
+                    "role": "Faculty / Academic",
+                    "industry": "Higher Education & Research",
+                    "country": None,
+                    "rank": None,
+                    "email_format": None,
+                    "mx_provider": None,
+                }
+            else:
+                # Corporate employee or regular workplace
+                if li_comp and li_comp.get("name") and has_verified_li:
+                    c_name = li_comp["name"]
+                    c_logo = li_comp.get("logo")
+                    c_slug = li_comp.get("url", "").split("/company/")[-1].strip("/") if li_comp.get("url") else None
+                    c_res = await lookup_company(domain="", client=client, company_hint=c_name)
+                    c_dom = (c_res.get("domain") if c_res else None) or c_slug or (company.get("domain") if isinstance(company, dict) else "")
+                    company = {
+                        "name": c_name,
+                        "domain": c_dom,
+                        "logo": c_logo or (c_res.get("logo") if c_res else None) or (f"https://www.google.com/s2/favicons?domain={c_dom}&sz=128" if c_dom else None),
+                        "industry": c_res.get("industry") if c_res else None,
+                        "country": c_res.get("country") if c_res else None,
+                        "rank": c_res.get("rank") if c_res else None,
+                        "type": "workplace",
+                        "alma_mater": li_edu.get("name") if li_edu else None,
+                        "email_format": None,
+                        "mx_provider": None,
+                    }
+                elif not company and harvested and harvested.get("company"):
+                    h_c_name = harvested["company"]
+                    c_res = await lookup_company(domain="", client=client, company_hint=h_c_name)
+                    c_dom = (c_res.get("domain") if c_res else "") or ""
+                    company = {
+                        "name": h_c_name,
+                        "domain": c_dom,
+                        "logo": (c_res.get("logo") if c_res else None) or (f"https://www.google.com/s2/favicons?domain={c_dom}&sz=128" if c_dom else None),
+                        "industry": c_res.get("industry") if c_res else None,
+                        "country": c_res.get("country") if c_res else None,
+                        "type": "workplace",
+                        "alma_mater": li_edu.get("name") if li_edu else None,
+                        "email_format": None,
+                        "mx_provider": None,
+                    }
+                elif company and isinstance(company, dict):
+                    if not company.get("logo") and li_comp and li_comp.get("logo"):
+                        company["logo"] = li_comp["logo"]
+                    if li_edu and not company.get("alma_mater"):
+                        company["alma_mater"] = li_edu.get("name")
         else:
-            # Corporate employee or regular workplace
-            if li_comp and li_comp.get("name"):
-                c_name = li_comp["name"]
-                c_logo = li_comp.get("logo")
-                c_slug = li_comp.get("url", "").split("/company/")[-1].strip("/") if li_comp.get("url") else None
-                c_res = await lookup_company(domain="", client=client, company_hint=c_name)
-                c_dom = (c_res.get("domain") if c_res else None) or c_slug or (company.get("domain") if isinstance(company, dict) else "")
-                company = {
-                    "name": c_name,
-                    "domain": c_dom,
-                    "logo": c_logo or (c_res.get("logo") if c_res else None) or (f"https://www.google.com/s2/favicons?domain={c_dom}&sz=128" if c_dom else None),
-                    "industry": c_res.get("industry") if c_res else None,
-                    "country": c_res.get("country") if c_res else None,
-                    "rank": c_res.get("rank") if c_res else None,
-                    "type": "workplace",
-                    "alma_mater": li_edu.get("name") if li_edu else None,
-                    "email_format": None,
-                    "mx_provider": None,
-                }
-            elif not company and harvested and harvested.get("company"):
-                h_c_name = harvested["company"]
-                c_res = await lookup_company(domain="", client=client, company_hint=h_c_name)
-                c_dom = (c_res.get("domain") if c_res else "") or ""
-                company = {
-                    "name": h_c_name,
-                    "domain": c_dom,
-                    "logo": (c_res.get("logo") if c_res else None) or (f"https://www.google.com/s2/favicons?domain={c_dom}&sz=128" if c_dom else None),
-                    "industry": c_res.get("industry") if c_res else None,
-                    "country": c_res.get("country") if c_res else None,
-                    "type": "workplace",
-                    "alma_mater": li_edu.get("name") if li_edu else None,
-                    "email_format": None,
-                    "mx_provider": None,
-                }
-            elif company and isinstance(company, dict):
-                if not company.get("logo") and li_comp and li_comp.get("logo"):
+            # Corporate email domain is authoritative: only enrich non-conflicting metadata
+            if company and isinstance(company, dict):
+                if not company.get("logo") and li_comp and li_comp.get("logo") and has_verified_li:
                     company["logo"] = li_comp["logo"]
                 if li_edu and not company.get("alma_mater"):
                     company["alma_mater"] = li_edu.get("name")
 
         # ── Location Hierarchy with Country Normalization Guarantee ──
         raw_location = (
-            linkedin_loc
+            (linkedin_loc if has_verified_li else None)
             or (github.get("explicit_location") if github else None)
             or gravatar.get("location")
             or (harvested.get("location") if harvested else None)
@@ -1807,18 +1799,12 @@ async def run_lookup(email: str) -> dict:
         fb_country = github.get("commit_timezone") if github else None
         resolved_location = normalize_location(raw_location, fallback_country=fb_country)
 
-        # ── Profile picture hierarchy (Highest Priority: LinkedIn) ──
-        # 1. LinkedIn avatar (formal, authentic human headshot) — HIGHEST PRIORITY
-        # 2. Harvested LinkedIn avatar from verified DB record
-        # 3. GitHub custom avatar (non-identicon)
-        # 4. Harvested DB avatar
-        # 5. Gravatar (verified human photo)
-        # 6. Fallback to GitHub default identicon
+        # ── Profile picture hierarchy (Highest Priority: Verified LinkedIn) ──
         gh_avatar = github.get("avatar") if (github and isinstance(github, dict)) else None
         is_gh_default = await is_github_default_avatar(gh_avatar, client) if gh_avatar else False
         harvested_li_avatar = harvested.get("avatar_url") if (harvested and "licdn.com" in (harvested.get("avatar_url") or "")) else None
 
-        if li_avatar:
+        if li_avatar and has_verified_li:
             resolved_avatar = li_avatar
         elif harvested_li_avatar:
             resolved_avatar = harvested_li_avatar
