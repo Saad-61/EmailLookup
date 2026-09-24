@@ -1,37 +1,62 @@
 /* ──────────────────────────────────────────────────────────────────────────
-   app.js — Email Lookup frontend logic
+   app.js — Modern SaaS OSINT & Email Verification Frontend
    ────────────────────────────────────────────────────────────────────────── */
 
 const API_BASE = window.location.origin;
 
-// ── Platform emoji/icon map ───────────────────────────────────────────────────
-const PLATFORM_ICONS = {
-  github:   { emoji: "🐙", label: "GitHub" },
-  spotify:  { emoji: "🎵", label: "Spotify" },
-  adobe:    { emoji: "🅐",  label: "Adobe" },
-  dropbox:  { emoji: "📦", label: "Dropbox" },
-  discord:  { emoji: "💬", label: "Discord" },
-  duolingo: { emoji: "🦜", label: "Duolingo" },
-  pinterest:{ emoji: "📌", label: "Pinterest" },
-  patreon:  { emoji: "🎨", label: "Patreon" },
-  gravatar: { emoji: "👤", label: "Gravatar" },
-  tumblr:   { emoji: "✏️", label: "Tumblr" },
-  archive:  { emoji: "📚", label: "Archive.org" },
-  airbnb:   { emoji: "🏠", label: "Airbnb" },
-  reddit:   { emoji: "🤖", label: "Reddit" },
+// ── High-Fidelity SVG Platform Icons ───────────────────────────────────────────
+const SVG_ICONS = {
+  linkedin: `
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z"/>
+    </svg>`,
+  instagram: `
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+    </svg>`,
+  twitter: `
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+    </svg>`,
+  facebook: `
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+    </svg>`,
+  tiktok: `
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.24 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/>
+    </svg>`,
+  pinterest: `
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.663.967-2.911 2.168-2.911 1.024 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.631-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146 1.124.347 2.317.535 3.554.535 6.627 0 12.004-5.378 12.004-12.001C24.014 5.367 18.643 0 12.017 0z"/>
+    </svg>`,
+  github: `
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0 0 22 12.017C22 6.484 17.522 2 12 2z"/>
+    </svg>`,
+  youtube: `
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+    </svg>`,
 };
 
-// ── Tab switching ─────────────────────────────────────────────────────────────
+// ── Tab Switching ─────────────────────────────────────────────────────────────
 document.querySelectorAll(".tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-btn").forEach(b => {
+      b.classList.remove("active");
+      b.setAttribute("aria-selected", "false");
+    });
     document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    
     btn.classList.add("active");
-    document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+    btn.setAttribute("aria-selected", "true");
+    const targetPanel = document.getElementById("panel-" + btn.dataset.tab);
+    if (targetPanel) targetPanel.classList.add("active");
   });
 });
 
-// ── Port 25 check on load ─────────────────────────────────────────────────────
+// ── Port 25 Check on Load ─────────────────────────────────────────────────────
 async function checkPort25() {
   const badge = document.getElementById("port-badge");
   const badgeText = badge.querySelector(".badge-text");
@@ -46,28 +71,47 @@ async function checkPort25() {
     badge.classList.remove("loading");
     if (data.port25_available) {
       badge.classList.add("open");
-      badgeText.textContent = "Port 25 open";
-      badge.title = "SMTP verification works directly from your connection.";
+      badgeText.textContent = "Port 25 Direct";
+      badge.title = "Direct SMTP socket verification active.";
     } else {
       badge.classList.add("blocked");
-      badgeText.textContent = "Port 25 blocked";
-      badge.title = "ISP blocks port 25. Using API fallback for verification.";
+      badgeText.textContent = "Port 25 Filtered";
+      badge.title = "Direct port 25 filtered by network. Fallback verification active.";
     }
   } catch {
     badge.classList.remove("loading");
     badge.classList.add("blocked");
-    badgeText.textContent = "Port 25 blocked";
-    badge.title = "Outbound port 25 check timed out or blocked by ISP.";
+    badgeText.textContent = "Port 25 Filtered";
+    badge.title = "Outbound port 25 check timed out.";
   }
 }
 checkPort25();
+
+// ── Skeleton Loader Helpers ───────────────────────────────────────────────────
+function showLookupSkeleton() {
+  document.getElementById("lookup-results").classList.add("hidden");
+  document.getElementById("lookup-skeleton").classList.remove("hidden");
+}
+
+function hideLookupSkeleton() {
+  document.getElementById("lookup-skeleton").classList.add("hidden");
+}
+
+function showVerifySkeleton() {
+  document.getElementById("verify-results").classList.add("hidden");
+  document.getElementById("verify-skeleton").classList.remove("hidden");
+}
+
+function hideVerifySkeleton() {
+  document.getElementById("verify-skeleton").classList.add("hidden");
+}
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 function setLoading(btnEl, isLoading) {
   const textEl = btnEl.querySelector(".btn-text");
   const spinnerEl = btnEl.querySelector(".btn-spinner");
   btnEl.disabled = isLoading;
-  textEl.textContent = isLoading ? "Searching..." : btnEl.dataset.originalText || textEl.textContent;
+  textEl.textContent = isLoading ? "Searching..." : (btnEl.dataset.originalText || "Search");
   spinnerEl.classList.toggle("hidden", !isLoading);
 }
 
@@ -95,7 +139,6 @@ function escapeHtml(str) {
 //    REVERSE LOOKUP
 // ── ─────────────────────────────────────────────────────────────────────────
 const lookupBtn = document.getElementById("lookup-btn");
-const lookupRefreshBtn = document.getElementById("lookup-refresh-btn");
 lookupBtn.dataset.originalText = "Search";
 
 document.getElementById("lookup-input").addEventListener("keydown", e => {
@@ -113,7 +156,9 @@ async function doLookup(forceRefresh = false) {
   hideError("lookup-error");
   const acBanner = document.getElementById("lookup-autocorrect");
   if (acBanner) acBanner.classList.add("hidden");
-  document.getElementById("lookup-results").classList.add("hidden");
+
+  // Show shimmer skeleton state
+  showLookupSkeleton();
   setLoading(lookupBtn, true);
   lookupBtn.querySelector(".btn-text").textContent = forceRefresh ? "Refreshing..." : "Searching...";
 
@@ -130,9 +175,11 @@ async function doLookup(forceRefresh = false) {
     }
 
     const data = await res.json();
+    hideLookupSkeleton();
     renderLookupResults(data);
     document.getElementById("lookup-results").classList.remove("hidden");
   } catch (err) {
+    hideLookupSkeleton();
     showError("lookup-error", `❌ ${err.message}`);
   } finally {
     setLoading(lookupBtn, false);
@@ -141,9 +188,6 @@ async function doLookup(forceRefresh = false) {
 }
 
 lookupBtn.addEventListener("click", () => doLookup(false));
-if (lookupRefreshBtn) {
-  lookupRefreshBtn.addEventListener("click", () => doLookup(true));
-}
 
 // ── Cache Invalidation / Force Refresh ──
 const forceRefreshBtn = document.getElementById("force-refresh-btn");
@@ -169,6 +213,30 @@ if (forceRefreshBtn) {
   });
 }
 
+// ── Copy Name to Clipboard ──
+const copyNameBtn = document.getElementById("copy-name-btn");
+if (copyNameBtn) {
+  copyNameBtn.addEventListener("click", () => {
+    const name = document.getElementById("person-name").textContent;
+    if (name && name !== "Unknown Person") {
+      navigator.clipboard.writeText(name);
+      copyNameBtn.innerHTML = `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      `;
+      setTimeout(() => {
+        copyNameBtn.innerHTML = `
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        `;
+      }, 1500);
+    }
+  });
+}
+
 // ── Platform-Specific Candidate Accordion Toggles ──
 document.addEventListener("click", e => {
   const btn = e.target.closest(".candidates-toggle-btn");
@@ -176,23 +244,23 @@ document.addEventListener("click", e => {
   const targetId = btn.dataset.target;
   const list = document.getElementById(targetId);
   const pill = btn.querySelector(".candidates-toggle-pill");
-  const icon = btn.querySelector(".candidates-toggle-icon");
+  const accordion = btn.closest(".platform-accordion");
   if (!list) return;
 
   const isCollapsed = list.classList.contains("collapsed");
   if (isCollapsed) {
     list.classList.remove("collapsed");
-    if (icon) icon.textContent = "▼";
-    if (pill) pill.textContent = "Click to collapse";
+    if (accordion) accordion.classList.remove("collapsed");
+    if (pill) pill.textContent = "Collapse";
   } else {
     list.classList.add("collapsed");
-    if (icon) icon.textContent = "▶";
-    if (pill) pill.textContent = "Click to expand";
+    if (accordion) accordion.classList.add("collapsed");
+    if (pill) pill.textContent = "Expand";
   }
 });
 
 function renderLookupResults(data) {
-  // ── Person card ──
+  // ── Person Card ──
   const person = data.person || {};
   const nameEl = document.getElementById("person-name");
   const bioEl = document.getElementById("person-bio");
@@ -225,7 +293,7 @@ function renderLookupResults(data) {
     avatarPlaceholder.textContent = (person.name || "?")[0].toUpperCase();
   }
 
-  typeBadge.textContent = data.email_type === "corporate" ? "Corporate Email" : "Personal Email";
+  typeBadge.textContent = data.email_type === "corporate" ? "Corporate Account" : "Personal Account";
   typeBadge.className = "type-badge " + (data.email_type || "personal");
 
   const profiles = data.profiles || {};
@@ -239,14 +307,14 @@ function renderLookupResults(data) {
 
   if (identityBadge) {
     if (hasVerifiedIdentity) {
-      identityBadge.textContent = "✓ 100% Verified Identity";
+      identityBadge.innerHTML = `✓ 100% Corroborated Identity`;
       identityBadge.className = "type-badge badge-verified";
       identityBadge.title = "Identity verified through authoritative profile records";
       identityBadge.classList.remove("hidden");
     } else if (person.name) {
       identityBadge.textContent = "Inferred Name";
       identityBadge.className = "type-badge badge-inferred";
-      identityBadge.title = "Name derived from email address; see potential matching candidate profiles below";
+      identityBadge.title = "Name derived from email address; review matching candidate profiles below";
       identityBadge.classList.remove("hidden");
     } else {
       identityBadge.classList.add("hidden");
@@ -255,7 +323,7 @@ function renderLookupResults(data) {
 
   if (delivBadge) {
     if (data.deliverability === "undeliverable") {
-      delivBadge.textContent = "⚠️ Inactive Mailbox / Undeliverable";
+      delivBadge.textContent = "⚠️ Inactive Mailbox";
       delivBadge.classList.remove("hidden");
     } else {
       delivBadge.classList.add("hidden");
@@ -264,11 +332,10 @@ function renderLookupResults(data) {
 
   personExtra.classList.remove("hidden");
 
-  // ── Social profiles ──
+  // ── Social Profiles Chips ──
   const profilesList = document.getElementById("profiles-list");
   const chips = [];
 
-  // Helper to parse profile values whether string URL or verified profile object
   function parseProfileVal(val, defaultLabel) {
     if (!val) return null;
     if (typeof val === "string") {
@@ -299,30 +366,16 @@ function renderLookupResults(data) {
     const p = parseProfileVal(profiles.linkedin, "LinkedIn Profile");
     if (p && p.url) {
       const isDirect = p.verified || ["wikidata", "github", "gravatar", "harvested"].includes(p.source || profiles.linkedin_source);
-      const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
+      const badgeHtml = isDirect ? `<span class="match-score-pill">100% Verified</span>` : "";
       const rawSlug = p.url.split("/in/").pop().split("?")[0].replace(/\/$/, "");
       const displaySlug = rawSlug ? `in/${rawSlug}` : "Profile Link";
       if (isDirect) {
-        if (p.isObject && (p.snippet || p.avatar_url || p.name)) {
-          chips.push(renderSingleProfileCard({
-            platform: "linkedin",
-            platform_label: "LinkedIn Profile",
-            url: p.url,
-            name: p.name,
-            handle: p.handle || (rawSlug ? `in/${rawSlug}` : ""),
-            snippet: p.snippet,
-            avatar_url: p.avatar_url,
-            badgeHtml: badgeHtml,
-          }));
-        } else {
-          chips.push(buildProfileChip({
-            href: p.url,
-            iconClass: "linkedin-icon",
-            iconContent: "in",
-            name: `LinkedIn ${badgeHtml}`,
-            sub: `${displaySlug} →`,
-          }));
-        }
+        chips.push(buildProfileChip({
+          href: p.url,
+          platform: "linkedin",
+          name: `LinkedIn ${badgeHtml}`,
+          sub: `${displaySlug} · View Profile`,
+        }));
       }
     }
   }
@@ -333,10 +386,9 @@ function renderLookupResults(data) {
     const ghUser = typeof gh === "string" ? ghUrl.split("/").pop() : (gh.username || "");
     chips.push(buildProfileChip({
       href: ghUrl,
-      iconClass: "github-icon",
-      iconContent: "⌨",
-      name: `@${ghUser} <span class="badge-confidence verified">✓ 100% Verified</span>`,
-      sub: typeof gh === "object" ? `${gh.repos ?? "?"} repos · ${gh.followers ?? "?"} followers` : "Verified Developer Account →",
+      platform: "github",
+      name: `@${ghUser} <span class="match-score-pill">100% Verified</span>`,
+      sub: typeof gh === "object" ? `${gh.repos ?? "?"} repos · ${gh.followers ?? "?"} followers` : "Verified Developer Profile",
     }));
   }
 
@@ -344,25 +396,12 @@ function renderLookupResults(data) {
     const p = parseProfileVal(profiles.twitter, "X / Twitter");
     if (p && p.url) {
       const isDirect = p.verified || ["github", "gravatar"].includes(p.source);
-      const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
-      if (p.isObject && (p.snippet || p.avatar_url)) {
-        chips.push(renderSingleProfileCard({
-          platform: "twitter",
-          platform_label: "X / Twitter Profile",
-          url: p.url,
-          name: p.name,
-          handle: p.handle,
-          snippet: p.snippet,
-          avatar_url: p.avatar_url,
-          badgeHtml: badgeHtml,
-        }));
-      } else {
+      if (isDirect) {
         chips.push(buildProfileChip({
           href: p.url,
-          iconClass: "twitter-icon",
-          iconContent: "𝕏",
-          name: `X / Twitter ${badgeHtml}`,
-          sub: `${p.handle || (isDirect ? "Verified Account" : "Profile Link")} · Profile Link →`,
+          platform: "twitter",
+          name: `X / Twitter <span class="match-score-pill">100% Verified</span>`,
+          sub: `${p.handle || "Verified Account"} · View Profile`,
         }));
       }
     }
@@ -372,25 +411,12 @@ function renderLookupResults(data) {
     const p = parseProfileVal(profiles.instagram, "Instagram");
     if (p && p.url) {
       const isDirect = p.verified || ["github", "gravatar"].includes(p.source);
-      const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
-      if (p.isObject && (p.snippet || p.avatar_url)) {
-        chips.push(renderSingleProfileCard({
-          platform: "instagram",
-          platform_label: "Instagram Profile",
-          url: p.url,
-          name: p.name,
-          handle: p.handle,
-          snippet: p.snippet,
-          avatar_url: p.avatar_url,
-          badgeHtml: badgeHtml,
-        }));
-      } else {
+      if (isDirect) {
         chips.push(buildProfileChip({
           href: p.url,
-          iconClass: "instagram-icon",
-          iconContent: "📸",
-          name: `Instagram ${badgeHtml}`,
-          sub: `${p.handle || (isDirect ? "Verified Account" : "Profile Link")} · Profile Link →`,
+          platform: "instagram",
+          name: `Instagram <span class="match-score-pill">100% Verified</span>`,
+          sub: `${p.handle || "Verified Account"} · View Profile`,
         }));
       }
     }
@@ -400,25 +426,12 @@ function renderLookupResults(data) {
     const p = parseProfileVal(profiles.facebook, "Facebook");
     if (p && p.url) {
       const isDirect = p.verified || ["github", "gravatar"].includes(p.source);
-      const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
-      if (p.isObject && (p.snippet || p.avatar_url)) {
-        chips.push(renderSingleProfileCard({
-          platform: "facebook",
-          platform_label: "Facebook Profile",
-          url: p.url,
-          name: p.name,
-          handle: p.handle,
-          snippet: p.snippet,
-          avatar_url: p.avatar_url,
-          badgeHtml: badgeHtml,
-        }));
-      } else {
+      if (isDirect) {
         chips.push(buildProfileChip({
           href: p.url,
-          iconClass: "facebook-icon",
-          iconContent: "fb",
-          name: `Facebook ${badgeHtml}`,
-          sub: `${p.handle || (isDirect ? "Verified Account" : "Profile Link")} · Profile Link →`,
+          platform: "facebook",
+          name: `Facebook <span class="match-score-pill">100% Verified</span>`,
+          sub: `${p.handle || "Verified Account"} · View Profile`,
         }));
       }
     }
@@ -428,18 +441,18 @@ function renderLookupResults(data) {
     const p = parseProfileVal(profiles.youtube, "YouTube");
     if (p && p.url) {
       const isDirect = p.verified || ["gravatar"].includes(p.source);
-      const badgeHtml = isDirect ? `<span class="badge-confidence verified">✓ 100% Verified</span>` : "";
-      chips.push(buildProfileChip({
-        href: p.url,
-        iconClass: "youtube-icon",
-        iconContent: "▶",
-        name: `YouTube ${badgeHtml}`,
-        sub: isDirect ? "Verified Channel →" : "Profile Link →",
-      }));
+      if (isDirect) {
+        chips.push(buildProfileChip({
+          href: p.url,
+          platform: "youtube",
+          name: `YouTube <span class="match-score-pill">100% Verified</span>`,
+          sub: "Verified Channel",
+        }));
+      }
     }
   }
 
-  // ── Candidate Social Accounts by Platform (Separate Accordions) ──
+  // ── Candidate Social Accounts by Platform (Separate Uncapped Accordions) ──
   const candidatesWrapper = document.getElementById("candidates-wrapper");
   const byPlat = data.social_candidates_by_platform || {};
   let totalCandidatesFound = 0;
@@ -455,6 +468,7 @@ function renderLookupResults(data) {
         totalCandidatesFound += candidates.length;
         if (countEl) countEl.textContent = candidates.length;
         listEl.classList.add("collapsed"); // Collapsed by default
+        accEl.classList.add("collapsed");
         listEl.innerHTML = candidates.map(renderCandidateCard).join("");
         accEl.classList.remove("hidden");
       } else {
@@ -470,7 +484,7 @@ function renderLookupResults(data) {
     profilesList.innerHTML = "";
     profilesList.style.display = "none";
   } else {
-    profilesList.innerHTML = "<p class='no-data'>No social profiles found for this email.</p>";
+    profilesList.innerHTML = "<p class='no-data'>No direct social profiles discovered.</p>";
     profilesList.style.display = "block";
   }
 
@@ -482,78 +496,10 @@ function renderLookupResults(data) {
     }
   }
 
-
-  // ── Platform Accounts (13+ probed platforms) ──
-  const platformsCard = document.getElementById("platforms-card");
-  const platformsList = document.getElementById("platforms-list");
-  const platformsSummary = document.getElementById("platforms-summary");
-  const platforms = data.platforms || [];
-
-  if (platformsCard && platformsList) {
-    if (platforms.length > 0) {
-      const foundCount = platforms.filter(p => p.found).length;
-      if (platformsSummary) {
-        platformsSummary.textContent = `${foundCount} active account${foundCount === 1 ? '' : 's'} detected`;
-      }
-      platformsList.innerHTML = platforms.map(p => {
-        const iconInfo = PLATFORM_ICONS[p.icon] || { emoji: "🌐", label: p.name };
-        return `
-          <div class="platform-chip ${p.found ? 'found' : 'not-found'}">
-            <span class="platform-icon-emoji">${iconInfo.emoji}</span>
-            <span>${p.name}</span>
-            <span class="platform-status">${p.found ? '✅' : '—'}</span>
-          </div>
-        `;
-      }).join("");
-      platformsCard.classList.remove("hidden");
-    } else {
-      platformsCard.classList.add("hidden");
-    }
-  }
-
-  // ── Contact ──
-  const phoneEl = document.getElementById("phone-val");
-  if (data.phone) {
-    phoneEl.textContent = data.phone;
-    phoneEl.classList.remove("not-found");
-  } else {
-    phoneEl.textContent = "Not publicly listed";
-    phoneEl.classList.add("not-found");
-  }
-
-  const contactLocEl = document.getElementById("location-val");
-  if (person.location) {
-    contactLocEl.textContent = person.location;
-    contactLocEl.classList.remove("not-found");
-  } else {
-    contactLocEl.textContent = "Not specified";
-    contactLocEl.classList.add("not-found");
-  }
-
-  // ── Company & Education Intelligence ──
+  // ── Company & Workplace Intelligence ──
   const companyCard = document.getElementById("company-card");
   const comp = data.company;
   if (companyCard && comp && (comp.name || comp.domain)) {
-    const cardTitleEl = companyCard.querySelector(".card-title");
-    if (cardTitleEl) {
-      if (comp.type === "education") {
-        cardTitleEl.innerHTML = `
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
-          Education &amp; University
-        `;
-      } else if (comp.type === "academic_workplace") {
-        cardTitleEl.innerHTML = `
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
-          Academic Workplace
-        `;
-      } else {
-        cardTitleEl.innerHTML = `
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M3 7v14M21 7v14M6 11h4M6 15h4M14 11h4M14 15h4M9 21v-4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4M3 7l9-4 9 4"/></svg>
-          Company &amp; Workplace
-        `;
-      }
-    }
-
     document.getElementById("company-name").textContent = comp.name || comp.domain;
     const metaParts = [];
     if (comp.role) metaParts.push(comp.role);
@@ -564,32 +510,37 @@ function renderLookupResults(data) {
     document.getElementById("company-meta").textContent = metaParts.join(" · ") || comp.domain || "Enterprise";
 
     const logoEl = document.getElementById("company-logo");
+    const logoFallback = document.getElementById("company-logo-fallback");
+
     if (comp.logo) {
       logoEl.src = comp.logo;
       logoEl.classList.remove("hidden");
+      logoFallback.classList.add("hidden");
       logoEl.onerror = () => {
         if (comp.domain && !logoEl.src.includes("google.com/s2/favicons")) {
           logoEl.src = `https://www.google.com/s2/favicons?domain=${comp.domain}&sz=128`;
         } else {
           logoEl.classList.add("hidden");
+          logoFallback.classList.remove("hidden");
         }
       };
     } else if (comp.domain) {
       logoEl.src = `https://www.google.com/s2/favicons?domain=${comp.domain}&sz=128`;
       logoEl.classList.remove("hidden");
-      logoEl.onerror = () => logoEl.classList.add("hidden");
+      logoFallback.classList.add("hidden");
+      logoEl.onerror = () => {
+        logoEl.classList.add("hidden");
+        logoFallback.classList.remove("hidden");
+      };
     } else {
       logoEl.classList.add("hidden");
+      logoFallback.classList.remove("hidden");
     }
 
     companyCard.classList.remove("hidden");
   } else if (companyCard) {
     companyCard.classList.add("hidden");
   }
-
-
-
-
 
   // ── Global Typo Banner ──
   const acBanner = document.getElementById("lookup-autocorrect");
@@ -609,14 +560,17 @@ function renderLookupResults(data) {
     acBanner.classList.add("hidden");
   }
 
-  // ── Query time ──
-  document.getElementById("query-time").textContent = `Query completed in ${data.query_time_ms}ms`;
+  // ── Query Time ──
+  document.getElementById("query-time").textContent = `Query completed in ${data.query_time_ms}ms (Permanent Cache)`;
 }
 
-function buildProfileChip({ href, iconClass, iconContent, name, sub }) {
+function buildProfileChip({ href, platform, name, sub }) {
+  const glyphSvg = SVG_ICONS[platform] || SVG_ICONS.github;
+  const glyphClass = `${platform}-glyph`;
+
   return `
     <a href="${href}" target="_blank" rel="noopener noreferrer" class="profile-chip">
-      <div class="profile-chip-icon ${iconClass}">${iconContent}</div>
+      <div class="platform-glyph-badge ${glyphClass}">${glyphSvg}</div>
       <div class="profile-chip-info">
         <div class="profile-chip-name">${name}</div>
         <div class="profile-chip-sub">${sub}</div>
@@ -630,93 +584,24 @@ function buildProfileChip({ href, iconClass, iconContent, name, sub }) {
   `;
 }
 
-function renderSingleProfileCard(c) {
-  const pIconClass = c.platform === "linkedin"
-    ? "linkedin-icon"
-    : c.platform === "twitter"
-    ? "twitter-icon"
-    : c.platform === "instagram"
-    ? "instagram-icon"
-    : "facebook-icon";
-  const pIconSymbol = c.platform === "linkedin"
-    ? "in"
-    : c.platform === "twitter"
-    ? "𝕏"
-    : c.platform === "instagram"
-    ? "📸"
-    : "fb";
-
-  const snippetHtml = c.snippet ? `<div class="candidate-snippet" style="margin-top:6px; color:var(--c-text-secondary); font-size:13px; line-height:1.4;">${escapeHtml(c.snippet)}</div>` : "";
-
-  const avatarImgHtml = c.avatar_url ? `
-    <img src="${escapeHtml(c.avatar_url)}" class="candidate-avatar" referrerpolicy="no-referrer" alt="${escapeHtml(c.handle || c.name)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-    <div class="profile-chip-icon ${pIconClass}" style="display: none;">${pIconSymbol}</div>
-  ` : `
-    <div class="profile-chip-icon ${pIconClass}">${pIconSymbol}</div>
-  `;
-
-  return `
-    <div class="candidate-card" style="width:100%; border:1px solid var(--c-border); border-radius:var(--radius-sm); padding:14px; background:var(--c-surface); margin-bottom:10px;">
-      <div class="candidate-main">
-        <div class="candidate-header">
-          <div class="candidate-avatar-wrapper">
-            ${avatarImgHtml}
-          </div>
-          <div class="candidate-info">
-            <div class="candidate-name-row">
-              <span class="candidate-name">${escapeHtml(c.name)}</span>
-              ${c.handle ? `<span class="candidate-handle">${escapeHtml(c.handle)}</span>` : ""}
-              ${c.badgeHtml || ""}
-            </div>
-            <div class="candidate-platform-sub" style="color:var(--c-muted); font-size:12px;">${escapeHtml(c.platform_label)}</div>
-          </div>
-        </div>
-        ${snippetHtml}
-      </div>
-      <a href="${c.url}" target="_blank" rel="noopener noreferrer" class="candidate-action-btn">
-        <span>View</span>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-          <polyline points="15 3 21 3 21 9"/>
-          <line x1="10" y1="14" x2="21" y2="3"/>
-        </svg>
-      </a>
-    </div>
-  `;
-}
-
 function renderCandidateCard(c) {
-  const pIconClass = c.platform === "linkedin"
-    ? "linkedin-icon"
-    : c.platform === "twitter"
-    ? "twitter-icon"
-    : c.platform === "instagram"
-    ? "instagram-icon"
-    : c.platform === "facebook"
-    ? "facebook-icon"
-    : c.platform === "tiktok"
-    ? "tiktok-icon"
-    : "pinterest-icon";
-  const pIconSymbol = c.platform === "linkedin"
-    ? "💼"
-    : c.platform === "twitter"
-    ? "𝕏"
-    : c.platform === "instagram"
-    ? "📸"
-    : c.platform === "facebook"
-    ? "ⓕ"
-    : c.platform === "tiktok"
-    ? "🎵"
-    : "📌";
+  const glyphSvg = SVG_ICONS[c.platform] || SVG_ICONS.github;
+  const glyphClass = `${c.platform}-glyph`;
 
-  const headlineHtml = c.title ? `<div class="candidate-headline" style="font-size:12px; color:var(--c-text-secondary); margin-top:2px; line-height:1.3;">${escapeHtml(c.title)}</div>` : "";
+  const score = Math.round(c.score || 0);
+  const scoreBadge = score >= 80
+    ? `<span class="match-score-pill">${score}% Match</span>`
+    : score >= 50
+    ? `<span class="match-score-pill medium">${score}% Match</span>`
+    : "";
+
   const snippetHtml = c.snippet ? `<div class="candidate-snippet">${escapeHtml(c.snippet)}</div>` : "";
 
   const avatarImgHtml = c.avatar_url ? `
     <img src="${escapeHtml(c.avatar_url)}" class="candidate-avatar" referrerpolicy="no-referrer" alt="${escapeHtml(c.handle)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-    <div class="profile-chip-icon ${pIconClass}" style="display: none;">${pIconSymbol}</div>
+    <div class="platform-glyph-badge ${glyphClass}" style="display: none; width: 44px; height: 44px; border-radius: 50%;">${glyphSvg}</div>
   ` : `
-    <div class="profile-chip-icon ${pIconClass}">${pIconSymbol}</div>
+    <div class="platform-glyph-badge ${glyphClass}" style="width: 44px; height: 44px; border-radius: 50%;">${glyphSvg}</div>
   `;
 
   return `
@@ -730,15 +615,15 @@ function renderCandidateCard(c) {
             <div class="candidate-name-row">
               <span class="candidate-name">${escapeHtml(c.name || c.handle)}</span>
               <span class="candidate-handle">${escapeHtml(c.handle)}</span>
+              ${scoreBadge}
             </div>
             <div class="candidate-platform-sub">${escapeHtml(c.platform_label || c.platform)}</div>
-            ${headlineHtml}
           </div>
         </div>
         ${snippetHtml}
       </div>
       <a href="${c.url}" target="_blank" rel="noopener noreferrer" class="candidate-action-btn">
-        <span>View</span>
+        <span>View Profile</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
           <polyline points="15 3 21 3 21 9"/>
@@ -768,7 +653,7 @@ verifyBtn.addEventListener("click", async () => {
   }
 
   hideError("verify-error");
-  document.getElementById("verify-results").classList.add("hidden");
+  showVerifySkeleton();
   setLoading(verifyBtn, true);
   verifyBtn.querySelector(".btn-text").textContent = "Verifying...";
 
@@ -785,9 +670,11 @@ verifyBtn.addEventListener("click", async () => {
     }
 
     const data = await res.json();
+    hideVerifySkeleton();
     renderVerifyResults(data);
     document.getElementById("verify-results").classList.remove("hidden");
   } catch (err) {
+    hideVerifySkeleton();
     showError("verify-error", `❌ ${err.message}`);
   } finally {
     setLoading(verifyBtn, false);
@@ -823,18 +710,18 @@ function renderVerifyResults(data) {
 
   if (data.valid === true) {
     verdict.className = "verdict-banner valid";
-    verdictIcon.textContent = "✅";
-    verdictTitle.textContent = "Safe to Contact";
-    verdictSub.textContent = "This email address is verified and active. Messages will reach this inbox.";
+    verdictIcon.textContent = "✓";
+    verdictTitle.textContent = "Deliverable & Active Mailbox";
+    verdictSub.textContent = "This email address is verified and active on the mail server. Messages will deliver successfully.";
     verdictBadge.textContent = "Deliverable";
     verdictBadge.className = "verdict-pill deliverable";
 
-    vContactable.textContent = "Yes, Safe to Send";
-    vContactable.style.color = "var(--c-success)";
-    vContactableSub.textContent = "High confidence delivery";
+    vContactable.textContent = "Safe to Contact";
+    vContactable.style.color = "var(--status-success-text)";
+    vContactableSub.textContent = "High delivery confidence";
 
     vInboxStatus.textContent = "Active Mailbox";
-    vInboxStatus.style.color = "var(--c-success)";
+    vInboxStatus.style.color = "var(--status-success-text)";
     vInboxSub.textContent = "Mailbox exists & accepts mail";
 
     vProviderSub.textContent = "Configured Host";
@@ -842,19 +729,19 @@ function renderVerifyResults(data) {
 
   } else if (data.valid === false) {
     verdict.className = "verdict-banner invalid";
-    verdictIcon.textContent = "❌";
-    verdictTitle.textContent = "Do Not Send";
-    verdictSub.textContent = "This mailbox does not exist on the mail server. Sending will bounce.";
+    verdictIcon.textContent = "✕";
+    verdictTitle.textContent = "Undeliverable Mailbox";
+    verdictSub.textContent = "This mailbox does not exist on the remote mail server. Outbound emails will bounce.";
     verdictBadge.textContent = "Undeliverable";
     verdictBadge.className = "verdict-pill invalid";
 
-    vContactable.textContent = "No, Will Bounce";
-    vContactable.style.color = "var(--c-danger)";
-    vContactableSub.textContent = "Do not send mail";
+    vContactable.textContent = "Do Not Send";
+    vContactable.style.color = "var(--status-danger-text)";
+    vContactableSub.textContent = "Will result in hard bounce";
 
     vInboxStatus.textContent = "Non-Existent";
-    vInboxStatus.style.color = "var(--c-danger)";
-    vInboxSub.textContent = "Rejected by mail server";
+    vInboxStatus.style.color = "var(--status-danger-text)";
+    vInboxSub.textContent = "Rejected by mail host";
 
     vProviderSub.textContent = "Configured Host";
     noteEl.classList.add("hidden");
@@ -862,41 +749,41 @@ function renderVerifyResults(data) {
   } else if (data.catchall === true) {
     verdict.className = "verdict-banner unknown";
     verdictIcon.textContent = "⚠️";
-    verdictTitle.textContent = "Catch-All Server (Risky)";
-    verdictSub.textContent = "The server accepts mail sent to any name, so individual mailbox delivery cannot be guaranteed.";
-    verdictBadge.textContent = "Risky";
+    verdictTitle.textContent = "Catch-All Mail Server";
+    verdictSub.textContent = "The domain server accepts mail addressed to any username, so individual mailbox delivery cannot be guaranteed.";
+    verdictBadge.textContent = "Catch-All";
     verdictBadge.className = "verdict-pill risky";
 
     vContactable.textContent = "Send with Caution";
-    vContactable.style.color = "var(--c-warn)";
+    vContactable.style.color = "var(--status-warn-text)";
     vContactableSub.textContent = "Catch-all configuration";
 
     vInboxStatus.textContent = "Catch-All Domain";
-    vInboxStatus.style.color = "var(--c-warn)";
+    vInboxStatus.style.color = "var(--status-warn-text)";
     vInboxSub.textContent = "Accepts any address";
 
     vProviderSub.textContent = "Configured Host";
-    noteEl.textContent = "ℹ️ Catch-all mail servers accept all inbound emails to prevent spam harvesting of employee lists. If this email was provided directly by the recipient, it is likely legitimate.";
+    noteEl.textContent = "ℹ️ Catch-all domains accept all incoming email to shield individual employee mailboxes from dictionary attacks. If this contact was obtained directly, delivery is likely normal.";
     noteEl.classList.remove("hidden");
 
   } else if (isProtectedHost) {
     verdict.className = "verdict-banner protected";
     verdictIcon.textContent = "🛡️";
-    verdictTitle.textContent = "Server Protected (Domain Active)";
-    verdictSub.textContent = `${provider} actively receives mail, but shields individual mailbox probes from third-party scanners.`;
+    verdictTitle.textContent = "Protected Mail Server (Active MX)";
+    verdictSub.textContent = `${provider} actively receives mail, but drops direct socket probes to safeguard user privacy.`;
     verdictBadge.textContent = "Protected";
     verdictBadge.className = "verdict-pill protected";
 
     vContactable.textContent = "Likely Safe";
-    vContactable.style.color = "var(--c-accent)";
-    vContactableSub.textContent = "Standard security policy";
+    vContactable.style.color = "var(--brand-primary)";
+    vContactableSub.textContent = "Standard enterprise security";
 
     vInboxStatus.textContent = "Protected Mailbox";
-    vInboxStatus.style.color = "var(--c-accent)";
-    vInboxSub.textContent = "Probes dropped by host";
+    vInboxStatus.style.color = "var(--brand-primary)";
+    vInboxSub.textContent = "Probes filtered by host";
 
     vProviderSub.textContent = "Verified MX Host";
-    noteEl.textContent = `ℹ️ ${provider} deliberately drops automated SMTP verification handshakes to protect user privacy. Because the domain's MX servers are active and healthy, emails sent to a genuine recipient will deliver normally.`;
+    noteEl.textContent = `ℹ️ ${provider} deliberately drops automated SMTP verification probes to prevent user enumeration. Because the domain's MX servers are active, emails sent to a genuine recipient will deliver normally.`;
     noteEl.classList.remove("hidden");
 
   } else {
@@ -908,11 +795,11 @@ function renderVerifyResults(data) {
     verdictBadge.className = "verdict-pill unknown";
 
     vContactable.textContent = "Uncertain";
-    vContactable.style.color = "var(--c-muted)";
+    vContactable.style.color = "var(--text-muted)";
     vContactableSub.textContent = "Could not verify";
 
     vInboxStatus.textContent = "Unreachable";
-    vInboxStatus.style.color = "var(--c-muted)";
+    vInboxStatus.style.color = "var(--text-muted)";
     vInboxSub.textContent = "Connection timed out";
 
     vProviderSub.textContent = "Host Service";
@@ -920,19 +807,19 @@ function renderVerifyResults(data) {
     noteEl.classList.remove("hidden");
   }
 
-  // ── Technical Diagnostics (collapsed by default) ──
+  // ── Technical Diagnostics ──
   document.getElementById("v-mx").textContent = data.mx_record || "—";
 
   const catchallEl = document.getElementById("v-catchall");
   if (data.catchall === true) {
-    catchallEl.textContent = "Yes (Accepts all mail)";
-    catchallEl.style.color = "var(--c-warn)";
+    catchallEl.textContent = "Yes (Accepts all addresses)";
+    catchallEl.style.color = "var(--status-warn-text)";
   } else if (data.catchall === false) {
-    catchallEl.textContent = "No";
-    catchallEl.style.color = "var(--c-success)";
+    catchallEl.textContent = "No (Strict recipient validation)";
+    catchallEl.style.color = "var(--status-success-text)";
   } else {
     catchallEl.textContent = isProtectedHost ? "Shielded / Unknown" : "Unknown";
-    catchallEl.style.color = "var(--c-muted)";
+    catchallEl.style.color = "var(--text-muted)";
   }
 
   const confidence = data.confidence;
@@ -940,8 +827,8 @@ function renderVerifyResults(data) {
   if (confidence !== null && confidence !== undefined) {
     confEl.textContent = `${confidence}%`;
     confEl.style.color = confidence >= 80
-      ? "var(--c-success)"
-      : confidence >= 50 ? "var(--c-warn)" : "var(--c-danger)";
+      ? "var(--status-success-text)"
+      : confidence >= 50 ? "var(--status-warn-text)" : "var(--status-danger-text)";
   } else {
     confEl.textContent = "—";
   }
