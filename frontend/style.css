@@ -674,16 +674,13 @@ body {
   width: 84px;
   height: 84px;
   border-radius: var(--radius-xl);
-  background: linear-gradient(135deg, #eff6ff, #dbeafe);
-  border: 2px solid #bfdbfe;
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  border: 1.5px solid #cbd5e1;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-heading);
-  font-weight: 800;
-  font-size: 30px;
-  color: var(--brand-primary);
-  box-shadow: var(--shadow-sm);
+  color: #64748b;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .person-info {

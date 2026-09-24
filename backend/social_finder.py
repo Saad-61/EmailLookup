@@ -177,11 +177,29 @@ COMMON_FIRST_NAMES = {
 }
 
 
+ROLE_SUFFIXES = {
+    "hr", "dev", "qa", "ceo", "cto", "cfo", "coo", "cmo", "admin", "recruiter", 
+    "sales", "support", "help", "jobs", "hiring", "team", "legal", "ops", "design", "tech", "official"
+}
+
+
 def split_compound_name(local_part: str) -> Tuple[str, str]:
     """
-    Splits compound local-part (e.g. ch.fahadahmad11 -> Ch Fahad Ahmad, nomanghaffar074 -> Noman Ghaffar).
+    Splits compound local-part (e.g. ch.fahadahmad11 -> Ch Fahad Ahmad, sarah.jenkins.hr -> Sarah Jenkins, nomanghaffar074 -> Noman Ghaffar).
     Returns (first_name, last_name) or (full_inferred_name, "").
     """
+    if not local_part:
+        return "", ""
+
+    # Check for delimited local parts e.g. sarah.jenkins.hr, john_doe
+    if any(sep in local_part for sep in (".", "_", "-")):
+        chunks = [re.sub(r'[\d._+-]+', '', c).strip().lower() for c in re.split(r'[._+-]', local_part)]
+        chunks = [c for c in chunks if len(c) >= 2]
+        if chunks and chunks[-1] in ROLE_SUFFIXES and len(chunks) >= 3:
+            chunks = chunks[:-1]
+        if len(chunks) >= 2:
+            return chunks[0].capitalize(), chunks[1].capitalize()
+
     clean = re.sub(r'[\d._+-]+', '', local_part).lower().strip()
     if not clean or len(clean) < 3:
         return "", ""
@@ -652,48 +670,51 @@ def score_candidate(
     # 3. LinkedIn vanity URL match
     if plat == "linkedin":
         slug_norm = re.sub(r"[-_.]", "", handle)
-        if resolved_name and len(resolved_name.split()) >= 2:
+        if resolved_name:
             name_parts = [p.lower() for p in resolved_name.split() if len(p) >= 2]
-            first, last = name_parts[0], name_parts[-1]
-            if slug_norm.startswith(f"{first}{last}") or slug_norm.startswith(f"{last}{first}"):
-                handle_score = max(handle_score, 80)
-                reasons.append(f"Direct LinkedIn vanity URL match (in/{handle})")
-                evidence.append({"type": "handle_match", "source": "linkedin_vanity", "value": f"in/{handle}", "signal_strength": "strong"})
+            if len(name_parts) >= 2:
+                first, last = name_parts[0], name_parts[-1]
+                if slug_norm.startswith(f"{first}{last}") or slug_norm.startswith(f"{last}{first}"):
+                    handle_score = max(handle_score, 80)
+                    reasons.append(f"Direct LinkedIn vanity URL match (in/{handle})")
+                    evidence.append({"type": "handle_match", "source": "linkedin_vanity", "value": f"in/{handle}", "signal_strength": "strong"})
 
     # 4. Name Matching (Exact, Inverted, and Jaro-Winkler >= 88%)
     target_name = resolved_name
     cand_extracted_name = clean_display_name(title, handle, plat, resolved_name)
     
-    if target_name and len(target_name.split()) >= 2:
+    if target_name:
         name_parts = [p.lower() for p in target_name.split() if len(p) >= 2]
-        first, last = name_parts[0], name_parts[-1]
-        rev_name = f"{last} {first}".lower()
+        if len(name_parts) >= 2:
+            first, last = name_parts[0], name_parts[-1]
+            rev_name = f"{last} {first}".lower()
 
-        if target_name.lower() in title_l or rev_name in title_l:
-            name_score = max(name_score, 40)
-            reasons.append(f"Full name match in title ({target_name})")
-            evidence.append({"type": "name_match", "source": "profile_title", "value": target_name, "signal_strength": "strong"})
-        elif first in title_l and last in title_l:
-            name_score = max(name_score, 35)
-            reasons.append(f"First and last name in title ({first.title()} {last.title()})")
-            evidence.append({"type": "name_match", "source": "profile_title", "value": f"{first.title()} {last.title()}", "signal_strength": "medium"})
-        elif rev_name in combined_text or target_name.lower() in combined_text:
-            name_score = max(name_score, 30)
-            reasons.append(f"Full name match in bio ({target_name})")
-            evidence.append({"type": "name_match", "source": "profile_bio", "value": target_name, "signal_strength": "weak"})
-        elif cand_extracted_name and len(cand_extracted_name.split()) >= 2:
-            cand_parts = [p.lower() for p in cand_extracted_name.split() if len(p) >= 2]
-            c_first, c_last = cand_parts[0], cand_parts[-1]
-            jw_f = jaro_winkler_similarity(c_first, first)
-            jw_l = jaro_winkler_similarity(c_last, last)
-            jw_f_inv = jaro_winkler_similarity(c_first, last)
-            jw_l_inv = jaro_winkler_similarity(c_last, first)
+            if target_name.lower() in title_l or rev_name in title_l:
+                name_score = max(name_score, 40)
+                reasons.append(f"Full name match in title ({target_name})")
+                evidence.append({"type": "name_match", "source": "profile_title", "value": target_name, "signal_strength": "strong"})
+            elif first in title_l and last in title_l:
+                name_score = max(name_score, 35)
+                reasons.append(f"First and last name in title ({first.title()} {last.title()})")
+                evidence.append({"type": "name_match", "source": "profile_title", "value": f"{first.title()} {last.title()}", "signal_strength": "medium"})
+            elif rev_name in combined_text or target_name.lower() in combined_text:
+                name_score = max(name_score, 30)
+                reasons.append(f"Full name match in bio ({target_name})")
+                evidence.append({"type": "name_match", "source": "profile_bio", "value": target_name, "signal_strength": "weak"})
+            elif cand_extracted_name:
+                cand_parts = [p.lower() for p in cand_extracted_name.split() if len(p) >= 2]
+                if len(cand_parts) >= 2:
+                    c_first, c_last = cand_parts[0], cand_parts[-1]
+                    jw_f = jaro_winkler_similarity(c_first, first)
+                    jw_l = jaro_winkler_similarity(c_last, last)
+                    jw_f_inv = jaro_winkler_similarity(c_first, last)
+                    jw_l_inv = jaro_winkler_similarity(c_last, first)
 
-            if (jw_f >= 0.88 and jw_l >= 0.88) or (jw_f_inv >= 0.88 and jw_l_inv >= 0.88):
-                name_score = max(name_score, 25)
-                best_sim = max((jw_f + jw_l) / 2.0, (jw_f_inv + jw_l_inv) / 2.0)
-                reasons.append(f"Fuzzy name match (Jaro-Winkler {best_sim:.0%}: '{cand_extracted_name}' ~ '{target_name}')")
-                evidence.append({"type": "name_match", "source": "fuzzy_title", "value": cand_extracted_name, "signal_strength": "weak"})
+                    if (jw_f >= 0.88 and jw_l >= 0.88) or (jw_f_inv >= 0.88 and jw_l_inv >= 0.88):
+                        name_score = max(name_score, 25)
+                        best_sim = max((jw_f + jw_l) / 2.0, (jw_f_inv + jw_l_inv) / 2.0)
+                        reasons.append(f"Fuzzy name match (Jaro-Winkler {best_sim:.0%}: '{cand_extracted_name}' ~ '{target_name}')")
+                        evidence.append({"type": "name_match", "source": "fuzzy_title", "value": cand_extracted_name, "signal_strength": "weak"})
 
     # 5. Workplace / Company Corroboration
     if company_name and company_name.lower() in combined_text:
@@ -714,35 +735,36 @@ def score_candidate(
     final_score = raw_score
 
     # 7. Disambiguation Rules: Conflicting Given Name, Contradictory Surname, & Complete Mismatch Penalties
-    if target_name and len(target_name.split()) >= 2 and cand_extracted_name and len(cand_extracted_name.split()) >= 2:
+    if target_name and cand_extracted_name:
         name_parts = [p.lower() for p in target_name.split() if len(p) >= 2]
         cand_parts = [p.lower() for p in cand_extracted_name.split() if len(p) >= 2]
-        first, last = name_parts[0], name_parts[-1]
-        c_first, c_last = cand_parts[0], cand_parts[-1]
+        if len(name_parts) >= 2 and len(cand_parts) >= 2:
+            first, last = name_parts[0], name_parts[-1]
+            c_first, c_last = cand_parts[0], cand_parts[-1]
 
-        surname_match = (c_last == last or jaro_winkler_similarity(c_last, last) >= 0.90)
-        first_match = (c_first == first or jaro_winkler_similarity(c_first, first) >= 0.90)
-        given_conflict = (c_first != first and jaro_winkler_similarity(c_first, first) < 0.65 and len(c_first) >= 3 and len(first) >= 3)
-        surname_conflict = (c_last != last and jaro_winkler_similarity(c_last, last) < 0.65 and len(c_last) >= 3 and len(last) >= 3)
+            surname_match = (c_last == last or jaro_winkler_similarity(c_last, last) >= 0.90)
+            first_match = (c_first == first or jaro_winkler_similarity(c_first, first) >= 0.90)
+            given_conflict = (c_first != first and jaro_winkler_similarity(c_first, first) < 0.65 and len(c_first) >= 3 and len(first) >= 3)
+            surname_conflict = (c_last != last and jaro_winkler_similarity(c_last, last) < 0.65 and len(c_last) >= 3 and len(last) >= 3)
 
-        # Rule A: Conflicting given name (Haseeb Hameed vs Atisam Hameed) -> cap at 15
-        if surname_match and given_conflict:
-            final_score = min(final_score, 15)
-            reasons.append(f"Conflicting given name penalty ({c_first.title()} vs {first.title()})")
+            # Rule A: Conflicting given name (Haseeb Hameed vs Atisam Hameed) -> cap at 15
+            if surname_match and given_conflict:
+                final_score = min(final_score, 15)
+                reasons.append(f"Conflicting given name penalty ({c_first.title()} vs {first.title()})")
 
-        # Rule B: Contradictory Surname penalty (Ahtisham Khan vs Ahtisham Dilawar) -> cap at 35
-        elif first_match and surname_conflict:
-            final_score = min(final_score, 35)
-            reasons.append(f"Contradictory surname penalty ({c_last.title()} vs {last.title()})")
+            # Rule B: Contradictory Surname penalty (Ahtisham Khan vs Ahtisham Dilawar) -> cap at 35
+            elif first_match and surname_conflict:
+                final_score = min(final_score, 35)
+                reasons.append(f"Contradictory surname penalty ({c_last.title()} vs {last.title()})")
 
-        # Rule C: Complete Name Mismatch (Veronica Torralba Lozano vs Danielle Monaghan)
-        # If neither first nor last name matches and handle doesn't match, this is a completely unrelated third-party profile!
-        else:
-            is_handle_exact = (handle in [v.lower() for v in all_variations])
-            inv_first_match = (c_first == last or jaro_winkler_similarity(c_first, last) >= 0.90)
-            inv_last_match = (c_last == first or jaro_winkler_similarity(c_last, first) >= 0.90)
-            if not (surname_match or first_match or inv_first_match or inv_last_match) and not is_handle_exact:
-                return 0, [f"Unrelated profile: display name ('{cand_extracted_name}') does not match target name ('{target_name}')"], {}, []
+            # Rule C: Complete Name Mismatch (Veronica Torralba Lozano vs Danielle Monaghan)
+            # If neither first nor last name matches and handle doesn't match, this is a completely unrelated third-party profile!
+            else:
+                is_handle_exact = (handle in [v.lower() for v in all_variations])
+                inv_first_match = (c_first == last or jaro_winkler_similarity(c_first, last) >= 0.90)
+                inv_last_match = (c_last == first or jaro_winkler_similarity(c_last, first) >= 0.90)
+                if not (surname_match or first_match or inv_first_match or inv_last_match) and not is_handle_exact:
+                    return 0, [f"Unrelated profile: display name ('{cand_extracted_name}') does not match target name ('{target_name}')"], {}, []
 
     final_score = min(final_score, 95)
     sub_scores = {
@@ -1012,8 +1034,48 @@ async def probe_facebook_profile(handle: str, client: httpx.AsyncClient) -> Opti
             }
     except Exception:
         pass
-    return None
+async def probe_github_profile(handle: str, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
+    clean = re.sub(r'[^a-zA-Z0-9_-]', '', handle).lstrip("@").strip("_-")
+    if not clean or len(clean) < 1 or clean.lower() in ("features", "business", "explore", "marketplace", "pricing", "topics", "collections", "events"):
+        return None
+    url = f"https://github.com/{clean}"
+    try:
+        resp = await client.get(url, headers=CRAWLER_HEADERS, timeout=3.0, follow_redirects=True)
+        if resp.status_code == 200:
+            text = resp.text
+            if "Page not found" in text or "404 Not Found" in text:
+                return None
+            soup = BeautifulSoup(text, "html.parser")
+            og_title = soup.find("meta", property="og:title")
+            raw_title = og_title.get("content").strip() if (og_title and og_title.get("content")) else (soup.title.string.strip() if soup.title and soup.title.string else "")
+            
+            if not raw_title or raw_title.lower() in ("github", "page not found", "built for developers"):
+                return None
 
+            og_img = soup.find("meta", property="og:image")
+            raw_img = og_img.get("content") if og_img else None
+            avatar_url = html.unescape(raw_img) if (raw_img and "avatars.githubusercontent.com" in raw_img) else None
+
+            og_desc = soup.find("meta", property="og:description")
+            raw_desc = og_desc.get("content") if og_desc else ""
+            bio = clean_bio_snippet(raw_desc, "github", clean)
+            display_name = clean_display_name(raw_title, clean, "github")
+
+            print(f"[Prober] [GITHUB] @{clean} -> ✓ Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
+            return {
+                "platform": "github",
+                "platform_label": "GitHub",
+                "handle": clean,
+                "name": display_name,
+                "url": url,
+                "avatar_url": avatar_url,
+                "snippet": bio,
+                "title": raw_title,
+                "discovery_method": "probing"
+            }
+    except Exception:
+        pass
+    return None
 
 
 LI_CRAWLER_HEADERS = {
@@ -1022,28 +1084,34 @@ LI_CRAWLER_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-async def fetch_linkedin_candidate_avatar(url: str, client: httpx.AsyncClient) -> Optional[str]:
-    """Extract authentic LinkedIn profile photo from public OpenGraph tags and HTML via crawler headers."""
+async def fetch_linkedin_candidate_avatar(url: str, client: httpx.AsyncClient) -> Tuple[Optional[str], Optional[str]]:
+    """Extract authentic LinkedIn profile photo and canonical URL from public OpenGraph tags and HTML via crawler headers."""
     if not url or "linkedin.com/in/" not in url:
-        return None
+        return None, None
     try:
         resp = await client.get(url, headers=LI_CRAWLER_HEADERS, timeout=4.0, follow_redirects=True)
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
+            og_url = soup.find("meta", property="og:url")
+            canonical_url = og_url.get("content").strip() if (og_url and og_url.get("content")) else str(resp.url)
+
+            avatar_url = None
             og_img = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "twitter:image"})
             if og_img and og_img.get("content"):
                 img_src = og_img.get("content").strip()
                 if "licdn.com" in img_src and "static.licdn.com" not in img_src and "ghost" not in img_src:
-                    return img_src
-            # Fallback to direct media.licdn profile displayphoto URLs in the page body
-            m = re.search(r'https://media\.licdn\.com/dms/image/[^\s"\'<>]+(?:profile-displayphoto|profile-scale)[^\s"\'<>]+', resp.text)
-            if m:
-                found_url = html.unescape(m.group(0)).rstrip(";,)")
-                if "licdn.com" in found_url and "ghost" not in found_url:
-                    return found_url
+                    avatar_url = img_src
+            if not avatar_url:
+                # Fallback to direct media.licdn profile displayphoto URLs in the page body
+                m = re.search(r'https://media\.licdn\.com/dms/image/[^\s"\'<>]+(?:profile-displayphoto|profile-scale)[^\s"\'<>]+', resp.text)
+                if m:
+                    found_url = html.unescape(m.group(0)).rstrip(";,)")
+                    if "licdn.com" in found_url and "ghost" not in found_url:
+                        avatar_url = found_url
+            return avatar_url, canonical_url
     except Exception as e:
         pass
-    return None
+    return None, None
 
 
 async def fetch_facebook_candidate_avatar(url: str, client: httpx.AsyncClient) -> Optional[str]:
@@ -1165,6 +1233,8 @@ async def search_social_candidates(
     tw_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_") for s in probe_seeds if 4 <= len(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_")) <= 15))
     # Facebook: Alphanumeric and dots only, min 5 chars
     fb_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".") for s in probe_seeds if 5 <= len(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".")) <= 50))
+    # GitHub: Alphanumeric and hyphens only, max 39 chars
+    gh_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-") for s in probe_seeds if 1 <= len(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-")) <= 39))
 
     probe_tasks = []
     for s in ig_seeds:
@@ -1177,6 +1247,9 @@ async def search_social_candidates(
         probe_tasks.append(probe_twitter_profile(s, client))
     for s in fb_seeds:
         probe_tasks.append(probe_facebook_profile(s, client))
+    if not gh_username:
+        for s in gh_seeds:
+            probe_tasks.append(probe_github_profile(s, client))
 
     # 2. Build Focused Search Queries (One high-signal query per platform using Full Name)
     search_queries = []
@@ -1211,6 +1284,12 @@ async def search_social_candidates(
 
     # Q5: Pinterest (query full name e.g. "Fahad Ahmad")
     search_queries.append(("pinterest", f'site:pinterest.com "{query_target}"'))
+
+    # Q6: GitHub (query full name if not corroborated in Phase 1) — [Temporarily Commented]
+    # if not gh_username:
+    #     search_queries.append(("github", f'site:github.com "{query_target}"'))
+    #     if resolved_name and resolved_name != query_target:
+    #         search_queries.append(("github", f'site:github.com "{resolved_name}"'))
 
     print(f"[Social Discovery] 🔍 Launching {len(search_queries)} focused SearXNG queries for '{query_target}' (Startpage + Yandex + Yahoo + Mojeek)...", flush=True)
 
@@ -1360,7 +1439,7 @@ async def search_social_candidates(
     fb_count = 0
     for c in candidates_map.values():
         if not c.get("avatar_url"):
-            if c["platform"] == "linkedin" and li_count < 6:
+            if c["platform"] == "linkedin" and li_count < 8:
                 enrich_tasks.append(("linkedin", c))
                 li_count += 1
             elif c["platform"] == "facebook" and fb_count < 6:
@@ -1370,16 +1449,58 @@ async def search_social_candidates(
     if enrich_tasks:
         async def enrich_candidate(plat, c):
             if plat == "linkedin":
-                av = await fetch_linkedin_candidate_avatar(c["url"], client)
+                av, canon_url = await fetch_linkedin_candidate_avatar(c["url"], client)
+                if av:
+                    c["avatar_url"] = av
+                if canon_url and "linkedin.com/in/" in canon_url:
+                    m_slug = re.search(r"linkedin\.com/in/([a-zA-Z0-9_/%-]+)", canon_url, re.IGNORECASE)
+                    if m_slug:
+                        canon_slug = m_slug.group(1).split("?")[0].rstrip("/")
+                        if canon_slug and canon_slug.lower() not in ("dir", "pub", "feed"):
+                            c["handle"] = f"@{canon_slug}"
+                            c["url"] = f"https://www.linkedin.com/in/{canon_slug}"
             else:
                 av = await fetch_facebook_candidate_avatar(c["url"], client)
-            if av:
-                c["avatar_url"] = av
+                if av:
+                    c["avatar_url"] = av
 
         await asyncio.gather(*[enrich_candidate(plat, c) for plat, c in enrich_tasks], return_exceptions=True)
 
-    # Sort all candidates
-    all_candidates = sorted(candidates_map.values(), key=lambda x: -x["score"])
+    # Post-enrichment cross-candidate deduplication pass:
+    # Merge duplicate candidate entries that share the same canonical URL or identical profile avatar photo
+    merged_candidates: Dict[str, Dict[str, Any]] = {}
+    for c in candidates_map.values():
+        plat = c["platform"]
+        h_clean = c["handle"].lstrip("@").strip().lower()
+        p_key = f"{plat}:{h_clean}"
+        av_key = f"{plat}:av:{c['avatar_url']}" if c.get("avatar_url") else None
+
+        existing_key = None
+        if av_key and av_key in merged_candidates:
+            existing_key = av_key
+        elif p_key in merged_candidates:
+            existing_key = p_key
+
+        if existing_key is None:
+            merged_candidates[p_key] = c
+            if av_key:
+                merged_candidates[av_key] = c
+        else:
+            existing = merged_candidates[existing_key]
+            # Merge: Keep the richer snippet, higher score, and authentic avatar
+            has_better_avatar = not existing.get("avatar_url") and c.get("avatar_url")
+            has_richer_snippet = len(c.get("snippet", "")) > len(existing.get("snippet", "")) and not "profile for @" in c.get("snippet", "")
+            if c["score"] > existing["score"] or has_better_avatar or (c["score"] == existing["score"] and has_richer_snippet):
+                if not c.get("avatar_url") and existing.get("avatar_url"):
+                    c["avatar_url"] = existing.get("avatar_url")
+                merged_candidates[p_key] = c
+                if av_key:
+                    merged_candidates[av_key] = c
+                if existing_key != p_key:
+                    merged_candidates[existing_key] = c
+
+    unique_candidates = list({id(v): v for v in merged_candidates.values()}.values())
+    all_candidates = sorted(unique_candidates, key=lambda x: -x["score"])
 
     # Group by platform (show all candidates without capping)
     by_platform = {

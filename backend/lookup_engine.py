@@ -118,6 +118,11 @@ TITLE_PREFIXES = {
     "prof", "syed", "sh", "sk", "sheikh", "md", "muhd", "malik", "adv", "al", "el", "haj", "haji"
 }
 
+ROLE_SUFFIXES = {
+    "hr", "dev", "qa", "ceo", "cto", "cfo", "coo", "cmo", "admin", "recruiter", 
+    "sales", "support", "help", "jobs", "hiring", "team", "legal", "ops", "design", "tech", "official"
+}
+
 COMMON_FIRST_NAMES = {
     "fahad", "ahmad", "ahmed", "saad", "noman", "nouman", "nauman", "ali", "hamza", "usman", "osman",
     "bilal", "hassan", "hasan", "hussain", "zain", "omer", "umar", "faisal", "farhan", 
@@ -1643,6 +1648,8 @@ async def run_lookup(email: str) -> dict:
                             parsed_chunks.extend(sub_split.split())
                         elif cp.isalpha():
                             parsed_chunks.append(cp.capitalize())
+                    if parsed_chunks and parsed_chunks[-1].lower() in ROLE_SUFFIXES and len(parsed_chunks) >= 3:
+                        parsed_chunks = parsed_chunks[:-1]
                     if len(parsed_chunks) >= 2 or (parsed_chunks and parsed_chunks[0].lower() not in TITLE_PREFIXES):
                         resolved_name = " ".join(parsed_chunks)
 

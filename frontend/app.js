@@ -254,12 +254,10 @@ function renderLookupResults(data) {
     avatarEl.onerror = () => {
       avatarEl.classList.add("hidden");
       avatarPlaceholder.classList.remove("hidden");
-      avatarPlaceholder.textContent = (person.name || "?")[0].toUpperCase();
     };
   } else {
     avatarEl.classList.add("hidden");
     avatarPlaceholder.classList.remove("hidden");
-    avatarPlaceholder.textContent = (person.name || "?")[0].toUpperCase();
   }
 
   typeBadge.textContent = data.email_type === "corporate" ? "Corporate Account" : "Personal Account";
@@ -482,7 +480,7 @@ function renderLookupResults(data) {
   const byPlat = data.social_candidates_by_platform || {};
   let totalCandidatesFound = 0;
 
-  ["linkedin", "instagram", "twitter", "facebook", "tiktok", "pinterest"].forEach(plat => {
+  ["linkedin", "github", "instagram", "twitter", "facebook", "tiktok", "pinterest"].forEach(plat => {
     const accEl = document.getElementById(`cand-acc-${plat}`);
     const listEl = document.getElementById(`cand-list-${plat}`);
     const countEl = document.getElementById(`cand-count-${plat}`);
