@@ -27,8 +27,9 @@ const SVG_ICONS = {
       <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.24 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/>
     </svg>`,
   pinterest: `
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957s-.359-.72-.359-1.781c0-1.663.967-2.911 2.168-2.911 1.024 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.631-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146 1.124.347 2.317.535 3.554.535 6.627 0 12.004-5.378 12.004-12.001C24.014 5.367 18.643 0 12.017 0z"/>
+    <svg width="16" height="16" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="12" fill="#e60023"/>
+      <path fill="#ffffff" d="M12.017 3.5c-4.695 0-8.5 3.805-8.5 8.5 0 3.6 2.24 6.68 5.4 7.92-.07-.67-.14-1.7.03-2.44.15-.66 1-4.22 1-4.22s-.25-.51-.25-1.26c0-1.18.68-2.06 1.54-2.06.72 0 1.07.54 1.07 1.2 0 .73-.46 1.82-.7 2.83-.2.85.42 1.54 1.26 1.54 1.51 0 2.67-1.59 2.67-3.89 0-2.03-1.46-3.46-3.55-3.46-2.42 0-3.84 1.81-3.84 3.69 0 .73.28 1.51.63 1.94.07.08.08.16.06.24l-.24.96c-.04.16-.12.19-.28.11-1.06-.49-1.72-2.05-1.72-3.3 0-2.68 1.95-5.15 5.62-5.15 2.95 0 5.24 2.1 5.24 4.91 0 2.93-1.85 5.29-4.41 5.29-.86 0-1.67-.45-1.95-.98l-.53 2.02c-.19.74-.71 1.66-1.06 2.23.8.25 1.64.38 2.52.38 4.695 0 8.5-3.805 8.5-8.5 0-4.695-3.805-8.5-8.5-8.5z"/>
     </svg>`,
   github: `
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -281,9 +282,9 @@ function renderLookupResults(data) {
       identityBadge.title = "Identity verified through authoritative profile records";
       identityBadge.classList.remove("hidden");
     } else if (person.name) {
-      identityBadge.textContent = "Inferred Name";
+      identityBadge.textContent = "🔍 Inferred Name · Unconfirmed Identity";
       identityBadge.className = "type-badge badge-inferred";
-      identityBadge.title = "Name derived from email address; review candidate accounts below";
+      identityBadge.title = "Name derived from email username; review matching candidate profiles below";
       identityBadge.classList.remove("hidden");
     } else {
       identityBadge.classList.add("hidden");
@@ -301,7 +302,56 @@ function renderLookupResults(data) {
 
   personExtra.classList.remove("hidden");
 
-  // ── Social Profiles Chips ──
+  // ── Integrated Workplace Panel inside Hero Person Card ──
+  const comp = data.company;
+  const compNameEl = document.getElementById("company-name");
+  const compMetaEl = document.getElementById("company-meta");
+  const compLogoEl = document.getElementById("company-logo");
+  const compLogoFallback = document.getElementById("company-logo-fallback");
+
+  if (comp && (comp.name || comp.domain)) {
+    compNameEl.textContent = comp.name || comp.domain;
+    const metaParts = [];
+    if (comp.role) metaParts.push(comp.role);
+    if (comp.industry) metaParts.push(comp.industry);
+    if (comp.country) metaParts.push(comp.country);
+    if (comp.domain && comp.domain.toLowerCase() !== (comp.name || "").toLowerCase()) metaParts.push(comp.domain);
+    compMetaEl.textContent = metaParts.join(" · ") || comp.domain || "Enterprise Workplace";
+
+    if (comp.logo) {
+      compLogoEl.src = comp.logo;
+      compLogoEl.classList.remove("hidden");
+      compLogoFallback.classList.add("hidden");
+      compLogoEl.onerror = () => {
+        if (comp.domain && !compLogoEl.src.includes("google.com/s2/favicons")) {
+          compLogoEl.src = `https://www.google.com/s2/favicons?domain=${comp.domain}&sz=128`;
+        } else {
+          compLogoEl.classList.add("hidden");
+          compLogoFallback.classList.remove("hidden");
+        }
+      };
+    } else if (comp.domain) {
+      compLogoEl.src = `https://www.google.com/s2/favicons?domain=${comp.domain}&sz=128`;
+      compLogoEl.classList.remove("hidden");
+      compLogoFallback.classList.add("hidden");
+      compLogoEl.onerror = () => {
+        compLogoEl.classList.add("hidden");
+        compLogoFallback.classList.remove("hidden");
+      };
+    } else {
+      compLogoEl.classList.add("hidden");
+      compLogoFallback.classList.remove("hidden");
+    }
+  } else {
+    // Default personal mailbox
+    compNameEl.textContent = data.email_type === "corporate" ? "Enterprise Workplace" : "Personal Mailbox";
+    compMetaEl.textContent = data.email ? `${data.email.split('@')[1] || 'Domain'} service` : "No corporate affiliation";
+    compLogoEl.classList.add("hidden");
+    compLogoFallback.classList.remove("hidden");
+    compLogoFallback.textContent = data.email_type === "corporate" ? "🏢" : "👤";
+  }
+
+  // ── Social Profiles Chips (with Headshot Avatar Rendering) ──
   const profilesList = document.getElementById("profiles-list");
   const chips = [];
 
@@ -321,7 +371,7 @@ function renderLookupResults(data) {
         name: val.name || defaultLabel,
         handle: rawHandle ? `@${rawHandle}` : "",
         snippet: val.snippet || val.title || "",
-        avatar_url: val.avatar_url || null,
+        avatar_url: val.avatar_url || val.avatar || null,
         confidence: val.confidence || (isConfirmed ? 100 : 80),
         source: val.source || "",
         verified: isConfirmed,
@@ -343,6 +393,7 @@ function renderLookupResults(data) {
           platform: "linkedin",
           name: `LinkedIn <span class="verified-pill">✓ 100% Verified</span>`,
           sub: `${displaySlug} · View Verified Profile`,
+          avatar_url: p.avatar_url || (data.person ? data.person.avatar : null),
         }));
       }
     }
@@ -352,11 +403,13 @@ function renderLookupResults(data) {
     const gh = profiles.github;
     const ghUrl = typeof gh === "string" ? gh : (gh.url || "");
     const ghUser = typeof gh === "string" ? ghUrl.split("/").pop() : (gh.username || "");
+    const ghAvatar = typeof gh === "object" ? (gh.avatar || gh.avatar_url) : null;
     chips.push(buildProfileChip({
       href: ghUrl,
       platform: "github",
       name: `@${ghUser} <span class="verified-pill">✓ 100% Verified</span>`,
       sub: typeof gh === "object" ? `${gh.repos ?? "?"} repos · ${gh.followers ?? "?"} followers` : "Verified Developer Profile",
+      avatar_url: ghAvatar,
     }));
   }
 
@@ -370,6 +423,7 @@ function renderLookupResults(data) {
           platform: "twitter",
           name: `X / Twitter <span class="verified-pill">✓ 100% Verified</span>`,
           sub: `${p.handle || "Verified Account"} · View Profile`,
+          avatar_url: p.avatar_url,
         }));
       }
     }
@@ -385,6 +439,7 @@ function renderLookupResults(data) {
           platform: "instagram",
           name: `Instagram <span class="verified-pill">✓ 100% Verified</span>`,
           sub: `${p.handle || "Verified Account"} · View Profile`,
+          avatar_url: p.avatar_url,
         }));
       }
     }
@@ -400,6 +455,7 @@ function renderLookupResults(data) {
           platform: "facebook",
           name: `Facebook <span class="verified-pill">✓ 100% Verified</span>`,
           sub: `${p.handle || "Verified Account"} · View Profile`,
+          avatar_url: p.avatar_url,
         }));
       }
     }
@@ -415,6 +471,7 @@ function renderLookupResults(data) {
           platform: "youtube",
           name: `YouTube <span class="verified-pill">✓ 100% Verified</span>`,
           sub: "Verified Channel",
+          avatar_url: p.avatar_url,
         }));
       }
     }
@@ -464,52 +521,6 @@ function renderLookupResults(data) {
     }
   }
 
-  // ── Company & Workplace Intelligence ──
-  const companyCard = document.getElementById("company-card");
-  const comp = data.company;
-  if (companyCard && comp && (comp.name || comp.domain)) {
-    document.getElementById("company-name").textContent = comp.name || comp.domain;
-    const metaParts = [];
-    if (comp.role) metaParts.push(comp.role);
-    if (comp.industry) metaParts.push(comp.industry);
-    if (comp.country) metaParts.push(comp.country);
-    if (comp.alma_mater) metaParts.push(`Alum: ${comp.alma_mater}`);
-    if (comp.domain && comp.domain.toLowerCase() !== (comp.name || "").toLowerCase()) metaParts.push(comp.domain);
-    document.getElementById("company-meta").textContent = metaParts.join(" · ") || comp.domain || "Enterprise";
-
-    const logoEl = document.getElementById("company-logo");
-    const logoFallback = document.getElementById("company-logo-fallback");
-
-    if (comp.logo) {
-      logoEl.src = comp.logo;
-      logoEl.classList.remove("hidden");
-      logoFallback.classList.add("hidden");
-      logoEl.onerror = () => {
-        if (comp.domain && !logoEl.src.includes("google.com/s2/favicons")) {
-          logoEl.src = `https://www.google.com/s2/favicons?domain=${comp.domain}&sz=128`;
-        } else {
-          logoEl.classList.add("hidden");
-          logoFallback.classList.remove("hidden");
-        }
-      };
-    } else if (comp.domain) {
-      logoEl.src = `https://www.google.com/s2/favicons?domain=${comp.domain}&sz=128`;
-      logoEl.classList.remove("hidden");
-      logoFallback.classList.add("hidden");
-      logoEl.onerror = () => {
-        logoEl.classList.add("hidden");
-        logoFallback.classList.remove("hidden");
-      };
-    } else {
-      logoEl.classList.add("hidden");
-      logoFallback.classList.remove("hidden");
-    }
-
-    companyCard.classList.remove("hidden");
-  } else if (companyCard) {
-    companyCard.classList.add("hidden");
-  }
-
   // ── Global Typo Banner ──
   const acBanner = document.getElementById("lookup-autocorrect");
   const acEmail = document.getElementById("autocorrect-email");
@@ -532,13 +543,23 @@ function renderLookupResults(data) {
   document.getElementById("query-time").textContent = `Query completed in ${data.query_time_ms}ms (Permanent Cache)`;
 }
 
-function buildProfileChip({ href, platform, name, sub }) {
+function buildProfileChip({ href, platform, name, sub, avatar_url }) {
   const glyphSvg = SVG_ICONS[platform] || SVG_ICONS.github;
   const glyphClass = `${platform}-glyph`;
 
+  const iconHtml = avatar_url ? `
+    <div class="profile-chip-avatar-wrap">
+      <img src="${escapeHtml(avatar_url)}" class="profile-chip-avatar" referrerpolicy="no-referrer" alt="${escapeHtml(name)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+      <div class="platform-glyph-badge ${glyphClass}" style="display: none;">${glyphSvg}</div>
+      <div class="platform-glyph-mini ${glyphClass}">${glyphSvg}</div>
+    </div>
+  ` : `
+    <div class="platform-glyph-badge ${glyphClass}">${glyphSvg}</div>
+  `;
+
   return `
     <a href="${href}" target="_blank" rel="noopener noreferrer" class="profile-chip">
-      <div class="platform-glyph-badge ${glyphClass}">${glyphSvg}</div>
+      ${iconHtml}
       <div class="profile-chip-info">
         <div class="profile-chip-name">${name}</div>
         <div class="profile-chip-sub">${sub}</div>

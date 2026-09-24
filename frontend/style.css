@@ -123,15 +123,15 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-image: 
-    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.06) 0px, transparent 50%),
-    radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.05) 0px, transparent 50%),
+    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.07) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.06) 0px, transparent 50%),
     radial-gradient(at 50% 100%, rgba(226, 232, 240, 0.4) 0px, transparent 50%);
   background-attachment: fixed;
 }
 
 .container {
   width: 100%;
-  max-width: 940px; /* Scaled up container to fill empty margins on widescreen */
+  max-width: 1020px; /* Scaled up container to fill empty widescreen margins */
   margin: 0 auto;
   padding: 0 24px;
 }
@@ -199,7 +199,7 @@ body {
 
 .hero-title {
   font-family: var(--font-heading);
-  font-size: 28px;
+  font-size: 29px;
   font-weight: 800;
   color: var(--text-main);
   letter-spacing: -0.03em;
@@ -210,7 +210,7 @@ body {
 .hero-subtitle {
   font-size: 15px;
   color: var(--text-secondary);
-  max-width: 600px;
+  max-width: 640px;
   margin: 0 auto;
   line-height: 1.55;
 }
@@ -236,7 +236,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 20px;
+  padding: 8px 22px;
   border: none;
   border-radius: var(--radius-pill);
   background: transparent;
@@ -266,7 +266,6 @@ body {
 
 .tab-panel.active {
   display: block;
-  /* Instant display without fading re-animation prevents layout glitch */
 }
 
 /* ── Command-Style Search Card ────────────────────────────────────────────── */
@@ -307,8 +306,8 @@ body {
 
 .search-input {
   width: 100%;
-  height: 48px;
-  padding: 0 80px 0 46px;
+  height: 50px;
+  padding: 0 80px 0 48px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   background: var(--bg-page);
@@ -344,8 +343,8 @@ body {
 }
 
 .btn-primary {
-  height: 48px;
-  padding: 0 24px;
+  height: 50px;
+  padding: 0 26px;
   background: linear-gradient(135deg, #2563eb, #1d4ed8);
   color: #ffffff;
   border: none;
@@ -365,7 +364,7 @@ body {
 
 .btn-primary:hover {
   background: linear-gradient(135deg, #1d4ed8, #1e40af);
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
   transform: translateY(-1px);
 }
 
@@ -496,6 +495,17 @@ body {
   margin-bottom: 8px;
 }
 
+.skeleton-workplace-box {
+  width: 260px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  background: var(--bg-page);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .skeleton-pill-row {
   display: flex;
   gap: 10px;
@@ -619,17 +629,29 @@ body {
   color: var(--text-muted);
 }
 
-/* ── Hero Person Card (Prominent & Scaled) ─────────────────────────────────── */
+/* ── Hero Person Card (Split 2-Column Layout with Integrated Workplace) ────── */
 .hero-person-card {
   background: linear-gradient(180deg, #ffffff 0%, #fafcff 100%);
   border: 1px solid #dbeafe; /* Subtle blue edge */
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.04), var(--shadow-card);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.05), var(--shadow-card);
+}
+
+.hero-split-grid {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.person-identity-col {
+  flex: 1;
+  min-width: 0;
 }
 
 .person-header {
   display: flex;
   align-items: flex-start;
-  gap: 22px;
+  gap: 20px;
 }
 
 .avatar-wrap {
@@ -666,6 +688,7 @@ body {
 
 .person-info {
   flex: 1;
+  min-width: 0;
 }
 
 .person-title-row {
@@ -676,7 +699,7 @@ body {
 
 .person-name {
   font-family: var(--font-heading);
-  font-size: 24px;
+  font-size: 23px;
   font-weight: 800;
   color: var(--text-main);
   letter-spacing: -0.03em;
@@ -713,12 +736,89 @@ body {
 }
 
 .person-bio {
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--text-secondary);
   margin-top: 8px;
-  line-height: 1.5;
+  line-height: 1.45;
   padding-left: 10px;
   border-left: 2.5px solid var(--brand-border);
+}
+
+/* Right Workplace Panel inside Hero Person Card */
+.person-workplace-col {
+  width: 290px;
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+}
+
+.workplace-side-header {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.workplace-side-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.company-logo-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-page);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.company-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.company-logo-fallback {
+  font-size: 20px;
+}
+
+.workplace-side-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.company-title {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 14.5px;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.company-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.35;
 }
 
 .person-extra {
@@ -765,9 +865,10 @@ body {
 }
 
 .type-badge.badge-inferred {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-  color: #475569;
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+  font-weight: 600;
 }
 
 .type-badge.badge-undeliverable {
@@ -776,7 +877,7 @@ body {
   color: var(--status-danger-text);
 }
 
-/* ── Direct Social Profiles Chips ────────────────────────────────────────── */
+/* ── Direct Social Profiles Chips (with Avatar Support) ───────────────────── */
 .profiles-list {
   display: flex;
   flex-direction: column;
@@ -802,6 +903,41 @@ body {
   border-color: var(--brand-border);
   box-shadow: var(--shadow-sm);
   transform: translateY(-1px);
+}
+
+/* Avatar Wrapper for Top Profile Chips */
+.profile-chip-avatar-wrap {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+}
+
+.profile-chip-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid var(--border-subtle);
+}
+
+.platform-glyph-mini {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  border: 1.5px solid #ffffff;
+}
+
+.platform-glyph-mini svg {
+  width: 9px;
+  height: 9px;
 }
 
 .profile-chip-info {
@@ -833,7 +969,7 @@ body {
   color: var(--brand-primary);
 }
 
-/* ── Platform-Specific Candidate Accordions (Colored Borders & Glyphs) ────── */
+/* ── Platform-Specific Candidate Accordions (Colored Left Accents) ────────── */
 .candidates-wrapper {
   display: flex;
   flex-direction: column;
@@ -900,7 +1036,7 @@ body {
 .twitter-glyph { background: var(--brand-twitter); }
 .facebook-glyph { background: var(--brand-facebook); }
 .tiktok-glyph { background: var(--brand-tiktok); }
-.pinterest-glyph { background: var(--brand-pinterest); }
+.pinterest-glyph { background: transparent; }
 .github-glyph { background: var(--brand-github); }
 
 .candidates-toggle-label {
@@ -953,7 +1089,7 @@ body {
   display: none;
 }
 
-/* ── Candidate Card Item (Clean, No % Badge Clutter) ─────────────────────── */
+/* ── Candidate Card Item (Clean, No % Badges) ─────────────────────────────── */
 .candidate-card {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
@@ -1069,49 +1205,6 @@ body {
   border-color: var(--brand-primary);
   color: var(--brand-primary);
   box-shadow: var(--shadow-sm);
-}
-
-/* ── Company Intelligence Card ────────────────────────────────────────────── */
-.company-header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.company-logo-wrap {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-page);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.company-logo {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.company-logo-fallback {
-  font-size: 22px;
-}
-
-.company-title {
-  font-family: var(--font-heading);
-  font-weight: 700;
-  font-size: 16px;
-  color: var(--text-main);
-}
-
-.company-subtitle {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-top: 2px;
 }
 
 /* ── Query Meta & Invalidation ────────────────────────────────────────────── */
@@ -1432,7 +1525,16 @@ body {
 }
 
 /* ── Responsive Mobile Optimization ───────────────────────────────────────── */
-@media (max-width: 768px) {
+@media (max-width: 820px) {
+  .hero-split-grid {
+    flex-direction: column;
+  }
+  .person-workplace-col {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
   .hero-title {
     font-size: 24px;
   }
