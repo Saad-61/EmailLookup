@@ -1268,15 +1268,15 @@ async def search_social_candidates(
     # Sort all candidates
     all_candidates = sorted(candidates_map.values(), key=lambda x: -x["score"])
 
-    # Group by platform (up to 10 per platform)
+    # Group by platform (show all candidates without capping)
     by_platform = {
-        "linkedin": [c for c in all_candidates if c["platform"] == "linkedin"][:10],
-        "instagram": [c for c in all_candidates if c["platform"] == "instagram"][:10],
-        "twitter": [c for c in all_candidates if c["platform"] == "twitter"][:10],
-        "facebook": [c for c in all_candidates if c["platform"] == "facebook"][:10],
-        "tiktok": [c for c in all_candidates if c["platform"] == "tiktok"][:10],
-        "pinterest": [c for c in all_candidates if c["platform"] == "pinterest"][:10],
-        "github": [c for c in all_candidates if c["platform"] == "github"][:10],
+        "linkedin": [c for c in all_candidates if c["platform"] == "linkedin"],
+        "instagram": [c for c in all_candidates if c["platform"] == "instagram"],
+        "twitter": [c for c in all_candidates if c["platform"] == "twitter"],
+        "facebook": [c for c in all_candidates if c["platform"] == "facebook"],
+        "tiktok": [c for c in all_candidates if c["platform"] == "tiktok"],
+        "pinterest": [c for c in all_candidates if c["platform"] == "pinterest"],
+        "github": [c for c in all_candidates if c["platform"] == "github"],
     }
 
     total_count = sum(len(v) for v in by_platform.values())
