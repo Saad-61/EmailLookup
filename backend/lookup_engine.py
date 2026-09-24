@@ -1544,7 +1544,8 @@ async def run_lookup(email: str) -> dict:
 
     print(f"\n[Lookup Engine] >>> Starting reverse lookup for: {email} ({email_type.upper()})", flush=True)
 
-    async with httpx.AsyncClient(timeout=8.0) as client:
+    limits = httpx.Limits(max_connections=80, max_keepalive_connections=35)
+    async with httpx.AsyncClient(timeout=8.0, limits=limits) as client:
         print("[Lookup Engine] Querying base sources (Gravatar, GitHub, Company DB)...", flush=True)
         # Phase 1: Run all base enrichment sources concurrently
         gravatar, github, company, harvested = await asyncio.gather(

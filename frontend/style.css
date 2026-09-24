@@ -1023,7 +1023,7 @@ body {
 .platform-glyph-badge {
   width: 28px;
   height: 28px;
-  border-radius: var(--radius-sm);
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1036,7 +1036,7 @@ body {
 .twitter-glyph { background: var(--brand-twitter); }
 .facebook-glyph { background: var(--brand-facebook); }
 .tiktok-glyph { background: var(--brand-tiktok); }
-.pinterest-glyph { background: transparent; }
+.pinterest-glyph { background: var(--brand-pinterest); }
 .github-glyph { background: var(--brand-github); }
 
 .candidates-toggle-label {
