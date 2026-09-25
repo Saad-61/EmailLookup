@@ -1005,6 +1005,9 @@ body {
   text-align: left;
   font-family: var(--font-sans);
   transition: background var(--transition-fast);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .candidates-toggle-btn:hover {
@@ -1080,6 +1083,28 @@ body {
   gap: 10px;
   border-top: 1px solid var(--border-subtle);
   background: #ffffff;
+  max-height: 480px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.candidates-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.candidates-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.candidates-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.candidates-list::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .candidates-list.collapsed {

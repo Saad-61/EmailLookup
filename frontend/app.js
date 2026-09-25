@@ -353,21 +353,29 @@ function renderLookupResults(data) {
   const profilesList = document.getElementById("profiles-list");
   const chips = [];
 
+  const RESERVED_FRONTEND_HANDLES = new Set(["https", "http", "www", "null", "undefined", "in", "pub", "dir", "explore", "about"]);
+
   function parseProfileVal(val, defaultLabel) {
     if (!val) return null;
     if (typeof val === "string") {
       const cleanUrl = val.trim();
       const rawHandle = (cleanUrl.split("/").filter(Boolean).pop() || "").replace(/^@/, "");
-      return { url: cleanUrl, name: defaultLabel, handle: rawHandle ? `@${rawHandle}` : "", snippet: "", avatar_url: null, isObject: false, verified: false, source: "" };
+      if (!rawHandle || RESERVED_FRONTEND_HANDLES.has(rawHandle.toLowerCase()) || rawHandle.length < 2) {
+        return null;
+      }
+      return { url: cleanUrl, name: defaultLabel, handle: `@${rawHandle}`, snippet: "", avatar_url: null, isObject: false, verified: false, source: "" };
     }
     if (typeof val === "object") {
       const cleanUrl = (val.url || "").trim();
       const rawHandle = (val.handle || val.username || cleanUrl.split("/").filter(Boolean).pop() || "").replace(/^@/, "");
+      if (!rawHandle || RESERVED_FRONTEND_HANDLES.has(rawHandle.toLowerCase()) || rawHandle.length < 2) {
+        return null;
+      }
       const isConfirmed = val.verified === true || ["github", "gravatar", "wikidata", "harvested"].includes(val.source);
       return {
         url: cleanUrl,
         name: val.name || defaultLabel,
-        handle: rawHandle ? `@${rawHandle}` : "",
+        handle: `@${rawHandle}`,
         snippet: val.snippet || val.title || "",
         avatar_url: val.avatar_url || val.avatar || null,
         confidence: val.confidence || (isConfirmed ? 100 : 80),
@@ -484,7 +492,12 @@ function renderLookupResults(data) {
     const accEl = document.getElementById(`cand-acc-${plat}`);
     const listEl = document.getElementById(`cand-list-${plat}`);
     const countEl = document.getElementById(`cand-count-${plat}`);
-    const candidates = byPlat[plat] || [];
+    let candidates = byPlat[plat] || [];
+
+    // When GitHub is directly verified in top profiles, suppress candidate accordion
+    if (plat === "github" && profiles.github) {
+      candidates = [];
+    }
 
     if (accEl && listEl) {
       if (candidates.length > 0) {
