@@ -17,11 +17,20 @@ import re
 import html
 import urllib.parse
 import sys
+import time
 import unicodedata
 from typing import List, Optional, Dict, Any, Tuple
 import httpx
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+
+try:
+    from ddgs import DDGS
+except ImportError:
+    try:
+        from duckduckgo_search import DDGS
+    except ImportError:
+        DDGS = None
 
 try:
     if hasattr(sys.stdout, "reconfigure"):
@@ -110,29 +119,73 @@ def jaro_winkler_similarity(s1: str, s2: str, prefix_weight: float = 0.1) -> flo
 
 
 # ==========================================
-# 2. PROXY CONFIGURATION
+# 2. DYNAMIC RESIDENTIAL PROXY POOL
 # ==========================================
-def get_proxy_ips() -> List[str]:
-    """Load proxy IP list dynamically from PROXY_IPS in .env."""
-    raw = os.getenv("PROXY_IPS", "").strip()
-    if raw:
-        return [ip.strip() for ip in raw.split(",") if ip.strip()]
-    return []
+PROXY_USER = os.getenv("PROXY_USERNAME", "").strip()
+PROXY_PASS = os.getenv("PROXY_PASSWORD", "").strip()
+RAW_IPS = os.getenv("PROXY_IPS", "").strip()
+ALL_PROXY_IPS = [ip.strip() for ip in RAW_IPS.split(",") if ip.strip()]
+PROXY_IPS = ALL_PROXY_IPS
 
 
-PROXY_IPS = get_proxy_ips()
+class DynamicProxyPool:
+    """
+    Manages residential proxy IPs with automatic rate-limit cooldown and latency-based ranking.
+    - Tracks temporary 202 blocks with an expiration timestamp (e.g. 10 minutes).
+    - Automatically measures roundtrip response time on every query to route requests to the fastest nodes.
+    - When cooldown expires, the proxy automatically re-joins the active pool.
+    """
+    def __init__(self, ip_list: List[str], cooldown_seconds: int = 600):
+        self.all_ips = list(ip_list)
+        self.cooldown_seconds = cooldown_seconds
+        self.cooldowns: Dict[str, float] = {}
+        # ip -> estimated latency in ms (pre-seeded with default 1500ms)
+        self.latencies: Dict[str, float] = {ip: 1500.0 for ip in self.all_ips}
+
+    def get_clean_ips(self) -> List[str]:
+        """Returns all IPs whose cooldown has expired, ranked by lowest latency first."""
+        now = time.time()
+        clean = [ip for ip in self.all_ips if self.cooldowns.get(ip, 0) <= now]
+        if not clean and self.all_ips:
+            return sorted(self.all_ips, key=lambda ip: self.cooldowns.get(ip, 0))[:5]
+        # Rank by latency with slight jitter for balanced load distribution
+        return sorted(clean, key=lambda ip: self.latencies.get(ip, 2000.0) + random.uniform(0, 150))
+
+    def mark_challenged(self, ip: str, duration: Optional[int] = None):
+        """Temporarily flag an IP that encountered a 202 challenge or block."""
+        cd = duration or self.cooldown_seconds
+        self.cooldowns[ip] = time.time() + cd
+        self.latencies[ip] = 9999.0
+        remaining = len(self.get_clean_ips())
+        print(f"  [ProxyPool] ⏳ IP {ip} flagged with {cd}s cooldown ({remaining} clean IPs remaining in pool)", flush=True)
+
+    def mark_healthy(self, ip: str, elapsed_ms: Optional[int] = None):
+        """Confirm an IP is clean and update its moving-average latency score."""
+        if ip in self.cooldowns:
+            del self.cooldowns[ip]
+        if elapsed_ms is not None:
+            prev = self.latencies.get(ip, float(elapsed_ms))
+            self.latencies[ip] = prev * 0.35 + float(elapsed_ms) * 0.65
+
+    def sample_distinct(self, n: int) -> List[str]:
+        """Sample n distinct clean IPs, prioritizing the fastest responsive nodes."""
+        clean = self.get_clean_ips()
+        if len(clean) >= n:
+            return clean[:n]
+        return (clean * (n // max(1, len(clean)) + 1))[:n]
+
+
+proxy_pool = DynamicProxyPool(ALL_PROXY_IPS, cooldown_seconds=600)
 
 
 def get_random_proxy_url() -> Optional[str]:
-    """Construct randomized proxy URL from PROXY_USERNAME, PROXY_PASSWORD, and PROXY_IPS."""
-    ips = get_proxy_ips()
-    if not ips:
+    """Construct randomized proxy URL from fastest clean residential proxies in pool."""
+    clean_ips = proxy_pool.get_clean_ips()
+    if not clean_ips:
         return None
-    ip = random.choice(ips)
-    user = os.getenv("PROXY_USERNAME", "").strip()
-    pwd = os.getenv("PROXY_PASSWORD", "").strip()
-    if user and pwd:
-        return f"http://{user}:{pwd}@{ip}"
+    ip = random.choice(clean_ips[:5]) if len(clean_ips) >= 5 else random.choice(clean_ips)
+    if PROXY_USER and PROXY_PASS:
+        return f"http://{PROXY_USER}:{PROXY_PASS}@{ip}"
     return f"http://{ip}"
 
 
@@ -386,18 +439,26 @@ def expand_social_probe_handles(
 # ==========================================
 # 4. PARSER & TITLE / NAME CLEANERS
 # ==========================================
+RESERVED_SYSTEM_SLUGS = {
+    "https", "http", "www", "com", "net", "org", "null", "undefined"
+}
+
 def parse_social_url(url: str) -> Optional[Dict[str, str]]:
     """Parse a social media URL into platform, canonical profile URL, and handle."""
     if not url:
         return None
 
-    clean = url.split("?")[0].rstrip("/")
+    clean = url.split("?")[0].rstrip("/").strip(")>]\'\",.")
+    m_nested = list(re.finditer(r"https?:/+", clean, re.IGNORECASE))
+    if len(m_nested) > 1:
+        clean = clean[m_nested[-1].start():]
+    clean = re.sub(r"^(https?):/+([^\s/])", r"\1://\2", clean, flags=re.IGNORECASE)
 
     # Twitter / X
     tw_match = re.search(r"https?://(?:[a-z0-9-]+\.)?(?:x\.com|twitter\.com)/([a-zA-Z0-9_]{1,25})$", clean, re.IGNORECASE)
     if tw_match:
         handle = tw_match.group(1)
-        if handle.lower() not in ("home", "explore", "search", "notifications", "messages", "settings", "i", "privacy", "tos"):
+        if handle.lower() not in RESERVED_SYSTEM_SLUGS and handle.lower() not in ("home", "explore", "search", "notifications", "messages", "settings", "i", "privacy", "tos", "intent", "share"):
             return {
                 "platform": "twitter",
                 "platform_label": "X / Twitter",
@@ -409,7 +470,7 @@ def parse_social_url(url: str) -> Optional[Dict[str, str]]:
     ig_match = re.search(r"https?://(?:[a-z0-9-]+\.)?instagram\.com/([a-zA-Z0-9_.]{1,30})/?$", clean, re.IGNORECASE)
     if ig_match:
         handle = ig_match.group(1)
-        if handle.lower() not in ("p", "reel", "reels", "stories", "explore", "direct", "accounts", "about", "developer", "legal"):
+        if handle.lower() not in RESERVED_SYSTEM_SLUGS and handle.lower() not in ("p", "reel", "reels", "stories", "explore", "direct", "accounts", "about", "developer", "legal"):
             return {
                 "platform": "instagram",
                 "platform_label": "Instagram",
@@ -432,7 +493,7 @@ def parse_social_url(url: str) -> Optional[Dict[str, str]]:
     fb_match = re.search(r"https?://(?:[a-z0-9-]+\.)?facebook\.com/([a-zA-Z0-9_.]{3,50})/?$", clean, re.IGNORECASE)
     if fb_match:
         handle = fb_match.group(1)
-        if handle.lower() not in ("sharer", "share", "login", "recover", "help", "policies", "privacy", "pages", "groups", "events", "watch", "photo", "photos", "video", "videos", "reel", "reels", "posts"):
+        if handle.lower() not in RESERVED_SYSTEM_SLUGS and handle.lower() not in ("sharer", "share", "login", "recover", "help", "policies", "privacy", "pages", "groups", "events", "watch", "photo", "photos", "video", "videos", "reel", "reels", "posts"):
             return {
                 "platform": "facebook",
                 "platform_label": "Facebook",
@@ -445,7 +506,7 @@ def parse_social_url(url: str) -> Optional[Dict[str, str]]:
         li_match = re.search(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/in/([a-zA-Z0-9_/%-]+)", clean, re.IGNORECASE)
         if li_match:
             slug = li_match.group(1).split("?")[0].rstrip("/")
-            if slug.lower() not in ("dir", "pub", "feed", "jobs", "company", "school", "pulse", "posts", "learning"):
+            if slug.lower() not in RESERVED_SYSTEM_SLUGS and slug.lower() not in ("dir", "pub", "feed", "jobs", "company", "school", "pulse", "posts", "learning"):
                 return {
                     "platform": "linkedin",
                     "platform_label": "LinkedIn",
@@ -457,7 +518,7 @@ def parse_social_url(url: str) -> Optional[Dict[str, str]]:
     tt_match = re.search(r"https?://(?:[a-z0-9-]+\.)?tiktok\.com/@([a-zA-Z0-9_.]{2,30})/?$", clean, re.IGNORECASE)
     if tt_match:
         handle = tt_match.group(1)
-        if handle.lower() not in ("explore", "direct", "trending", "about", "discover", "login", "live", "tag"):
+        if handle.lower() not in RESERVED_SYSTEM_SLUGS and handle.lower() not in ("explore", "direct", "trending", "about", "discover", "login", "live", "tag"):
             return {
                 "platform": "tiktok",
                 "platform_label": "TikTok",
@@ -469,7 +530,7 @@ def parse_social_url(url: str) -> Optional[Dict[str, str]]:
     pin_match = re.search(r"https?://(?:[a-z0-9-]+\.)?pinterest\.com/([a-zA-Z0-9_.]{2,30})/?$", clean, re.IGNORECASE)
     if pin_match:
         handle = pin_match.group(1)
-        if handle.lower() not in ("explore", "pin", "ideas", "business", "help", "about", "login", "today", "shop", "news"):
+        if handle.lower() not in RESERVED_SYSTEM_SLUGS and handle.lower() not in ("explore", "pin", "ideas", "business", "help", "about", "login", "today", "shop", "news"):
             return {
                 "platform": "pinterest",
                 "platform_label": "Pinterest",
@@ -575,6 +636,13 @@ def clean_bio_snippet(raw_snippet: str, platform: str, handle: str) -> str:
         for pat in patterns:
             s = re.sub(pat, "", s, flags=re.IGNORECASE).strip()
         s = s.strip(" .,-–|•·:/")
+
+        # If LinkedIn bundled multiple directory profiles into one meta description, isolate the target person's block
+        m_first_block = re.search(r"^(.*?connections\s+on\s+LinkedIn[\.,]*)", s, re.IGNORECASE)
+        if m_first_block and len(m_first_block.group(1)) > 30:
+            s = m_first_block.group(1).strip()
+        elif len(s) > 260:
+            s = s[:250].rsplit(" ", 1)[0] + "..."
 
     if any(bad in s.lower() for bad in ("the site owner hides", "link to facebook", "link to instagram", "welcome back", "log in", "unsupported browser", "join linkedin")):
         return f"{platform.title()} profile for @{handle.lstrip('@')}"
@@ -793,14 +861,31 @@ TWITTER_HEADERS = {
 }
 
 
-async def probe_instagram_profile(handle: str, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
+async def probe_instagram_profile(handle: str, client: httpx.AsyncClient, proxy_url: Optional[str] = None) -> Optional[Dict[str, Any]]:
     clean = re.sub(r'[^a-zA-Z0-9._]', '', handle).lstrip("@").strip()
     if not clean or len(clean) < 3 or clean in ("p", "reel", "reels", "explore", "direct", "accounts", "about", "developer"):
         return None
     url = f"https://www.instagram.com/{clean}/"
+    
+    p_url = proxy_url or get_random_proxy_url()
+    resp = None
+    if p_url:
+        try:
+            async with httpx.AsyncClient(proxy=p_url, timeout=4.5, follow_redirects=True, verify=False) as px_client:
+                resp = await px_client.get(url, headers=CRAWLER_HEADERS)
+        except Exception:
+            try:
+                resp = await client.get(url, headers=CRAWLER_HEADERS, timeout=2.5, follow_redirects=True)
+            except Exception:
+                return None
+    else:
+        try:
+            resp = await client.get(url, headers=CRAWLER_HEADERS, timeout=2.5, follow_redirects=True)
+        except Exception:
+            return None
+
     try:
-        resp = await client.get(url, headers=CRAWLER_HEADERS, timeout=2.5, follow_redirects=True)
-        if resp.status_code == 200:
+        if resp and resp.status_code == 200:
             text = resp.text
             if any(bad in text for bad in ("Sorry, this page isn't available", "The link you followed may be broken", "Page Not Found")):
                 return None
@@ -1099,15 +1184,10 @@ async def fetch_linkedin_candidate_avatar(url: str, client: httpx.AsyncClient) -
             og_img = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "twitter:image"})
             if og_img and og_img.get("content"):
                 img_src = og_img.get("content").strip()
-                if "licdn.com" in img_src and "static.licdn.com" not in img_src and "ghost" not in img_src:
+                if "licdn.com" in img_src and "static.licdn.com" not in img_src and "ghost" not in img_src and "default_guest_profile" not in img_src:
                     avatar_url = img_src
-            if not avatar_url:
-                # Fallback to direct media.licdn profile displayphoto URLs in the page body
-                m = re.search(r'https://media\.licdn\.com/dms/image/[^\s"\'<>]+(?:profile-displayphoto|profile-scale)[^\s"\'<>]+', resp.text)
-                if m:
-                    found_url = html.unescape(m.group(0)).rstrip(";,)")
-                    if "licdn.com" in found_url and "ghost" not in found_url:
-                        avatar_url = found_url
+            # Note: Never fallback to searching the HTML body for media.licdn URLs, as that picks up
+            # other users from the 'People Also Viewed' sidebar recommendations!
             return avatar_url, canonical_url
     except Exception as e:
         pass
@@ -1133,41 +1213,115 @@ async def fetch_facebook_candidate_avatar(url: str, client: httpx.AsyncClient) -
 
 
 # ==========================================
-# 7. SEARXNG SEARCH QUERY RUNNER
+# 7. DUCKDUCKGO DISTRIBUTED SEARCH ENGINE
 # ==========================================
-async def execute_clean_searxng_query(query: str, client: httpx.AsyncClient) -> List[Dict[str, str]]:
-    """Execute clean single-site query against SearXNG using active working engines."""
-    searxng_url = os.getenv("SEARXNG_URL", "http://localhost:8888/search")
-    desktop_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    }
+def _query_ddgs_sync(query: str, proxy_url: str, timeout: float = 4.5) -> List[Dict[str, str]]:
+    """Execute DuckDuckGo search via residential proxy using official tokenized API session."""
+    if DDGS is None:
+        return []
+    ddgs = DDGS(proxy=proxy_url, timeout=timeout)
+    results = list(ddgs.text(query, max_results=10))
     items = []
-    seen_links = set()
-    try:
-        resp = await client.get(
-            searxng_url,
-            params={"q": query, "format": "json", "engines": "startpage,yandex,yahoo,mojeek"},
-            headers=desktop_headers,
-            timeout=8.0
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            raw_res = data.get("results", [])
-            for r in raw_res:
-                l = r.get("url", "")
-                if l and l not in seen_links:
-
-                    if parse_social_url(l) or any(dom in l.lower() for dom in ("instagram.com", "facebook.com", "x.com", "twitter.com", "linkedin.com", "tiktok.com", "pinterest.com", "github.com")):
-                        seen_links.add(l)
-                        items.append({
-                            "link": l,
-                            "title": html.unescape(r.get("title", "")),
-                            "snippet": html.unescape(r.get("content", "")),
-                        })
-            print(f"[SearXNG] 🔍 Query: '{query}' -> ✓ {len(items)} social items found (Yandex + Startpage)", flush=True)
-    except Exception as e:
-        print(f"[SearXNG] ✗ Query error for '{query}': {e}", flush=True)
+    seen = set()
+    for r in results:
+        link = r.get("href", "")
+        if link and link not in seen:
+            if any(dom in link.lower() for dom in ("linkedin.com", "instagram.com", "facebook.com", "tiktok.com", "pinterest.com", "github.com", "x.com", "twitter.com")):
+                seen.add(link)
+                items.append({
+                    "link": link,
+                    "title": html.unescape(r.get("title", "")),
+                    "snippet": html.unescape(r.get("body", "")),
+                })
     return items
+
+
+def run_ddgs_auto_sync(q_str: str) -> List[Dict[str, str]]:
+    """Fast failover using ddgs multi-engine browser impersonation."""
+    if DDGS is None:
+        return []
+    try:
+        ddgs = DDGS(timeout=4)
+        results = None
+        for b in ["google", "auto"]:
+            try:
+                res = list(ddgs.text(q_str, max_results=8, backend=b))
+                if res:
+                    results = res
+                    break
+            except Exception:
+                continue
+        if not results:
+            return []
+        items = []
+        for r in results:
+            if r.get("href"):
+                items.append({
+                    "link": r.get("href", ""),
+                    "title": r.get("title", ""),
+                    "snippet": r.get("body", ""),
+                })
+        return items
+    except Exception:
+        return []
+
+
+async def execute_ddg_html_query(
+    query: str,
+    primary_proxy_ip: str,
+    max_retries: int = 1,
+) -> Tuple[List[Dict[str, str]], str, int]:
+    """
+    Execute DuckDuckGo search query through a residential proxy IP with automatic failover.
+    Utilizes DDGS tokenized session to prevent 202 JavaScript challenges.
+    """
+    available_ips = [primary_proxy_ip]
+    fallback_pool = [ip for ip in proxy_pool.get_clean_ips() if ip != primary_proxy_ip]
+    if fallback_pool:
+        available_ips.extend(random.sample(fallback_pool, min(max_retries, len(fallback_pool))))
+
+    items: List[Dict[str, str]] = []
+    seen_links = set()
+    used_ip = primary_proxy_ip
+    attempts = 0
+
+    for ip in available_ips[:2]:
+        attempts += 1
+        used_ip = ip
+        proxy_url = f"http://{PROXY_USER}:{PROXY_PASS}@{ip}" if (PROXY_USER and PROXY_PASS) else f"http://{ip}"
+        t0 = time.time()
+        try:
+            items = await asyncio.to_thread(_query_ddgs_sync, query, proxy_url, 4.5)
+            elapsed_ms = int((time.time() - t0) * 1000)
+
+            if items:
+                proxy_pool.mark_healthy(ip, elapsed_ms)
+                print(f"  [DDG] ✓ '{query[:35]}...' -> {len(items)} hits (via {ip} in {elapsed_ms}ms)", flush=True)
+                return items, used_ip, attempts
+            else:
+                proxy_pool.mark_healthy(ip, elapsed_ms)
+                print(f"  [DDG] ℹ️ '{query[:35]}...' -> 0 hits (via {ip} in {elapsed_ms}ms)", flush=True)
+                break
+        except Exception as e:
+            elapsed_ms = int((time.time() - t0) * 1000)
+            err_msg = str(e).strip() or type(e).__name__
+            if "202" in err_msg or "Ratelimit" in type(e).__name__:
+                proxy_pool.mark_challenged(ip)
+                print(f"  [DDG] ⏳ IP {ip} rate-limited. Retrying with fallback proxy...", flush=True)
+            else:
+                proxy_pool.latencies[ip] = max(proxy_pool.latencies.get(ip, 2000.0), float(elapsed_ms) * 1.5)
+                print(f"  [DDG] ⚠️ IP {ip} ({type(e).__name__}: {err_msg} in {elapsed_ms}ms). Retrying with fallback proxy...", flush=True)
+
+    # Backup failover
+    print(f"  [Failover] 🔄 Querying multi-engine backup for '{query[:35]}...'...", flush=True)
+    fb_items = await asyncio.to_thread(run_ddgs_auto_sync, query)
+    if fb_items:
+        print(f"  [Failover] ✓ Retrieved {len(fb_items)} hits via backup failover", flush=True)
+        for it in fb_items:
+            if it["link"] and it["link"] not in seen_links:
+                seen_links.add(it["link"])
+                items.append(it)
+    return items, used_ip, attempts
 
 
 # ==========================================
@@ -1181,136 +1335,94 @@ async def search_social_candidates(
     company_name: Optional[str] = None,
     client: Optional[httpx.AsyncClient] = None,
     has_verified_linkedin: bool = False,
+    **kwargs,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
     """
     Master candidate discovery engine combining:
     1. 5-platform high-speed direct probing with OpenGraph extraction.
-    2. 5 clean single-site search queries via SearXNG (Yandex + Startpage).
+    2. Focused DuckDuckGo search queries distributed across 5 distinct residential proxy IPs.
     3. Multi-anchor scoring with Jaro-Winkler string similarity and surname disambiguation.
     """
-    if client is None or getattr(client, "is_closed", False):
-        limits = httpx.Limits(max_connections=60, max_keepalive_connections=25)
-        async with httpx.AsyncClient(timeout=8.0, limits=limits, verify=False) as local_client:
-            return await search_social_candidates(
-                email=email,
-                resolved_name=resolved_name,
-                resolved_location=resolved_location,
-                gh_username=gh_username,
-                company_name=company_name,
-                client=local_client,
-                has_verified_linkedin=has_verified_linkedin,
-            )
-
     local_part = email.split("@")[0].lower().strip() if "@" in email else ""
 
-    # Infer compound name from email local-part (e.g. hassanrashid55 -> Hassan Rashid)
-    compound_name = None
-    if local_part:
-        fn, ln = split_compound_name(local_part)
-        if fn and ln:
-            compound_name = f"{fn} {ln}"
-        elif fn:
-            compound_name = fn
-
-    if not resolved_name or len(resolved_name.split()) < 2:
-        if compound_name:
-            resolved_name = compound_name
-
-    specific_handles, stem_handles = generate_handle_variations(email, resolved_name, gh_username)
-    probe_seeds = expand_social_probe_handles(specific_handles, stem_handles, resolved_name)[:25]
-    all_variations = specific_handles + stem_handles + probe_seeds
-
-    print(f"\n[Social Discovery] ───────────────────────────────────────────────────", flush=True)
-    print(f"[Social Discovery] Initiating Hybrid Social Discovery for: {email}", flush=True)
-    print(f"[Social Discovery] Inferred Target Name: '{resolved_name or 'N/A'}'", flush=True)
-    print(f"[Social Discovery] 📡 Launching 5-Platform Probing ({len(probe_seeds) * 5} direct probes across Instagram, TikTok, Pinterest, Twitter, Facebook)...", flush=True)
-
-    # 1. Build Direct Probe Tasks with Pooled Clients (Strictly formatted per platform constraints)
-    ig_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
-    tt_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 2 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 24))
-    pin_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
-    # Twitter: No dots allowed, max 15 chars (convert dots to underscores)
-    tw_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_") for s in probe_seeds if 4 <= len(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_")) <= 15))
-    # Facebook: Alphanumeric and dots only, min 5 chars
-    fb_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".") for s in probe_seeds if 5 <= len(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".")) <= 50))
-    # GitHub: Alphanumeric and hyphens only, max 39 chars
-    gh_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-") for s in probe_seeds if 1 <= len(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-")) <= 39))
-
-    probe_tasks = []
-    for s in ig_seeds:
-        probe_tasks.append(probe_instagram_profile(s, client))
-    for s in tt_seeds:
-        probe_tasks.append(probe_tiktok_profile(s, client))
-    for s in pin_seeds:
-        probe_tasks.append(probe_pinterest_profile(s, client))
-    for s in tw_seeds:
-        probe_tasks.append(probe_twitter_profile(s, client))
-    for s in fb_seeds:
-        probe_tasks.append(probe_facebook_profile(s, client))
-    if not gh_username:
-        for s in gh_seeds:
-            probe_tasks.append(probe_github_profile(s, client))
-
-    # 2. Build Focused Search Queries (One high-signal query per platform using Full Name)
-    search_queries = []
-
-    # Extract core human name by stripping any title/honorific prefix for broad matching (e.g. 'Ch Fahad Ahmad' -> 'Fahad Ahmad')
-    name_tokens = [p for p in re.findall(r"[a-zA-Z]+", resolved_name or "")]
-    if name_tokens and name_tokens[0].lower() in TITLE_PREFIXES and len(name_tokens) > 1:
-        core_human_name = " ".join(p.capitalize() for p in name_tokens[1:])
+    # Parse clean name tokens
+    tokens = [p for p in re.findall(r"[a-zA-Z]+", resolved_name or local_part)]
+    if tokens and tokens[0].lower() in TITLE_PREFIXES and len(tokens) > 1:
+        core_human_name = " ".join(p.capitalize() for p in tokens[1:])
     else:
         core_human_name = resolved_name
 
     query_target = core_human_name if (core_human_name and len(core_human_name.split()) >= 2) else (resolved_name or local_part)
 
-    # Q1: LinkedIn (if not already corroborated via direct lookup)
-    if not has_verified_linkedin:
-        if company_name and len(company_name.strip()) >= 2:
-            search_queries.append(("linkedin", f'site:linkedin.com/in "{query_target}" "{company_name.strip()}"'))
-        search_queries.append(("linkedin", f'site:linkedin.com/in "{query_target}"'))
-        if resolved_name and resolved_name != query_target:
-            search_queries.append(("linkedin", f'site:linkedin.com/in "{resolved_name}"'))
+    specific_handles, stem_handles = generate_handle_variations(email, resolved_name, gh_username)
+    probe_seeds = expand_social_probe_handles(specific_handles, stem_handles, resolved_name)[:25]
+    all_variations = specific_handles + stem_handles + probe_seeds
 
-    # Q2: Instagram (broad query to catch vanity accounts where real name is in bio)
-    search_queries.append(("instagram", f'site:instagram.com {query_target}'))
+    print(f"\n[DDG Engine] ───────────────────────────────────────────────────", flush=True)
+    print(f"[DDG Engine] Target: {email} | Inferred Name: '{resolved_name}' | Query: '{query_target}'", flush=True)
 
-    # Q3: Facebook (query full name e.g. "Fahad Ahmad")
-    search_queries.append(("facebook", f'site:facebook.com "{query_target}"'))
-    if resolved_name and resolved_name != query_target:
-        search_queries.append(("facebook", f'site:facebook.com "{resolved_name}"'))
+    # 1. Build Direct Probe Tasks
+    ig_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
+    tt_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 2 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 24))
+    pin_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
+    tw_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_") for s in probe_seeds if 4 <= len(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_")) <= 15))
+    fb_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".") for s in probe_seeds if 5 <= len(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".")) <= 50))
+    gh_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-") for s in probe_seeds if 1 <= len(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-")) <= 39))
 
-    # Q4: TikTok (query full name e.g. "Fahad Ahmad")
-    search_queries.append(("tiktok", f'site:tiktok.com "{query_target}"'))
+    limits = httpx.Limits(max_connections=60, max_keepalive_connections=25)
+    async with httpx.AsyncClient(timeout=4.0, limits=limits, verify=False) as probe_client:
+        probe_tasks = []
+        for s in ig_seeds:
+            probe_tasks.append(probe_instagram_profile(s, probe_client))
+        for s in tt_seeds:
+            probe_tasks.append(probe_tiktok_profile(s, probe_client))
+        for s in pin_seeds:
+            probe_tasks.append(probe_pinterest_profile(s, probe_client))
+        for s in tw_seeds:
+            probe_tasks.append(probe_twitter_profile(s, probe_client))
+        for s in fb_seeds:
+            probe_tasks.append(probe_facebook_profile(s, probe_client))
+        if not gh_username:
+            for s in gh_seeds:
+                probe_tasks.append(probe_github_profile(s, probe_client))
 
-    # Q5: Pinterest (query full name e.g. "Fahad Ahmad")
-    search_queries.append(("pinterest", f'site:pinterest.com "{query_target}"'))
+        # 2. Build Focused DDG Search Queries
+        clean_target = query_target.replace('"', '').strip()
+        ddg_search_queries = [
+            ("instagram", f'site:instagram.com {clean_target}'),
+            ("facebook", f'site:facebook.com {clean_target}'),
+            ("tiktok", f'{clean_target} tiktok'),
+            ("pinterest", f'{clean_target} pinterest'),
+        ]
+        if not has_verified_linkedin:
+            ddg_search_queries.append(("linkedin", f'site:linkedin.com/in {clean_target}'))
 
-    # Q6: GitHub (query full name if not corroborated in Phase 1) — [Temporarily Commented]
-    # if not gh_username:
-    #     search_queries.append(("github", f'site:github.com "{query_target}"'))
-    #     if resolved_name and resolved_name != query_target:
-    #         search_queries.append(("github", f'site:github.com "{resolved_name}"'))
+        # Assign each query its own distinct clean residential IP
+        sampled_ips = proxy_pool.sample_distinct(len(ddg_search_queries))
+        query_configs = [(plat, q, sampled_ips[i]) for i, (plat, q) in enumerate(ddg_search_queries)]
 
-    print(f"[Social Discovery] 🔍 Launching {len(search_queries)} focused SearXNG queries for '{query_target}' (Startpage + Yandex + Yahoo + Mojeek)...", flush=True)
+        print(f"[DDG Engine] 📡 Launching 125 direct probes + {len(query_configs)} DDG queries via residential proxy pool...", flush=True)
 
-    async def run_query(plat_tag: str, q_str: str):
-        searx_hits = await execute_clean_searxng_query(q_str, client)
-        return plat_tag, searx_hits
+        async def run_single_ddg(plat_tag: str, q_str: str, assigned_ip: str):
+            hits, used_ip, attempts = await execute_ddg_html_query(q_str, assigned_ip)
+            return plat_tag, hits
 
-    query_tasks = [run_query(p, q) for p, q in search_queries]
+        query_tasks = [run_single_ddg(p, q, ip) for p, q, ip in query_configs]
 
-    # 3. Execute all Probes and Search Queries simultaneously
-    probe_results_raw, *query_results_raw = await asyncio.gather(
-        asyncio.gather(*probe_tasks, return_exceptions=True),
-        *query_tasks
-    )
+        # 3. Concurrently execute all Probes and DDG Queries
+        t_start = time.time()
+        probe_results_raw, *query_results_raw = await asyncio.gather(
+            asyncio.gather(*probe_tasks, return_exceptions=True),
+            *query_tasks
+        )
+        discovery_elapsed_ms = int((time.time() - t_start) * 1000)
+        print(f"[DDG Engine] ⏱ All Probes & DDG searches completed in {discovery_elapsed_ms}ms", flush=True)
 
     candidates_map: Dict[str, Dict[str, Any]] = {}
 
     def make_candidate_dedup_key(p_plat: str, p_handle: str) -> str:
         h = p_handle.lstrip("@").strip().lower()
         if p_plat == "facebook":
-            # Facebook usernames are strictly dot-insensitive (ahtisham.v2 == ahtishamv2)
             return f"facebook:{h.replace('.', '')}"
         return f"{p_plat}:{h}"
 
@@ -1334,7 +1446,7 @@ async def search_social_candidates(
             resolved_name,
             resolved_location,
             gh_username,
-            company_name
+            company_name,
         )
         if score >= 15:
             dedup_key = make_candidate_dedup_key(plat, h_clean)
@@ -1361,9 +1473,11 @@ async def search_social_candidates(
                 has_better_avatar = not existing.get("avatar_url") and p_cand.get("avatar_url")
                 has_better_dots = ("." in h_clean and "." not in existing.get("handle", ""))
                 if score > existing.get("score", 0) or has_better_avatar or (score == existing.get("score", 0) and has_better_dots):
+                    if not cand_obj.get("avatar_url") and existing.get("avatar_url"):
+                        cand_obj["avatar_url"] = existing["avatar_url"]
                     candidates_map[dedup_key] = cand_obj
 
-    # Ingest Query Hits
+    # Ingest DDG Search Hits
     for q_res in query_results_raw:
         if not isinstance(q_res, tuple) or len(q_res) != 2:
             continue
@@ -1388,7 +1502,7 @@ async def search_social_candidates(
                 resolved_name,
                 resolved_location,
                 gh_username,
-                company_name
+                company_name,
             )
             if score < 15:
                 continue
@@ -1414,9 +1528,9 @@ async def search_social_candidates(
                 }
             else:
                 existing = candidates_map[dedup_key]
+                existing_avatar = existing.get("avatar_url")
                 has_better_dots = ("." in h_clean and "." not in existing.get("handle", ""))
                 if score > existing.get("score", 0) or (score == existing.get("score", 0) and has_better_dots):
-                    existing_avatar = existing.get("avatar_url")
                     candidates_map[dedup_key] = {
                         "platform": plat,
                         "platform_label": parsed["platform_label"],

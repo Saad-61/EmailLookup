@@ -31,9 +31,9 @@ except Exception:
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"), override=True)
 try:
-    from social_finder import search_social_candidates
+    from social_finder import search_social_candidates, jaro_winkler_similarity
 except ImportError:
-    from backend.social_finder import search_social_candidates
+    from backend.social_finder import search_social_candidates, jaro_winkler_similarity
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
@@ -487,15 +487,19 @@ async def lookup_gravatar(email: str, client: httpx.AsyncClient) -> dict:
                     or ""
                 ).lower()
                 if "linkedin" in label or "linkedin.com" in url:
-                    result["linkedin"] = url
+                    cl = clean_social_url(url, "linkedin")
+                    if cl: result["linkedin"] = cl
                 elif "github" in label or "github.com" in url:
                     result["github_url"] = url
                 elif "twitter" in label or "x.com" in url or "twitter.com" in url:
-                    result["twitter_url"] = url
+                    cl = clean_social_url(url, "twitter")
+                    if cl: result["twitter_url"] = cl
                 elif "instagram" in label or "instagram.com" in url:
-                    result["instagram_url"] = url
+                    cl = clean_social_url(url, "instagram")
+                    if cl: result["instagram_url"] = cl
                 elif "facebook" in label or "facebook.com" in url:
-                    result["facebook_url"] = url
+                    cl = clean_social_url(url, "facebook")
+                    if cl: result["facebook_url"] = cl
                 elif "youtube" in label or "youtube.com" in url:
                     result["youtube_url"] = url
                 elif not result.get("website") and url and not any(k in url for k in ["gravatar.com", "wordpress.com"]):
@@ -529,6 +533,101 @@ async def fetch_github_readme(username: str, client: httpx.AsyncClient) -> str:
         except Exception:
             pass
     return ""
+
+
+RESERVED_SOCIAL_SLUGS = {
+    "https", "http", "www", "com", "net", "org", "null", "undefined",
+    "p", "reel", "reels", "stories", "explore", "direct", "accounts", "about", "developer", "legal",
+    "dir", "pub", "feed", "jobs", "company", "school", "pulse", "posts", "learning",
+    "home", "search", "notifications", "messages", "settings", "i", "privacy", "tos", "intent", "share",
+    "sharer", "login", "recover", "help", "policies", "pages", "groups", "events", "watch", "photo", "photos", "video", "videos"
+}
+
+
+def clean_social_url(raw_url: Optional[str], platform: Optional[str] = None) -> Optional[str]:
+    """
+    Sanitizes raw social media URLs from bios, web pages, or markdown badges.
+    Un-nests duplicated/nested schemes (e.g. 'https://linkedin.com/in/https://www.linkedin.com/in/slug').
+    Discards invalid protocol slugs (e.g. 'https', 'www', 'dir', 'pub').
+    """
+    if not raw_url or not isinstance(raw_url, str):
+        return None
+
+    s = raw_url.strip().strip(")>]\'\",.")
+    if not s:
+        return None
+
+    # Un-nest repeated protocols (common typo in markdown badge generators)
+    m_nested = list(re.finditer(r"https?:/+", s, re.IGNORECASE))
+    if len(m_nested) > 1:
+        s = s[m_nested[-1].start():]
+    # Normalize malformed https:/ to https://
+    s = re.sub(r"^(https?):/+([^\s/])", r"\1://\2", s, flags=re.IGNORECASE)
+
+    clean_low = s.lower()
+
+    # 1. LinkedIn
+    if "linkedin.com/in/" in clean_low and (platform is None or platform == "linkedin"):
+        m = re.search(r"linkedin\.com/in/([a-zA-Z0-9_/%-]+)", s, re.IGNORECASE)
+        if m:
+            slug = m.group(1).split("?")[0].rstrip("/").strip()
+            if slug.lower() not in RESERVED_SOCIAL_SLUGS and len(slug) >= 3:
+                return f"https://www.linkedin.com/in/{slug}"
+        return None
+
+    # 2. Instagram
+    if "instagram.com/" in clean_low and (platform is None or platform == "instagram"):
+        m = re.search(r"instagram\.com/([a-zA-Z0-9_.]{2,30})", s, re.IGNORECASE)
+        if m:
+            handle = m.group(1).split("?")[0].rstrip("/").strip().lstrip("@")
+            if handle.lower() not in RESERVED_SOCIAL_SLUGS and len(handle) >= 2:
+                return f"https://www.instagram.com/{handle}/"
+        return None
+
+    # 3. Twitter / X
+    if any(dom in clean_low for dom in ("twitter.com/", "x.com/")) and (platform is None or platform == "twitter"):
+        m = re.search(r"(?:x\.com|twitter\.com)/([a-zA-Z0-9_]{1,25})", s, re.IGNORECASE)
+        if m:
+            handle = m.group(1).split("?")[0].rstrip("/").strip().lstrip("@")
+            if handle.lower() not in RESERVED_SOCIAL_SLUGS and len(handle) >= 2:
+                return f"https://x.com/{handle}"
+        return None
+
+    # 4. Facebook
+    if "facebook.com/" in clean_low and (platform is None or platform == "facebook"):
+        m_ppl = re.search(r"facebook\.com/people/([^/?#]+)/(\d+)", s, re.IGNORECASE)
+        if m_ppl:
+            return f"https://www.facebook.com/people/{m_ppl.group(1)}/{m_ppl.group(2)}/"
+        m = re.search(r"facebook\.com/([a-zA-Z0-9_.]{3,50})", s, re.IGNORECASE)
+        if m:
+            handle = m.group(1).split("?")[0].rstrip("/").strip()
+            if handle.lower() not in RESERVED_SOCIAL_SLUGS and len(handle) >= 3:
+                return f"https://www.facebook.com/{handle}"
+        return None
+
+    return None
+
+
+def extract_clean_social_links_from_text(text: str) -> dict[str, str]:
+    """Extract and sanitize social profile URLs from bio, blog, or README text."""
+    if not text:
+        return {}
+    results = {}
+    raw_urls = re.findall(r"https?://[^\s)\]\"'>]+", text)
+    for raw in raw_urls:
+        if not results.get("linkedin"):
+            cl = clean_social_url(raw, platform="linkedin")
+            if cl: results["linkedin"] = cl
+        if not results.get("instagram"):
+            cl = clean_social_url(raw, platform="instagram")
+            if cl: results["instagram"] = cl
+        if not results.get("twitter"):
+            cl = clean_social_url(raw, platform="twitter")
+            if cl: results["twitter"] = cl
+        if not results.get("facebook"):
+            cl = clean_social_url(raw, platform="facebook")
+            if cl: results["facebook"] = cl
+    return results
 
 
 # ── GitHub ────────────────────────────────────────────────────────────────────
@@ -734,39 +833,32 @@ async def lookup_github(
                     try:
                         for acc in social_resp.json():
                             prov = (acc.get("provider") or "").lower()
-                            a_url = (acc.get("url") or "").split("?")[0].rstrip("/")
-                            if not linkedin_direct and (prov == "linkedin" or "linkedin.com/in" in a_url):
-                                linkedin_direct = a_url
-                            elif not twitter_direct and (prov in ("twitter", "x") or "twitter.com/" in a_url or "x.com/" in a_url):
-                                twitter_direct = a_url
-                            elif not instagram_direct and (prov == "instagram" or "instagram.com/" in a_url):
-                                instagram_direct = a_url
-                            elif not facebook_direct and (prov == "facebook" or "facebook.com/" in a_url):
-                                facebook_direct = a_url
+                            a_url = acc.get("url") or ""
+                            if not linkedin_direct and (prov == "linkedin" or "linkedin.com/in" in a_url.lower()):
+                                linkedin_direct = clean_social_url(a_url, platform="linkedin")
+                            elif not twitter_direct and (prov in ("twitter", "x") or "twitter.com/" in a_url.lower() or "x.com/" in a_url.lower()):
+                                twitter_direct = clean_social_url(a_url, platform="twitter")
+                            elif not instagram_direct and (prov == "instagram" or "instagram.com/" in a_url.lower()):
+                                instagram_direct = clean_social_url(a_url, platform="instagram")
+                            elif not facebook_direct and (prov == "facebook" or "facebook.com/" in a_url.lower()):
+                                facebook_direct = clean_social_url(a_url, platform="facebook")
                     except Exception:
                         pass
 
-                # 2. Bio text links
+                # 2. Bio, blog, and README markdown links (with un-nesting)
                 combined_texts = [bio_text, blog_text, (readme_text if isinstance(readme_text, str) else "")]
                 for text_block in combined_texts:
                     if not text_block:
                         continue
-                    if not linkedin_direct:
-                        m = re.search(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/in/[a-zA-Z0-9_/%-]+", text_block)
-                        if m:
-                            linkedin_direct = m.group(0).split("?")[0].rstrip(").,]>")
-                    if not twitter_direct:
-                        m = re.search(r"https?://(?:[a-z0-9-]+\.)?(?:x\.com|twitter\.com)/[a-zA-Z0-9_]+", text_block)
-                        if m and not any(k in m.group(0).lower() for k in ("/status", "/home", "/search", "/intent")):
-                            twitter_direct = m.group(0).split("?")[0].rstrip(").,]>")
-                    if not instagram_direct:
-                        m = re.search(r"https?://(?:www\.)?instagram\.com/[a-zA-Z0-9_.]+", text_block)
-                        if m and not any(k in m.group(0).lower() for k in ("/p/", "/reel", "/explore")):
-                            instagram_direct = m.group(0).split("?")[0].rstrip(").,]>")
-                    if not facebook_direct:
-                        m = re.search(r"https?://(?:www\.)?facebook\.com/[a-zA-Z0-9_.]+", text_block)
-                        if m and not any(k in m.group(0).lower() for k in ("/sharer", "/pages", "/groups", "/events")):
-                            facebook_direct = m.group(0).split("?")[0].rstrip(").,]>")
+                    extracted = extract_clean_social_links_from_text(text_block)
+                    if not linkedin_direct and extracted.get("linkedin"):
+                        linkedin_direct = extracted["linkedin"]
+                    if not twitter_direct and extracted.get("twitter"):
+                        twitter_direct = extracted["twitter"]
+                    if not instagram_direct and extracted.get("instagram"):
+                        instagram_direct = extracted["instagram"]
+                    if not facebook_direct and extracted.get("facebook"):
+                        facebook_direct = extracted["facebook"]
 
                 if not phone and isinstance(readme_text, str) and readme_text:
                     ph_match = re.search(r"\+?\d{1,4}[\s\.-]?\(?\d{2,4}\)?[\s\.-]?\d{3,4}[\s\.-]?\d{3,4}", readme_text)
@@ -827,7 +919,9 @@ async def fetch_linkedin_details(
     if not linkedin_url or "linkedin.com/in/" not in linkedin_url:
         return None, None, None, None, None, None, "individual"
 
-    clean_url = linkedin_url.split("?")[0].rstrip("/")
+    clean_url = clean_social_url(linkedin_url, platform="linkedin")
+    if not clean_url:
+        return None, None, None, None, None, None, "individual"
     avatar_url = None
     location = None
     name = None
@@ -1743,6 +1837,51 @@ async def run_lookup(email: str) -> dict:
             if f_edu: li_edu = f_edu
             if f_role: li_role = f_role
 
+        # ── Name Sanity / Conflict Guard for External LinkedIn Profile ──
+        # If the fetched LinkedIn profile has a clean human name that completely conflicts with all known identity clues
+        # (e.g. GitHub name, Gravatar name, or email prefix), reject this LinkedIn profile as a mismatched or hijacked link.
+        is_li_name_conflict = False
+        target_name_clues = []
+        if resolved_name:
+            target_name_clues.append(resolved_name)
+        if github and isinstance(github, dict) and github.get("name"):
+            target_name_clues.append(github["name"])
+        if github and isinstance(github, dict) and github.get("username"):
+            target_name_clues.append(github["username"])
+        if local_part:
+            target_name_clues.append(local_part)
+
+        if li_name and target_name_clues and is_clean_human_name(li_name):
+            li_tokens = set(re.findall(r"[a-zA-Z]{3,}", li_name.lower()))
+            clue_tokens = set()
+            for clue in target_name_clues:
+                for tok in re.findall(r"[a-zA-Z]{3,}", clue.lower()):
+                    clue_tokens.add(tok)
+
+            has_token_overlap = bool(li_tokens & clue_tokens)
+            has_sub_match = any(
+                any(t in c or c in t for c in clue_tokens if len(c) >= 4)
+                for t in li_tokens if len(t) >= 4
+            )
+
+            if not has_token_overlap and not has_sub_match:
+                sim = jaro_winkler_similarity(li_name.lower(), resolved_name.lower()) if resolved_name else 0.0
+                if sim < 0.60:
+                    is_li_name_conflict = True
+                    print(f"[Lookup Engine] ⚠️ Rejecting LinkedIn profile {linkedin_url} due to severe name conflict: LinkedIn='{li_name}' vs Target clues={target_name_clues}", flush=True)
+
+        if is_li_name_conflict:
+            linkedin_url = None
+            linkedin_source = None
+            linkedin_loc = None
+            linkedin_confidence = 0
+            li_avatar = None
+            li_name = None
+            li_headline = None
+            li_comp = None
+            li_edu = None
+            li_role = "individual"
+
         # Fallback to LinkedIn name if resolved_name was not found through other channels
         if not resolved_name and li_name:
             resolved_name = li_name
@@ -2013,10 +2152,12 @@ async def run_lookup(email: str) -> dict:
                 raw_candidates.insert(0, cand_li)
 
         # ── Zero Duplicate Platform Rule ──
-        for p in ["linkedin", "instagram", "twitter", "facebook", "tiktok", "pinterest"]:
+        for p in ["linkedin", "github", "instagram", "twitter", "facebook", "tiktok", "pinterest"]:
             prof = profiles.get(p)
             is_direct_verified = False
-            if isinstance(prof, dict):
+            if p == "github":
+                is_direct_verified = bool(prof)
+            elif isinstance(prof, dict):
                 is_direct_verified = (
                     prof.get("verified") is True
                     or prof.get("source") in ("github", "gravatar", "wikidata", "harvested")
@@ -2028,11 +2169,12 @@ async def run_lookup(email: str) -> dict:
                 # Platform is already confirmed and verified in top profiles — clear candidate accordion
                 by_plat[p] = []
             else:
-                # No confirmed direct profile exists — remove from top profiles so it only appears in candidate accordion
-                profiles.pop(p, None)
-                profiles.pop(f"{p}_confidence", None)
-                profiles.pop(f"{p}_verified", None)
-                profiles.pop(f"{p}_source", None)
+                if p != "github":
+                    # No confirmed direct profile exists — remove from top profiles so it only appears in candidate accordion
+                    profiles.pop(p, None)
+                    profiles.pop(f"{p}_confidence", None)
+                    profiles.pop(f"{p}_verified", None)
+                    profiles.pop(f"{p}_source", None)
 
         social_candidates = raw_candidates
         candidates_by_platform = by_plat
