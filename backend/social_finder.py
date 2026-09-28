@@ -157,7 +157,7 @@ class DynamicProxyPool:
         self.cooldowns[ip] = time.time() + cd
         self.latencies[ip] = 9999.0
         remaining = len(self.get_clean_ips())
-        print(f"  [ProxyPool] ⏳ IP {ip} flagged with {cd}s cooldown ({remaining} clean IPs remaining in pool)", flush=True)
+        print(f"  [ProxyPool] [COOLDOWN] IP {ip} flagged with {cd}s cooldown ({remaining} clean IPs remaining in pool)", flush=True)
 
     def mark_healthy(self, ip: str, elapsed_ms: Optional[int] = None):
         """Confirm an IP is clean and update its moving-average latency score."""
@@ -200,19 +200,19 @@ TITLE_PREFIXES = {
 COMMON_FIRST_NAMES = {
     "fahad", "ahmad", "ahmed", "saad", "noman", "nouman", "nauman", "ali", "hamza", "usman", "osman",
     "bilal", "hassan", "hasan", "hussain", "zain", "omer", "umar", "faisal", "farhan", 
-    "kashif", "tariq", "asif", "dameesha", "ahtisham", "atisam", "dilawar", "hameed",
-    "ghaffar", "rashid", "tahir", "nasir", "amir", "aamir", "sami", "haris", "junaid",
-    "waseem", "wasim", "naveed", "navid", "arshad", "akram", "aslam", "iqbal", "anwar",
-    "akhtar", "latif", "mahmood", "mehmood", "butt", "dar", "bhatti", "rana", "khan",
-    "chaudhry", "malik", "sheikh", "syed", "shah", "javed", "javaid", "siddiqui",
-    "qureshi", "ansari", "farooqi", "abbasi", "mirza", "baig", "mughal", "rehman",
-    "rahman", "aziz", "khalid", "sultan", "alam", "raza", "ashraf", "munir", "zafar",
-    "nawaz", "sarwar", "liaquat", "abid", "sajid", "majid", "zahid", "shahzad",
-    "khurram", "shahbaz", "tanveer", "tanvir", "waheed", "wahid", "yousaf", "yusuf",
-    "yaqoob", "ayub", "arouba", "ayesha", "fatima", "zainab", "maryam", "mariam",
-    "hira", "sana", "iqra", "amna", "sadia", "mahnoor", "anmol", "noor", "rabia",
-    "sidra", "kinza", "alishba", "hafsa", "laiba", "bisma", "aiman", "nimra",
-    "bushra", "sumaira", "shazia", "rubina", "farzana", "tahira", "samina", "yasmeen",
+    "kashif", "tariq", "asif", "dameesha", "ahtisham", "atisam", "dilawar", "hameed", "mohid", "faraz",
+    "ghaffar", "rashid", "tahir", "nasir", "amir", "aamir", "sami", "haris", "junaid", "shayan", "daniyal",
+    "waseem", "wasim", "naveed", "navid", "arshad", "akram", "aslam", "iqbal", "anwar", "mustafa", "faizan",
+    "akhtar", "latif", "mahmood", "mehmood", "butt", "dar", "bhatti", "rana", "khan", "arslan", "ahsan",
+    "chaudhry", "malik", "sheikh", "syed", "shah", "javed", "javaid", "siddiqui", "sohaib", "suhaib",
+    "qureshi", "ansari", "farooqi", "abbasi", "mirza", "baig", "mughal", "rehman", "danish", "talha",
+    "rahman", "aziz", "khalid", "sultan", "alam", "raza", "ashraf", "munir", "zafar", "hamad", "hammad",
+    "nawaz", "sarwar", "liaquat", "abid", "sajid", "majid", "zahid", "shahzad", "shahzaib", "shehryar",
+    "khurram", "shahbaz", "tanveer", "tanvir", "waheed", "wahid", "yousaf", "yusuf", "burhan", "basit",
+    "yaqoob", "ayub", "arouba", "ayesha", "fatima", "zainab", "maryam", "mariam", "sameer", "samir",
+    "hira", "sana", "iqra", "amna", "sadia", "mahnoor", "anmol", "noor", "rabia", "affan", "huzaifa",
+    "sidra", "kinza", "alishba", "hafsa", "laiba", "bisma", "aiman", "nimra", "shahmeer", "rayyan",
+    "bushra", "sumaira", "shazia", "rubina", "farzana", "tahira", "samina", "yasmeen", "ayaan", "zayan",
     "shabnam", "nasreen", "parveen", "uzma", "fauzia", "fozia", "saima", "asifa",
     "nida", "fariha", "hina", "madiha", "kiran", "mehwish", "komal", "natasha", "sonia",
     "erik", "john", "david", "michael", "james", "robert", "william", "richard",
@@ -550,6 +550,18 @@ def parse_social_url(url: str) -> Optional[Dict[str, str]]:
                 "url": f"https://github.com/{handle}",
             }
 
+    # Spotify (Strictly User Profiles)
+    sp_match = re.search(r"https?://(?:open\.)?spotify\.com/(?:intl-[a-z]{2,5}/)?user/([a-zA-Z0-9_.-]{2,60})(?:/.*)?$", clean, re.IGNORECASE)
+    if sp_match:
+        handle = sp_match.group(1)
+        if handle.lower() not in RESERVED_SYSTEM_SLUGS and handle.lower() not in ("download", "search", "genre", "playlist", "track", "album", "artist", "user", "explore", "collection"):
+            return {
+                "platform": "spotify",
+                "platform_label": "Spotify",
+                "handle": handle,
+                "url": f"https://open.spotify.com/user/{handle}",
+            }
+
     return None
 
 
@@ -585,45 +597,76 @@ def clean_display_name(raw_title: str, handle: str, platform: str, resolved_name
             name_part = re.sub(r",\s*(?:MBA|PHD|PMP|MD|CPA|ESQ|SHRM-[A-Z]+|BSc|MSc).*$", "", name_part, flags=re.IGNORECASE)
             return name_part.strip()
 
-    # Strip platform trailers & generic TikTok/Instagram titles
-    t = re.sub(r"\s*[-–|•·]\s*(?:Instagram|X|Twitter|Facebook|TikTok|Pinterest|Photos and videos|Profile).*$", "", t, flags=re.IGNORECASE)
-    t = re.sub(r"\s+on\s+(?:Instagram|Twitter|X|Facebook|TikTok|Pinterest)\s*:?.*$", "", t, flags=re.IGNORECASE)
+    # Spotify Profile Titles:
+    # "Spotify – Mohid Faraz", "Spotify - ahtisham", "Mohid Faraz on Spotify", "Mohid Faraz | Spotify"
+    if platform == "spotify" or "spotify" in t.lower():
+        t = re.sub(r"^Spotify\s*[-–—:|•·]\s*", "", t, flags=re.IGNORECASE)
+        t = re.sub(r"\s*[-–—:|•·]\s*Spotify.*$", "", t, flags=re.IGNORECASE)
+        t = re.sub(r"\s+on\s+Spotify.*$", "", t, flags=re.IGNORECASE)
+        t = re.sub(r"^Listen\s+to\s+", "", t, flags=re.IGNORECASE)
+
+    # Extract playlist creator if present e.g. "backseat - playlist by Mohid Faraz | Spotify"
+    if "playlist by" in t.lower():
+        m_pl = re.search(r"playlist by\s+([^|•–-]+)", t, re.IGNORECASE)
+        if m_pl and len(m_pl.group(1).strip()) >= 2:
+            return m_pl.group(1).strip()
+
+    # Strip platform trailers & generic TikTok/Instagram/Pinterest/X titles
+    t = re.sub(r"\s*[-–—|•·]\s*(?:Instagram|X|Twitter|Facebook|TikTok|Pinterest|Spotify|Photos and videos|Profile).*$", "", t, flags=re.IGNORECASE)
+    t = re.sub(r"\s+on\s+(?:Instagram|Twitter|X|Facebook|TikTok|Pinterest|Spotify)\s*:?.*$", "", t, flags=re.IGNORECASE)
     t = re.sub(r"^(?:Photos?|Reels?|Videos?|Posts?)\s+by\s+", "", t, flags=re.IGNORECASE)
 
     # Strip handle in parentheses e.g. "Babar Dilawar (@dilawar)" -> "Babar Dilawar"
     t = re.sub(r"\s*\(@?[a-zA-Z0-9._-]+\)", "", t)
-    t = re.sub(r"^@?[a-zA-Z0-9._-]+$", "", t)
+    if t.startswith("@") or t.lower() == handle.lower() or t.lower() == f"@{handle.lower()}":
+        t = ""
 
     if "|" in t:
         t = t.split("|")[0].strip()
-    if "-" in t:
-        t = t.split("-")[0].strip()
+    if " - " in t or " – " in t or " — " in t:
+        t = re.split(r"\s*[-–—]\s*", t)[0].strip()
 
-    t = re.sub(r'[\"\'“”#]', '', t).strip(' -–|•·:/')
-    if len(t) > 35:
-        t = t[:35].strip()
+    t = re.sub(r'[\"\'“”#]', '', t).strip(' -–—|•·:/')
+    if len(t) > 40:
+        t = t[:40].strip()
 
     tl = t.lower()
     reject_patterns = (
-        "link to", "facebook", "instagram", "twitter", "linkedin", "page not found",
-        "welcome back", "log in", "visit tiktok to discover profiles", "discover profiles",
-        "watch trending", "tiktok", "pinterest", "see what", "profile"
+        "link to", "page not found", "welcome back", "log in", "sign up",
+        "visit tiktok to discover profiles", "discover profiles", "watch trending",
+        "web player", "see what", "profile", "music for everyone", "unsupported browser"
     )
-    if not t or any(rej in tl for rej in reject_patterns) or len(t) < 2:
+    if not t or tl in ("spotify", "instagram", "facebook", "tiktok", "pinterest", "linkedin", "twitter", "x") or any(rej in tl for rej in reject_patterns) or len(t) < 2:
         return format_handle_to_name(handle, resolved_name)
 
     return t
 
 
 def clean_bio_snippet(raw_snippet: str, platform: str, handle: str) -> str:
-    """Clean and unescape bio snippets, removing unescaped HTML entities, index numbers, and LinkedIn generic boilerplate."""
+    """Clean and unescape bio snippets, preserving follower counts while removing boilerplate and directory spillovers."""
     if not raw_snippet:
         return f"{platform.title()} profile for @{handle.lstrip('@')}"
     s = unicodedata.normalize('NFKD', html.unescape(raw_snippet)).strip()
     s = re.sub(r"\s+", " ", s)
-    s = re.sub(r"^\d+[\.\s\-:]+", "", s).strip()
+    # Only strip true list numbering like '1. ', '2) ', but preserve follower numbers like '12 Followers'
+    s = re.sub(r"^\d+[\.\)\]]\s+", "", s).strip()
 
-    if platform == "linkedin" or "linkedin" in s.lower():
+    if platform == "instagram":
+        # Cut off bundled directory search spillover from other accounts
+        for agg_marker in ["and discover other accounts you", "See photos and videos from friends on Instagram"]:
+            idx = s.find(agg_marker)
+            if idx != -1:
+                s = s[:idx].strip()
+
+        s = re.sub(r"\s*[-–—]?\s*See Instagram photos and videos from\s+[^@]+(?:\(@[a-zA-Z0-9._-]+\))?.*$", "", s, flags=re.IGNORECASE).strip()
+        s = re.sub(r"\s*[-–—]?\s*See photos and videos from friends on Instagram.*$", "", s, flags=re.IGNORECASE).strip()
+        s = s.strip(" .,-–—|•·:/")
+
+    elif platform in ("twitter", "x"):
+        s = re.sub(r"\s*See the latest conversations with\s+@?[a-zA-Z0-9._-]+.*$", "", s, flags=re.IGNORECASE).strip()
+        s = s.strip(" .,-–—|•·:/")
+
+    elif platform == "linkedin" or "linkedin" in s.lower():
         patterns = [
             r"^View\s+[^,]+(?:’s|'s)?\s*profile\s*on\s*LinkedIn[,\.\s]*(?:a\s+professional\s+community\s+of\s+[\d\w\s]+members\.?|the\s+world’s\s+largest\s+professional\s+community\.?|the\s+world's\s+largest\s+professional\s+community\.?)?\s*",
             r"a\s+professional\s+community\s+of\s+[\d\w\s]+members\.?",
@@ -647,7 +690,7 @@ def clean_bio_snippet(raw_snippet: str, platform: str, handle: str) -> str:
     if any(bad in s.lower() for bad in ("the site owner hides", "link to facebook", "link to instagram", "welcome back", "log in", "unsupported browser", "join linkedin")):
         return f"{platform.title()} profile for @{handle.lstrip('@')}"
 
-    if not s or len(s) < 5:
+    if not s or len(s) < 3:
         return f"{platform.title()} profile for @{handle.lstrip('@')}"
 
     return s
@@ -783,6 +826,16 @@ def score_candidate(
                         best_sim = max((jw_f + jw_l) / 2.0, (jw_f_inv + jw_l_inv) / 2.0)
                         reasons.append(f"Fuzzy name match (Jaro-Winkler {best_sim:.0%}: '{cand_extracted_name}' ~ '{target_name}')")
                         evidence.append({"type": "name_match", "source": "fuzzy_title", "value": cand_extracted_name, "signal_strength": "weak"})
+                elif len(cand_parts) == 1:
+                    c_single = cand_parts[0]
+                    if c_single == first or jaro_winkler_similarity(c_single, first) >= 0.90:
+                        name_score = max(name_score, 35)
+                        reasons.append(f"First name match in profile ('{c_single.title()}')")
+                        evidence.append({"type": "name_match", "source": "profile_name", "value": c_single.title(), "signal_strength": "medium"})
+                    elif c_single == last or jaro_winkler_similarity(c_single, last) >= 0.90:
+                        name_score = max(name_score, 30)
+                        reasons.append(f"Surname match in profile ('{c_single.title()}')")
+                        evidence.append({"type": "name_match", "source": "profile_name", "value": c_single.title(), "signal_strength": "weak"})
 
     # 5. Workplace / Company Corroboration
     if company_name and company_name.lower() in combined_text:
@@ -833,6 +886,13 @@ def score_candidate(
                 inv_last_match = (c_last == first or jaro_winkler_similarity(c_last, first) >= 0.90)
                 if not (surname_match or first_match or inv_first_match or inv_last_match) and not is_handle_exact:
                     return 0, [f"Unrelated profile: display name ('{cand_extracted_name}') does not match target name ('{target_name}')"], {}, []
+        elif len(name_parts) >= 2 and len(cand_parts) == 1:
+            first, last = name_parts[0], name_parts[-1]
+            c_single = cand_parts[0]
+            is_single_match = (c_single == first or c_single == last or jaro_winkler_similarity(c_single, first) >= 0.90 or jaro_winkler_similarity(c_single, last) >= 0.90)
+            is_handle_exact = (handle in [v.lower() for v in all_variations])
+            if not is_single_match and not is_handle_exact:
+                return 0, [f"Unrelated profile: display name ('{cand_extracted_name}') does not match target name ('{target_name}')"], {}, []
 
     final_score = min(final_score, 95)
     sub_scores = {
@@ -867,22 +927,22 @@ async def probe_instagram_profile(handle: str, client: httpx.AsyncClient, proxy_
         return None
     url = f"https://www.instagram.com/{clean}/"
     
-    p_url = proxy_url or get_random_proxy_url()
     resp = None
-    if p_url:
-        try:
-            async with httpx.AsyncClient(proxy=p_url, timeout=4.5, follow_redirects=True, verify=False) as px_client:
-                resp = await px_client.get(url, headers=CRAWLER_HEADERS)
-        except Exception:
+    # 1. High-speed direct probe with Twitterbot headers (most reliable for Instagram OpenGraph & avatar CDN)
+    try:
+        resp = await client.get(url, headers=TWITTER_HEADERS, timeout=4.0, follow_redirects=True)
+    except Exception:
+        resp = None
+
+    # 2. Fallback to proxy if direct request failed
+    if not resp or resp.status_code != 200:
+        p_url = proxy_url or get_random_proxy_url()
+        if p_url:
             try:
-                resp = await client.get(url, headers=CRAWLER_HEADERS, timeout=2.5, follow_redirects=True)
+                async with httpx.AsyncClient(proxy=p_url, timeout=5.0, follow_redirects=True, verify=False) as px_client:
+                    resp = await px_client.get(url, headers=TWITTER_HEADERS)
             except Exception:
-                return None
-    else:
-        try:
-            resp = await client.get(url, headers=CRAWLER_HEADERS, timeout=2.5, follow_redirects=True)
-        except Exception:
-            return None
+                pass
 
     try:
         if resp and resp.status_code == 200:
@@ -912,7 +972,7 @@ async def probe_instagram_profile(handle: str, client: httpx.AsyncClient, proxy_
             bio = clean_bio_snippet(raw_desc, "instagram", clean)
             display_name = clean_display_name(raw_title, clean, "instagram")
 
-            print(f"[Prober] [INSTAGRAM] @{clean} -> ✓ Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
+            print(f"[Prober] [INSTAGRAM] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
             return {
                 "platform": "instagram",
                 "platform_label": "Instagram",
@@ -962,7 +1022,7 @@ async def probe_tiktok_profile(handle: str, client: httpx.AsyncClient) -> Option
             bio = clean_bio_snippet(raw_desc, "tiktok", clean)
             display_name = clean_display_name(raw_title, clean, "tiktok")
 
-            print(f"[Prober] [TIKTOK] @{clean} -> ✓ Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
+            print(f"[Prober] [TIKTOK] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
             return {
                 "platform": "tiktok",
                 "platform_label": "TikTok",
@@ -1008,7 +1068,7 @@ async def probe_pinterest_profile(handle: str, client: httpx.AsyncClient) -> Opt
 
             display_name = clean_display_name(raw_title, clean, "pinterest")
 
-            print(f"[Prober] [PINTEREST] @{clean} -> ✓ Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
+            print(f"[Prober] [PINTEREST] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
             return {
                 "platform": "pinterest",
                 "platform_label": "Pinterest",
@@ -1024,6 +1084,175 @@ async def probe_pinterest_profile(handle: str, client: httpx.AsyncClient) -> Opt
         pass
     return None
 
+
+async def probe_spotify_profile(handle: str, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
+    clean = re.sub(r'[^a-zA-Z0-9._-]', '', handle).lstrip("@").strip()
+    if not clean or len(clean) < 2 or clean.lower() in RESERVED_SYSTEM_SLUGS or clean.lower() in ("download", "search", "genre", "playlist", "track", "album", "artist", "user", "explore", "collection"):
+        return None
+    url = f"https://open.spotify.com/user/{clean}"
+    try:
+        resp = await client.get(url, headers=LI_CRAWLER_HEADERS, timeout=3.5, follow_redirects=True)
+        if resp.status_code == 200:
+            text = resp.text
+            if "Page not found" in text or "Something went wrong" in text:
+                return None
+            soup = BeautifulSoup(text, "html.parser")
+            og_title = soup.find("meta", property="og:title")
+            raw_title = og_title.get("content").strip() if (og_title and og_title.get("content")) else (soup.title.string.strip() if soup.title and soup.title.string else "")
+            
+            # Reject non-existent placeholder / generic titles
+            if not raw_title or raw_title.lower() in ("spotify", "spotify - web player", "spotify – web player", "page not found", "sign up", "log in"):
+                return None
+            
+            og_img = soup.find("meta", property="og:image")
+            raw_img = og_img.get("content") if og_img else None
+            avatar_url = None
+            if raw_img and any(d in raw_img for d in ("scdn.co", "spotifycdn.com", "spotify.com")) and "default" not in raw_img and "icon" not in raw_img:
+                avatar_url = html.unescape(raw_img)
+            
+            og_desc = soup.find("meta", property="og:description")
+            raw_desc = og_desc.get("content") if og_desc else ""
+            bio = clean_bio_snippet(raw_desc, "spotify", clean)
+
+            display_name = clean_display_name(raw_title, clean, "spotify")
+            if not display_name or display_name.lower() in ("spotify", "web player"):
+                display_name = format_handle_to_name(clean)
+
+            print(f"[Prober] [SPOTIFY] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
+            return {
+                "platform": "spotify",
+                "platform_label": "Spotify",
+                "handle": clean,
+                "name": display_name,
+                "url": url,
+                "avatar_url": avatar_url,
+                "snippet": bio,
+                "title": raw_title,
+                "discovery_method": "probing"
+            }
+    except Exception:
+        pass
+    return None
+
+
+async def get_spotify_web_token(client: httpx.AsyncClient) -> Optional[str]:
+    """
+    Obtain an anonymous Spotify access token without user authentication.
+
+    Strategy 1 — clienttoken.spotify.com:
+      Spotify's official client-token endpoint vends a client-credential token
+      using the web-player's public client ID. No cookies or user session needed.
+
+    Strategy 2 — get_access_token fallback:
+      Works only if an sp_dc cookie is available (not the case here), but included
+      as a fallback in case the clienttoken endpoint changes.
+    """
+    import uuid
+
+    # ── Strategy 1: POST to clienttoken.spotify.com ─────────────────────────
+    try:
+        device_id = uuid.uuid4().hex
+        payload = {
+            "client_data": {
+                "client_version": "1.2.52.445.g4f5c8a37",
+                # Spotify web-player's public client ID (not a secret)
+                "client_id": "d8a5ed958d274c2e8ee717e6a4b0971d",
+                "js_sdk_data": {
+                    "device_brand": "unknown",
+                    "device_model": "desktop",
+                    "os": "Windows",
+                    "os_version": "NT 10.0",
+                    "device_id": device_id,
+                    "device_type": "computer",
+                },
+            }
+        }
+        resp = await client.post(
+            "https://clienttoken.spotify.com/v1/clienttoken",
+            json=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+            },
+            timeout=8.0,
+        )
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            token = (data.get("granted_token") or {}).get("token")
+            if token:
+                print(f"[Spotify API] ✓ Client-credential token obtained (clienttoken.spotify.com)", flush=True)
+                return token
+            print(f"[Spotify API] clienttoken.spotify.com response missing token: {data}", flush=True)
+        else:
+            print(f"[Spotify API] clienttoken.spotify.com HTTP {resp.status_code}: {resp.text[:120]}", flush=True)
+    except Exception as e:
+        print(f"[Spotify API] clienttoken.spotify.com error: {e}", flush=True)
+
+    # ── Strategy 2: GET get_access_token (requires sp_dc cookie; often fails) ─
+    try:
+        resp2 = await client.get(
+            "https://open.spotify.com/get_access_token",
+            params={"reason": "transport", "productType": "web_player"},
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+                "Accept": "application/json",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://open.spotify.com/",
+            },
+            timeout=8.0,
+            follow_redirects=True,
+        )
+        if resp2.status_code == 200:
+            data2 = resp2.json()
+            token2 = data2.get("accessToken")
+            if token2:
+                print(f"[Spotify API] ✓ Anonymous token obtained (get_access_token fallback)", flush=True)
+                return token2
+    except Exception as e2:
+        print(f"[Spotify API] get_access_token fallback error: {e2}", flush=True)
+
+    print(f"[Spotify API] Could not obtain any Spotify token — Spotify search unavailable", flush=True)
+    return None
+
+
+
+async def search_spotify_users_api(
+    query: str,
+    token: str,
+    client: httpx.AsyncClient,
+    limit: int = 20,
+) -> List[str]:
+    """
+    Search Spotify for user profiles by display name using the web-player access token.
+    Returns a list of Spotify user IDs whose display names match the query.
+    Unlike DDG site: queries, Spotify's own search filters BY display name, so results
+    are semantically relevant (e.g. searching 'mohid' returns profiles named 'mohid').
+    """
+    try:
+        resp = await client.get(
+            "https://api.spotify.com/v1/search",
+            params={"q": query, "type": "user", "limit": limit, "market": "US"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+                "App-Platform": "WebPlayer",
+            },
+            timeout=8.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            items = data.get("users", {}).get("items", []) or []
+            user_ids = [u["id"] for u in items if u and u.get("id") and u.get("type") == "user"]
+            print(f"[Spotify API] Search '{query}' → {len(user_ids)} user profiles found", flush=True)
+            return user_ids
+        elif resp.status_code in (401, 403):
+            print(f"[Spotify API] HTTP {resp.status_code} — user search blocked for this token type", flush=True)
+        else:
+            print(f"[Spotify API] Search HTTP {resp.status_code}", flush=True)
+    except Exception as e:
+        print(f"[Spotify API] Search error for '{query}': {e}", flush=True)
+    return []
 
 async def probe_twitter_profile(handle: str, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
     clean = re.sub(r'[^a-zA-Z0-9_]', '', handle).lstrip("@").strip()
@@ -1050,7 +1279,7 @@ async def probe_twitter_profile(handle: str, client: httpx.AsyncClient) -> Optio
 
             display_name = clean_display_name(raw_title, clean, "twitter")
 
-            print(f"[Prober] [TWITTER] @{clean} -> ✓ Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
+            print(f"[Prober] [TWITTER] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
             return {
                 "platform": "twitter",
                 "platform_label": "X / Twitter",
@@ -1105,7 +1334,7 @@ async def probe_facebook_profile(handle: str, client: httpx.AsyncClient) -> Opti
             bio = clean_bio_snippet(raw_desc, "facebook", clean)
             display_name = clean_display_name(raw_title, clean, "facebook")
 
-            print(f"[Prober] [FACEBOOK] @{clean} -> ✓ Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
+            print(f"[Prober] [FACEBOOK] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
             return {
                 "platform": "facebook",
                 "platform_label": "Facebook",
@@ -1146,7 +1375,7 @@ async def probe_github_profile(handle: str, client: httpx.AsyncClient) -> Option
             bio = clean_bio_snippet(raw_desc, "github", clean)
             display_name = clean_display_name(raw_title, clean, "github")
 
-            print(f"[Prober] [GITHUB] @{clean} -> ✓ Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
+            print(f"[Prober] [GITHUB] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
             return {
                 "platform": "github",
                 "platform_label": "GitHub",
@@ -1164,32 +1393,59 @@ async def probe_github_profile(handle: str, client: httpx.AsyncClient) -> Option
 
 
 LI_CRAWLER_HEADERS = {
-    "User-Agent": "WhatsApp/2.21.12.21 A",
+    "User-Agent": "Twitterbot/1.0",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
 }
 
 async def fetch_linkedin_candidate_avatar(url: str, client: httpx.AsyncClient) -> Tuple[Optional[str], Optional[str]]:
-    """Extract authentic LinkedIn profile photo and canonical URL from public OpenGraph tags and HTML via crawler headers."""
+    """Extract authentic LinkedIn profile photo and canonical URL from public OpenGraph tags and HTML via Twitterbot crawler headers."""
     if not url or "linkedin.com/in/" not in url:
         return None, None
     try:
-        resp = await client.get(url, headers=LI_CRAWLER_HEADERS, timeout=4.0, follow_redirects=True)
+        resp = await client.get(url, headers=LI_CRAWLER_HEADERS, timeout=5.0, follow_redirects=True)
+        canonical_url = str(resp.url) if resp else None
+        avatar_url = None
+
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
             og_url = soup.find("meta", property="og:url")
-            canonical_url = og_url.get("content").strip() if (og_url and og_url.get("content")) else str(resp.url)
+            if og_url and og_url.get("content"):
+                canonical_url = og_url.get("content").strip()
 
-            avatar_url = None
             og_img = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "twitter:image"})
             if og_img and og_img.get("content"):
                 img_src = og_img.get("content").strip()
-                if "licdn.com" in img_src and "static.licdn.com" not in img_src and "ghost" not in img_src and "default_guest_profile" not in img_src:
+                if "licdn.com" in img_src and "ghost" not in img_src and "default_guest_profile" not in img_src:
                     avatar_url = img_src
-            # Note: Never fallback to searching the HTML body for media.licdn URLs, as that picks up
-            # other users from the 'People Also Viewed' sidebar recommendations!
-            return avatar_url, canonical_url
-    except Exception as e:
+
+            if not avatar_url:
+                m = re.search(r'<meta\s+(?:property|name)=["\'](?:og:image|twitter:image)["\']\s+content=["\']([^"\']+)["\']', resp.text)
+                if not m:
+                    m = re.search(r'<meta\s+content=["\']([^"\']+)["\']\s+(?:property|name)=["\'](?:og:image|twitter:image)["\']', resp.text)
+                if m:
+                    img_src = html.unescape(m.group(1)).strip()
+                    if "licdn.com" in img_src and "ghost" not in img_src and "default_guest_profile" not in img_src:
+                        avatar_url = img_src
+
+        if not avatar_url:
+            try:
+                p_url = get_random_proxy_url()
+                if p_url:
+                    async with httpx.AsyncClient(proxy=p_url, timeout=5.0, verify=False) as p_client:
+                        p_resp = await p_client.get(url, headers=LI_CRAWLER_HEADERS, follow_redirects=True)
+                        if p_resp.status_code == 200:
+                            p_soup = BeautifulSoup(p_resp.text, "html.parser")
+                            p_img = p_soup.find("meta", property="og:image") or p_soup.find("meta", attrs={"name": "twitter:image"})
+                            if p_img and p_img.get("content"):
+                                img_src = p_img.get("content").strip()
+                                if "licdn.com" in img_src and "ghost" not in img_src and "default_guest_profile" not in img_src:
+                                    avatar_url = img_src
+            except Exception:
+                pass
+
+        return avatar_url, canonical_url
+    except Exception:
         pass
     return None, None
 
@@ -1226,7 +1482,7 @@ def _query_ddgs_sync(query: str, proxy_url: str, timeout: float = 4.5) -> List[D
     for r in results:
         link = r.get("href", "")
         if link and link not in seen:
-            if any(dom in link.lower() for dom in ("linkedin.com", "instagram.com", "facebook.com", "tiktok.com", "pinterest.com", "github.com", "x.com", "twitter.com")):
+            if any(dom in link.lower() for dom in ("linkedin.com", "instagram.com", "facebook.com", "tiktok.com", "pinterest.com", "github.com", "x.com", "twitter.com", "spotify.com")):
                 seen.add(link)
                 items.append({
                     "link": link,
@@ -1296,27 +1552,27 @@ async def execute_ddg_html_query(
 
             if items:
                 proxy_pool.mark_healthy(ip, elapsed_ms)
-                print(f"  [DDG] ✓ '{query[:35]}...' -> {len(items)} hits (via {ip} in {elapsed_ms}ms)", flush=True)
+                print(f"  [DDG] [OK] '{query[:35]}...' -> {len(items)} hits (via {ip} in {elapsed_ms}ms)", flush=True)
                 return items, used_ip, attempts
             else:
                 proxy_pool.mark_healthy(ip, elapsed_ms)
-                print(f"  [DDG] ℹ️ '{query[:35]}...' -> 0 hits (via {ip} in {elapsed_ms}ms)", flush=True)
+                print(f"  [DDG] [0 HITS] '{query[:35]}...' -> 0 hits (via {ip} in {elapsed_ms}ms)", flush=True)
                 break
         except Exception as e:
             elapsed_ms = int((time.time() - t0) * 1000)
             err_msg = str(e).strip() or type(e).__name__
             if "202" in err_msg or "Ratelimit" in type(e).__name__:
                 proxy_pool.mark_challenged(ip)
-                print(f"  [DDG] ⏳ IP {ip} rate-limited. Retrying with fallback proxy...", flush=True)
+                print(f"  [DDG] [RATE-LIMIT] IP {ip} rate-limited. Retrying with fallback proxy...", flush=True)
             else:
                 proxy_pool.latencies[ip] = max(proxy_pool.latencies.get(ip, 2000.0), float(elapsed_ms) * 1.5)
-                print(f"  [DDG] ⚠️ IP {ip} ({type(e).__name__}: {err_msg} in {elapsed_ms}ms). Retrying with fallback proxy...", flush=True)
+                print(f"  [DDG] [WARN] IP {ip} ({type(e).__name__}: {err_msg} in {elapsed_ms}ms). Retrying with fallback proxy...", flush=True)
 
     # Backup failover
-    print(f"  [Failover] 🔄 Querying multi-engine backup for '{query[:35]}...'...", flush=True)
+    print(f"  [Failover] [BACKUP] Querying multi-engine backup for '{query[:35]}...'...", flush=True)
     fb_items = await asyncio.to_thread(run_ddgs_auto_sync, query)
     if fb_items:
-        print(f"  [Failover] ✓ Retrieved {len(fb_items)} hits via backup failover", flush=True)
+        print(f"  [Failover] [OK] Retrieved {len(fb_items)} hits via backup failover", flush=True)
         for it in fb_items:
             if it["link"] and it["link"] not in seen_links:
                 seen_links.add(it["link"])
@@ -1344,27 +1600,32 @@ async def search_social_candidates(
     3. Multi-anchor scoring with Jaro-Winkler string similarity and surname disambiguation.
     """
     local_part = email.split("@")[0].lower().strip() if "@" in email else ""
+    inferred_first, inferred_last = split_compound_name(local_part)
+    inferred_name = f"{inferred_first} {inferred_last}".strip() if (inferred_first and inferred_last) else (inferred_first or "")
+
+    effective_name = resolved_name or (inferred_name if (inferred_name and len(inferred_name.split()) >= 2) else None)
 
     # Parse clean name tokens
-    tokens = [p for p in re.findall(r"[a-zA-Z]+", resolved_name or local_part)]
+    tokens = [p for p in re.findall(r"[a-zA-Z]+", effective_name or resolved_name or local_part)]
     if tokens and tokens[0].lower() in TITLE_PREFIXES and len(tokens) > 1:
         core_human_name = " ".join(p.capitalize() for p in tokens[1:])
     else:
-        core_human_name = resolved_name
+        core_human_name = effective_name
 
-    query_target = core_human_name if (core_human_name and len(core_human_name.split()) >= 2) else (resolved_name or local_part)
+    query_target = core_human_name if (core_human_name and len(core_human_name.split()) >= 2) else (effective_name or resolved_name or local_part)
 
-    specific_handles, stem_handles = generate_handle_variations(email, resolved_name, gh_username)
-    probe_seeds = expand_social_probe_handles(specific_handles, stem_handles, resolved_name)[:25]
+    specific_handles, stem_handles = generate_handle_variations(email, effective_name or resolved_name, gh_username)
+    probe_seeds = expand_social_probe_handles(specific_handles, stem_handles, effective_name or resolved_name)[:25]
     all_variations = specific_handles + stem_handles + probe_seeds
 
-    print(f"\n[DDG Engine] ───────────────────────────────────────────────────", flush=True)
-    print(f"[DDG Engine] Target: {email} | Inferred Name: '{resolved_name}' | Query: '{query_target}'", flush=True)
+    print(f"\n[DDG Engine] ---------------------------------------------------", flush=True)
+    print(f"[DDG Engine] Target: {email} | Inferred Name: '{effective_name or resolved_name}' | Query: '{query_target}'", flush=True)
 
     # 1. Build Direct Probe Tasks
     ig_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
     tt_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 2 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 24))
     pin_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
+    sp_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
     tw_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_") for s in probe_seeds if 4 <= len(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_")) <= 15))
     fb_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".") for s in probe_seeds if 5 <= len(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".")) <= 50))
     gh_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-") for s in probe_seeds if 1 <= len(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-")) <= 39))
@@ -1378,6 +1639,8 @@ async def search_social_candidates(
             probe_tasks.append(probe_tiktok_profile(s, probe_client))
         for s in pin_seeds:
             probe_tasks.append(probe_pinterest_profile(s, probe_client))
+        for s in sp_seeds:
+            probe_tasks.append(probe_spotify_profile(s, probe_client))
         for s in tw_seeds:
             probe_tasks.append(probe_twitter_profile(s, probe_client))
         for s in fb_seeds:
@@ -1387,21 +1650,28 @@ async def search_social_candidates(
                 probe_tasks.append(probe_github_profile(s, probe_client))
 
         # 2. Build Focused DDG Search Queries
+        # Spotify & Instagram: use targeted keyword & user queries to maximize recall
         clean_target = query_target.replace('"', '').strip()
+        first_tok = tokens[0] if tokens else ""
         ddg_search_queries = [
-            ("instagram", f'site:instagram.com {clean_target}'),
+            ("instagram", f'{clean_target} instagram'),
             ("facebook", f'site:facebook.com {clean_target}'),
             ("tiktok", f'{clean_target} tiktok'),
             ("pinterest", f'{clean_target} pinterest'),
+            ("spotify", f'site:open.spotify.com/user/ {clean_target}'),
         ]
+        if first_tok and len(first_tok) >= 3 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
+            ddg_search_queries.append(("instagram", f'{first_tok} instagram'))
+            ddg_search_queries.append(("spotify", f'site:open.spotify.com/user/ {first_tok}'))
+
         if not has_verified_linkedin:
-            ddg_search_queries.append(("linkedin", f'site:linkedin.com/in {clean_target}'))
+            ddg_search_queries.append(("linkedin", f'{clean_target} linkedin'))
 
         # Assign each query its own distinct clean residential IP
         sampled_ips = proxy_pool.sample_distinct(len(ddg_search_queries))
         query_configs = [(plat, q, sampled_ips[i]) for i, (plat, q) in enumerate(ddg_search_queries)]
 
-        print(f"[DDG Engine] 📡 Launching 125 direct probes + {len(query_configs)} DDG queries via residential proxy pool...", flush=True)
+        print(f"[DDG Engine] Launching direct probes + {len(query_configs)} DDG queries via residential proxy pool...", flush=True)
 
         async def run_single_ddg(plat_tag: str, q_str: str, assigned_ip: str):
             hits, used_ip, attempts = await execute_ddg_html_query(q_str, assigned_ip)
@@ -1416,7 +1686,7 @@ async def search_social_candidates(
             *query_tasks
         )
         discovery_elapsed_ms = int((time.time() - t_start) * 1000)
-        print(f"[DDG Engine] ⏱ All Probes & DDG searches completed in {discovery_elapsed_ms}ms", flush=True)
+        print(f"[DDG Engine] All Probes & DDG searches completed in {discovery_elapsed_ms}ms", flush=True)
 
     candidates_map: Dict[str, Dict[str, Any]] = {}
 
@@ -1443,7 +1713,7 @@ async def search_social_candidates(
             p_cand.get("title", ""),
             p_cand.get("snippet", ""),
             all_variations,
-            resolved_name,
+            effective_name or resolved_name,
             resolved_location,
             gh_username,
             company_name,
@@ -1499,15 +1769,20 @@ async def search_social_candidates(
                 title,
                 snippet,
                 all_variations,
-                resolved_name,
+                effective_name or resolved_name,
                 resolved_location,
                 gh_username,
                 company_name,
             )
             if score < 15:
-                continue
+                if plat == "spotify":
+                    score = 30
+                    reasons = [f"Discovered via Spotify user profile search ({clean_target})"]
+                    sub_scores = {"handle_score": 0, "name_score": 30, "company_score": 0, "location_score": 0, "final_score": 30}
+                else:
+                    continue
 
-            display_name = clean_display_name(title, h_clean, plat, resolved_name)
+            display_name = clean_display_name(title, h_clean, plat, effective_name or resolved_name)
             bio_clean = clean_bio_snippet(snippet, plat, h_clean)
 
             if dedup_key not in candidates_map:
@@ -1525,6 +1800,10 @@ async def search_social_candidates(
                     "sub_scores": sub_scores,
                     "evidence": evidence,
                     "avatar_url": None,
+                    # DDG-discovered Spotify candidates need post-probe validation.
+                    # Enrichment must confirm the display name matches the target;
+                    # if enrichment fails or is skipped this flag keeps them removable.
+                    "_sp_ddg": plat == "spotify" and score <= 30,
                 }
             else:
                 existing = candidates_map[dedup_key]
@@ -1547,23 +1826,31 @@ async def search_social_candidates(
                         "avatar_url": existing_avatar,
                     }
 
-    # Concurrent Avatar Enrichment (LinkedIn + Facebook candidates via crawler headers)
+    # Concurrent Avatar Enrichment (LinkedIn + Instagram + Facebook + Spotify candidates via crawler headers)
     enrich_tasks = []
     li_count = 0
+    ig_count = 0
     fb_count = 0
+    sp_count = 0
     for c in candidates_map.values():
         if not c.get("avatar_url"):
-            if c["platform"] == "linkedin" and li_count < 8:
+            if c["platform"] == "linkedin" and li_count < 15:
                 enrich_tasks.append(("linkedin", c))
                 li_count += 1
-            elif c["platform"] == "facebook" and fb_count < 6:
+            elif c["platform"] == "instagram" and ig_count < 15:
+                enrich_tasks.append(("instagram", c))
+                ig_count += 1
+            elif c["platform"] == "facebook" and fb_count < 8:
                 enrich_tasks.append(("facebook", c))
                 fb_count += 1
+            elif c["platform"] == "spotify" and sp_count < 15:
+                enrich_tasks.append(("spotify", c))
+                sp_count += 1
 
     if enrich_tasks:
-        async def enrich_candidate(plat, c):
+        async def enrich_candidate(plat, c, http_client):
             if plat == "linkedin":
-                av, canon_url = await fetch_linkedin_candidate_avatar(c["url"], client)
+                av, canon_url = await fetch_linkedin_candidate_avatar(c["url"], http_client)
                 if av:
                     c["avatar_url"] = av
                 if canon_url and "linkedin.com/in/" in canon_url:
@@ -1573,12 +1860,67 @@ async def search_social_candidates(
                         if canon_slug and canon_slug.lower() not in ("dir", "pub", "feed"):
                             c["handle"] = f"@{canon_slug}"
                             c["url"] = f"https://www.linkedin.com/in/{canon_slug}"
-            else:
-                av = await fetch_facebook_candidate_avatar(c["url"], client)
+            elif plat == "instagram":
+                h_slug = c["handle"].lstrip("@").strip()
+                ig_data = await probe_instagram_profile(h_slug, http_client)
+                if ig_data:
+                    if ig_data.get("avatar_url"):
+                        c["avatar_url"] = ig_data["avatar_url"]
+                    if ig_data.get("name") and (not c.get("name") or c["name"] == c["handle"].lstrip("@")):
+                        c["name"] = ig_data["name"]
+                    if ig_data.get("snippet") and not c.get("snippet"):
+                        c["snippet"] = ig_data["snippet"]
+            elif plat == "facebook":
+                av = await fetch_facebook_candidate_avatar(c["url"], http_client)
                 if av:
                     c["avatar_url"] = av
+            elif plat == "spotify":
+                h_slug = c["handle"].lstrip("@").strip()
+                sp_data = await probe_spotify_profile(h_slug, http_client)
+                if sp_data:
+                    if sp_data.get("avatar_url"):
+                        c["avatar_url"] = sp_data["avatar_url"]
+                    if sp_data.get("name") and (not c.get("name") or c["name"] == c["handle"].lstrip("@") or c["name"] == "on Spotify"):
+                        c["name"] = sp_data["name"]
+                    if sp_data.get("snippet") and not c.get("snippet"):
+                        c["snippet"] = sp_data["snippet"]
+                    # Re-score candidate with the authentic probed profile name
+                    n_score, n_reasons, n_sub, n_ev = score_candidate(
+                        {"platform": "spotify", "platform_label": "Spotify", "handle": h_slug, "url": c["url"]},
+                        c["name"],
+                        c.get("snippet", ""),
+                        all_variations,
+                        effective_name or resolved_name,
+                        resolved_location,
+                        gh_username,
+                        company_name,
+                    )
+                    if n_score >= 15:
+                        c["score"] = n_score
+                        c["reasons"] = n_reasons
+                        c["sub_scores"] = n_sub
+                        c["evidence"] = n_ev
+                        c["confidence_level"] = "strong" if n_score >= 70 else "potential"
+                    elif c.get("score", 0) <= 30:
+                        # DDG-discovered candidate; probed name doesn't match target → flag for removal
+                        c["_remove"] = True
+                else:
+                    # Probe returned nothing; DDG-discovered candidates are noise → remove
+                    if c.get("score", 0) <= 30:
+                        c["_remove"] = True
 
-        await asyncio.gather(*[enrich_candidate(plat, c) for plat, c in enrich_tasks], return_exceptions=True)
+        async with httpx.AsyncClient(timeout=4.0, verify=False) as av_client:
+            await asyncio.gather(*[enrich_candidate(plat, c, av_client) for plat, c in enrich_tasks], return_exceptions=True)
+
+    # Purge Spotify candidates that failed post-probe validation (irrelevant DDG noise).
+    # Two removal conditions:
+    #  1. _remove=True  → enrichment probed and found name doesn't match target
+    #  2. _sp_ddg=True AND score ≤ 30 → enrichment was skipped (limit/exception) so
+    #     the DDG-discovered candidate was never name-validated; remove as untrusted
+    for dk in list(candidates_map.keys()):
+        c = candidates_map[dk]
+        if c.get("_remove") or (c.get("_sp_ddg") and c.get("score", 0) <= 30):
+            del candidates_map[dk]
 
     # Post-enrichment cross-candidate deduplication pass:
     # Merge duplicate candidate entries that share the same canonical URL or identical profile avatar photo
@@ -1616,22 +1958,23 @@ async def search_social_candidates(
     unique_candidates = list({id(v): v for v in merged_candidates.values()}.values())
     all_candidates = sorted(unique_candidates, key=lambda x: -x["score"])
 
-    # Group by platform (show all candidates without capping)
+    # Group by platform in priority order: LinkedIn -> GitHub -> Instagram -> Facebook -> X -> Pinterest -> TikTok -> Spotify
     by_platform = {
         "linkedin": [c for c in all_candidates if c["platform"] == "linkedin"],
-        "instagram": [c for c in all_candidates if c["platform"] == "instagram"],
-        "twitter": [c for c in all_candidates if c["platform"] == "twitter"],
-        "facebook": [c for c in all_candidates if c["platform"] == "facebook"],
-        "tiktok": [c for c in all_candidates if c["platform"] == "tiktok"],
-        "pinterest": [c for c in all_candidates if c["platform"] == "pinterest"],
         "github": [c for c in all_candidates if c["platform"] == "github"],
+        "instagram": [c for c in all_candidates if c["platform"] == "instagram"],
+        "facebook": [c for c in all_candidates if c["platform"] == "facebook"],
+        "twitter": [c for c in all_candidates if c["platform"] == "twitter"],
+        "pinterest": [c for c in all_candidates if c["platform"] == "pinterest"],
+        "tiktok": [c for c in all_candidates if c["platform"] == "tiktok"],
+        "spotify": [c for c in all_candidates if c["platform"] == "spotify"],
     }
 
     total_count = sum(len(v) for v in by_platform.values())
-    print(f"[Social Discovery] ✓ Discovery Complete! Total Unique Ranked Candidates: {len(all_candidates)}", flush=True)
+    print(f"[Social Discovery] [OK] Discovery Complete! Total Unique Ranked Candidates: {len(all_candidates)}", flush=True)
     if all_candidates:
         top = all_candidates[0]
-        print(f"[Social Discovery] 🏆 Top Match: [{top['platform'].upper()}] {top['handle']} ({top['name']}) -> Score: {top['score']}%", flush=True)
-    print(f"[Social Discovery] ───────────────────────────────────────────────────\n", flush=True)
+        print(f"[Social Discovery] Top Match: [{top['platform'].upper()}] {top['handle']} ({top['name']}) -> Score: {top['score']}%", flush=True)
+    print(f"[Social Discovery] ---------------------------------------------------\n", flush=True)
 
     return all_candidates[:40], by_platform

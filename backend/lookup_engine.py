@@ -605,6 +605,15 @@ def clean_social_url(raw_url: Optional[str], platform: Optional[str] = None) -> 
                 return f"https://www.facebook.com/{handle}"
         return None
 
+    # 5. Spotify
+    if "spotify.com/user/" in clean_low and (platform is None or platform == "spotify"):
+        m = re.search(r"spotify\.com/user/([a-zA-Z0-9_.-]{2,50})", s, re.IGNORECASE)
+        if m:
+            handle = m.group(1).split("?")[0].rstrip("/").strip()
+            if handle.lower() not in RESERVED_SOCIAL_SLUGS and len(handle) >= 2:
+                return f"https://open.spotify.com/user/{handle}"
+        return None
+
     return None
 
 
@@ -627,6 +636,9 @@ def extract_clean_social_links_from_text(text: str) -> dict[str, str]:
         if not results.get("facebook"):
             cl = clean_social_url(raw, platform="facebook")
             if cl: results["facebook"] = cl
+        if not results.get("spotify"):
+            cl = clean_social_url(raw, platform="spotify")
+            if cl: results["spotify"] = cl
     return results
 
 
@@ -1332,7 +1344,7 @@ async def search_linkedin_anchored(
                     snippet = (r.get("content") or "").lower()
                     is_valid, conf = is_valid_linkedin_candidate(clean_url, title, snippet, target_handle, target_name, anchor)
                     if is_valid:
-                        print(f"[LinkedIn Search] ✓ Verified LinkedIn candidate (SearXNG): {clean_url} (Confidence: {conf}%)", flush=True)
+                        print(f"[LinkedIn Search] [OK] Verified LinkedIn candidate (SearXNG): {clean_url} (Confidence: {conf}%)", flush=True)
                         return clean_url, None, conf
         except Exception as e:
             print(f"[LinkedIn Search] [-] SearXNG error/offline: {e}", flush=True)
@@ -1868,7 +1880,7 @@ async def run_lookup(email: str) -> dict:
                 sim = jaro_winkler_similarity(li_name.lower(), resolved_name.lower()) if resolved_name else 0.0
                 if sim < 0.60:
                     is_li_name_conflict = True
-                    print(f"[Lookup Engine] ⚠️ Rejecting LinkedIn profile {linkedin_url} due to severe name conflict: LinkedIn='{li_name}' vs Target clues={target_name_clues}", flush=True)
+                    print(f"[Lookup Engine] [WARN] Rejecting LinkedIn profile {linkedin_url} due to severe name conflict: LinkedIn='{li_name}' vs Target clues={target_name_clues}", flush=True)
 
         if is_li_name_conflict:
             linkedin_url = None
@@ -2116,8 +2128,8 @@ async def run_lookup(email: str) -> dict:
     has_verified_li = bool(linkedin_url and linkedin_confidence == 100 and linkedin_source in ("github", "gravatar", "wikidata", "harvested"))
 
     phase1_elapsed_ms = int((time.time() - start) * 1000)
-    print(f"\n[Lookup Engine] ⏱ Base Enrichment (Phase 1 & 2) completed in {phase1_elapsed_ms}ms (Gravatar, GitHub, Wikidata, Company, DB)", flush=True)
-    print(f"[Lookup Engine] ⏱ Launching Phase 3: High-Concurrency Social Discovery...", flush=True)
+    print(f"\n[Lookup Engine] Base Enrichment (Phase 1 & 2) completed in {phase1_elapsed_ms}ms (Gravatar, GitHub, Wikidata, Company, DB)", flush=True)
+    print(f"[Lookup Engine] Launching Phase 3: High-Concurrency Social Discovery...", flush=True)
 
     try:
         raw_candidates, by_plat = await search_social_candidates(
@@ -2152,7 +2164,7 @@ async def run_lookup(email: str) -> dict:
                 raw_candidates.insert(0, cand_li)
 
         # ── Zero Duplicate Platform Rule ──
-        for p in ["linkedin", "github", "instagram", "twitter", "facebook", "tiktok", "pinterest"]:
+        for p in ["linkedin", "github", "instagram", "twitter", "facebook", "tiktok", "pinterest", "spotify"]:
             prof = profiles.get(p)
             is_direct_verified = False
             if p == "github":
@@ -2181,7 +2193,7 @@ async def run_lookup(email: str) -> dict:
     except Exception as e:
         print(f"[Social Discovery] Candidate search error: {e}", flush=True)
         social_candidates = []
-        candidates_by_platform = {"linkedin": [], "instagram": [], "twitter": [], "facebook": [], "tiktok": [], "pinterest": []}
+        candidates_by_platform = {"linkedin": [], "instagram": [], "twitter": [], "facebook": [], "tiktok": [], "pinterest": [], "spotify": []}
 
     # ── Fallback Person Display Name from Clean Email Username ──
     # Note: Speculative social candidates are never promoted to the person card to prevent unverified data pollution
