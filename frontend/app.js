@@ -27,8 +27,13 @@ const SVG_ICONS = {
       <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.24 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/>
     </svg>`,
   pinterest: `
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12.7 0C6.3 0 2.2 4.4 2.2 9.9c0 3.8 2.2 6.3 3.5 6.3.5 0 .9-.8 1.1-1.3.1-.3.1-.4-.1-.7-.6-.8-1-2-1-3.6 0-4.3 3.2-8.3 8.3-8.3 4.2 0 7.3 2.6 7.3 6.9 0 4.1-2 7.7-5.1 7.7-1.6 0-2.8-1.2-2.4-2.8.5-1.9 1.4-3.9 1.4-5.3 0-1.2-.7-2.2-2-2.2-1.6 0-2.9 1.6-2.9 3.8 0 1.4.5 2.3.5 2.3l-2 8.5c-.6 2.5 0 6.2.1 6.6.1.2.3.2.4.1.2-.2 2.3-3.2 2.9-5.5l1.1-4.2c.6 1.1 2.1 2 3.7 2 5.3 0 8.9-4.8 8.9-11C23.5 4.8 18.9 0 12.7 0z"/>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="12" fill="#E60023"/>
+      <path d="M12.18 4.5C8.04 4.5 5.25 7.42 5.25 10.95c0 2.37 1.28 4.04 2.15 4.04.3 0 .49-.5.59-.88.08-.2.08-.29 0-.49-.4-.49-.59-1.28-.59-2.27 0-2.76 2.07-5.33 5.42-5.33 2.76 0 4.73 1.67 4.73 4.44 0 2.66-1.28 4.93-3.25 4.93-1.08 0-1.77-.79-1.48-1.77.29-1.18.89-2.46.89-3.35 0-.79-.39-1.38-1.28-1.38-.98 0-1.87.98-1.87 2.36 0 .89.3 1.48.3 1.48l-1.28 5.32c-.39 1.58-.1 3.84 0 4.14.1.1.2.1.3.1.1-.1 1.48-1.97 1.87-3.45l.69-2.66c.39.69 1.38 1.28 2.36 1.28 3.35 0 5.62-3.05 5.62-6.99C21.65 7.52 17.41 4.5 12.18 4.5z" fill="#FFFFFF"/>
+    </svg>`,
+  spotify: `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
     </svg>`,
   github: `
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -149,7 +154,7 @@ async function doLookup(forceRefresh = false) {
     document.getElementById("lookup-results").classList.remove("hidden");
   } catch (err) {
     hideLookupSkeleton();
-    showError("lookup-error", `❌ ${err.message}`);
+    showError("lookup-error", err.message || "Lookup failed");
   } finally {
     setLoading(lookupBtn, false);
     lookupBtn.querySelector(".btn-text").textContent = "Search";
@@ -206,26 +211,53 @@ if (copyNameBtn) {
   });
 }
 
-// ── Platform-Specific Candidate Accordion Toggles ──
-document.addEventListener("click", e => {
-  const btn = e.target.closest(".candidates-toggle-btn");
-  if (!btn) return;
-  const targetId = btn.dataset.target;
-  const list = document.getElementById(targetId);
-  const pill = btn.querySelector(".candidates-toggle-pill");
-  const accordion = btn.closest(".platform-accordion");
-  if (!list) return;
+// ── Candidate Profiles State & Tab Switching ──
+let currentLookupCandidates = {};
+let currentCandidatePlatform = "instagram";
 
-  const isCollapsed = list.classList.contains("collapsed");
-  if (isCollapsed) {
-    list.classList.remove("collapsed");
-    if (accordion) accordion.classList.remove("collapsed");
-    if (pill) pill.textContent = "Collapse";
+const CANDIDATE_PLATFORMS = [
+  { id: "instagram", label: "Instagram", icon: SVG_ICONS.instagram },
+  { id: "linkedin", label: "LinkedIn", icon: SVG_ICONS.linkedin },
+  { id: "github", label: "GitHub", icon: SVG_ICONS.github },
+  { id: "facebook", label: "Facebook", icon: SVG_ICONS.facebook },
+  { id: "twitter", label: "X", icon: SVG_ICONS.twitter },
+  { id: "pinterest", label: "Pinterest", icon: SVG_ICONS.pinterest },
+  { id: "tiktok", label: "TikTok", icon: SVG_ICONS.tiktok },
+  { id: "spotify", label: "Spotify", icon: SVG_ICONS.spotify },
+];
+
+function switchCandidateTab(platId) {
+  currentCandidatePlatform = platId;
+
+  // Update active class on tab buttons
+  document.querySelectorAll(".cand-tab-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.plat === platId);
+  });
+
+  const listEl = document.getElementById("cand-items-list");
+  const scrollContainer = document.getElementById("cand-scroll-container");
+  if (!listEl) return;
+
+  const candidatesToRender = currentLookupCandidates[platId] || [];
+
+  if (candidatesToRender.length > 0) {
+    listEl.innerHTML = candidatesToRender.map(renderCandidateCard).join("");
   } else {
-    list.classList.add("collapsed");
-    if (accordion) accordion.classList.add("collapsed");
-    if (pill) pill.textContent = "Expand";
+    const platObj = CANDIDATE_PLATFORMS.find(p => p.id === platId);
+    const platName = platObj ? platObj.label : platId;
+    listEl.innerHTML = `<p class="no-data">No candidate accounts found on ${escapeHtml(platName)}.</p>`;
   }
+
+  if (scrollContainer) {
+    scrollContainer.scrollTop = 0;
+  }
+}
+
+document.addEventListener("click", e => {
+  const btn = e.target.closest(".cand-tab-btn");
+  if (!btn) return;
+  const plat = btn.dataset.plat;
+  if (plat) switchCandidateTab(plat);
 });
 
 function renderLookupResults(data) {
@@ -242,7 +274,14 @@ function renderLookupResults(data) {
 
   nameEl.textContent = person.name || "Unknown Person";
   bioEl.textContent = person.bio || "";
-  personLocEl.textContent = person.location ? "📍 " + person.location : "";
+  
+  const locWrap = document.getElementById("person-location-wrap");
+  if (person.location) {
+    personLocEl.textContent = person.location;
+    if (locWrap) locWrap.classList.remove("hidden");
+  } else if (locWrap) {
+    locWrap.classList.add("hidden");
+  }
 
   if (person.avatar) {
     avatarEl.referrerPolicy = "no-referrer";
@@ -274,12 +313,12 @@ function renderLookupResults(data) {
 
   if (identityBadge) {
     if (hasVerifiedIdentity) {
-      identityBadge.innerHTML = `✓ 100% Corroborated Identity`;
+      identityBadge.innerHTML = `✓ Corroborated Identity`;
       identityBadge.className = "type-badge badge-verified";
       identityBadge.title = "Identity verified through authoritative profile records";
       identityBadge.classList.remove("hidden");
     } else if (person.name) {
-      identityBadge.textContent = "🔍 Inferred Name · Unconfirmed Identity";
+      identityBadge.textContent = "Inferred Name · Unconfirmed";
       identityBadge.className = "type-badge badge-inferred";
       identityBadge.title = "Name derived from email username; review matching candidate profiles below";
       identityBadge.classList.remove("hidden");
@@ -290,7 +329,7 @@ function renderLookupResults(data) {
 
   if (delivBadge) {
     if (data.deliverability === "undeliverable") {
-      delivBadge.textContent = "⚠️ Inactive Mailbox";
+      delivBadge.textContent = "Inactive Mailbox";
       delivBadge.classList.remove("hidden");
     } else {
       delivBadge.classList.add("hidden");
@@ -299,7 +338,7 @@ function renderLookupResults(data) {
 
   personExtra.classList.remove("hidden");
 
-  // ── Integrated Workplace Panel inside Hero Person Card ──
+  // ── Workplace & Organization Panel (Bento Row 1 Right) ──
   const comp = data.company;
   const workplaceSideEl = document.getElementById("person-workplace-side");
   const compNameEl = document.getElementById("company-name");
@@ -312,6 +351,7 @@ function renderLookupResults(data) {
   );
 
   if (hasRealWorkplace && workplaceSideEl) {
+    workplaceSideEl.classList.remove("hidden");
     compNameEl.textContent = comp.name || comp.domain;
     const metaParts = [];
     if (comp.role) metaParts.push(comp.role);
@@ -344,7 +384,6 @@ function renderLookupResults(data) {
       compLogoEl.classList.add("hidden");
       compLogoFallback.classList.remove("hidden");
     }
-    workplaceSideEl.classList.remove("hidden");
   } else if (workplaceSideEl) {
     workplaceSideEl.classList.add("hidden");
   }
@@ -398,7 +437,7 @@ function renderLookupResults(data) {
           href: p.url,
           platform: "linkedin",
           name: `LinkedIn <span class="verified-pill">✓ 100% Verified</span>`,
-          sub: `${displaySlug} · View Verified Profile`,
+          sub: displaySlug,
           avatar_url: p.avatar_url || (data.person ? data.person.avatar : null),
         }));
       }
@@ -475,7 +514,7 @@ function renderLookupResults(data) {
         chips.push(buildProfileChip({
           href: p.url,
           platform: "youtube",
-          name: `YouTube <span class="verified-pill">✓ 100% Verified</span>`,
+          name: `YouTube <span class="verified-pill">✓ Verified</span>`,
           sub: "Verified Channel",
           avatar_url: p.avatar_url,
         }));
@@ -483,53 +522,79 @@ function renderLookupResults(data) {
     }
   }
 
-  // ── Candidate Social Accounts by Platform (Uncapped, No % Badges) ──
-  const candidatesWrapper = document.getElementById("candidates-wrapper");
-  const byPlat = data.social_candidates_by_platform || {};
-  let totalCandidatesFound = 0;
-
-  ["linkedin", "github", "instagram", "twitter", "facebook", "tiktok", "pinterest"].forEach(plat => {
-    const accEl = document.getElementById(`cand-acc-${plat}`);
-    const listEl = document.getElementById(`cand-list-${plat}`);
-    const countEl = document.getElementById(`cand-count-${plat}`);
-    let candidates = byPlat[plat] || [];
-
-    // When GitHub is directly verified in top profiles, suppress candidate accordion
-    if (plat === "github" && profiles.github) {
-      candidates = [];
+  if (profiles.spotify) {
+    const p = parseProfileVal(profiles.spotify, "Spotify");
+    if (p && p.url) {
+      chips.push(buildProfileChip({
+        href: p.url,
+        platform: "spotify",
+        name: `Spotify <span class="verified-pill">✓ Verified</span>`,
+        sub: `${p.handle || "Profile"} · Listen & View`,
+        avatar_url: p.avatar_url,
+      }));
     }
+  }
 
-    if (accEl && listEl) {
-      if (candidates.length > 0) {
-        totalCandidatesFound += candidates.length;
-        if (countEl) countEl.textContent = candidates.length;
-        listEl.classList.add("collapsed"); // Collapsed by default
-        accEl.classList.add("collapsed");
-        listEl.innerHTML = candidates.map(renderCandidateCard).join("");
-        accEl.classList.remove("hidden");
-      } else {
-        accEl.classList.add("hidden");
-      }
-    }
-  });
+  // ── Render Verified Profiles Card ──
+  const verifiedBadgeEl = document.getElementById("verified-count-badge");
+  if (verifiedBadgeEl) verifiedBadgeEl.textContent = chips.length;
 
   if (chips.length > 0) {
     profilesList.innerHTML = chips.join("");
     profilesList.style.display = "flex";
-  } else if (totalCandidatesFound > 0) {
-    profilesList.innerHTML = "";
-    profilesList.style.display = "none";
   } else {
-    profilesList.innerHTML = "<p class='no-data'>No direct social profiles discovered.</p>";
+    profilesList.innerHTML = "<p class='no-data'>No direct verified profiles confirmed for this email.</p>";
     profilesList.style.display = "block";
   }
 
-  if (candidatesWrapper) {
-    if (totalCandidatesFound > 0) {
-      candidatesWrapper.classList.remove("hidden");
+  // ── Render Discovered Candidate Profiles Card (Sticky Navbar + Scrollable List) ──
+  const byPlat = Object.assign({}, data.social_candidates_by_platform || {});
+
+  // When GitHub is directly verified in top profiles, suppress candidate GitHub
+  if (profiles.github) {
+    byPlat.github = [];
+  }
+
+  currentLookupCandidates = byPlat;
+
+  const orderedPlats = ["linkedin", "github", "instagram", "facebook", "twitter", "pinterest", "tiktok", "spotify"];
+  let totalCandidatesFound = 0;
+  orderedPlats.forEach(p => {
+    totalCandidatesFound += (byPlat[p] || []).length;
+  });
+
+  const candTotalBadge = document.getElementById("cand-total-badge");
+  if (candTotalBadge) candTotalBadge.textContent = totalCandidatesFound;
+
+  // Build the pinned Platform Symbols Navbar (Only show platforms with count > 0, show ONLY icons + count badges, no text names, no 'all')
+  const navBarEl = document.getElementById("cand-nav-bar");
+  const visiblePlats = CANDIDATE_PLATFORMS.filter(plat => (byPlat[plat.id] || []).length > 0);
+
+  if (navBarEl) {
+    if (visiblePlats.length > 0) {
+      navBarEl.innerHTML = visiblePlats.map(plat => {
+        const count = (byPlat[plat.id] || []).length;
+        return `
+          <button type="button" class="cand-tab-btn" data-plat="${plat.id}" title="${escapeHtml(plat.label)} (${count})">
+            <span class="cand-tab-icon">${plat.icon}</span>
+            <span class="cand-tab-badge">${count}</span>
+          </button>
+        `;
+      }).join("");
+      navBarEl.style.display = "flex";
     } else {
-      candidatesWrapper.classList.add("hidden");
+      navBarEl.innerHTML = "";
+      navBarEl.style.display = "none";
     }
+  }
+
+  // Activate Instagram by default if it has candidates, otherwise the first available platform
+  if ((byPlat.instagram || []).length > 0) {
+    switchCandidateTab("instagram");
+  } else if (visiblePlats.length > 0) {
+    switchCandidateTab(visiblePlats[0].id);
+  } else {
+    switchCandidateTab("instagram");
   }
 
   // ── Global Typo Banner ──
@@ -551,7 +616,7 @@ function renderLookupResults(data) {
   }
 
   // ── Query Time ──
-  document.getElementById("query-time").textContent = `Query completed in ${data.query_time_ms}ms (Permanent Cache)`;
+  document.getElementById("query-time").textContent = `Query completed in ${data.query_time_ms}ms`;
 }
 
 function buildProfileChip({ href, platform, name, sub, avatar_url }) {
@@ -562,7 +627,6 @@ function buildProfileChip({ href, platform, name, sub, avatar_url }) {
     <div class="profile-chip-avatar-wrap">
       <img src="${escapeHtml(avatar_url)}" class="profile-chip-avatar" referrerpolicy="no-referrer" alt="${escapeHtml(name)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
       <div class="platform-glyph-badge ${glyphClass}" style="display: none;">${glyphSvg}</div>
-      <div class="platform-glyph-mini ${glyphClass}">${glyphSvg}</div>
     </div>
   ` : `
     <div class="platform-glyph-badge ${glyphClass}">${glyphSvg}</div>
@@ -594,10 +658,12 @@ function renderCandidateCard(c) {
   const snippetHtml = c.snippet ? `<div class="candidate-snippet">${escapeHtml(c.snippet)}</div>` : "";
 
   const avatarImgHtml = c.avatar_url ? `
-    <img src="${escapeHtml(c.avatar_url)}" class="candidate-avatar" referrerpolicy="no-referrer" alt="${escapeHtml(c.handle)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-    <div class="platform-glyph-badge ${glyphClass}" style="display: none; width: 48px; height: 48px; border-radius: 50%;">${glyphSvg}</div>
+    <div class="profile-chip-avatar-wrap" style="width: 44px; height: 44px;">
+      <img src="${escapeHtml(c.avatar_url)}" class="candidate-avatar" referrerpolicy="no-referrer" alt="${escapeHtml(c.handle)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+      <div class="platform-glyph-badge ${glyphClass}" style="display: none; width: 44px; height: 44px; border-radius: var(--radius-sm);">${glyphSvg}</div>
+    </div>
   ` : `
-    <div class="platform-glyph-badge ${glyphClass}" style="width: 48px; height: 48px; border-radius: 50%;">${glyphSvg}</div>
+    <div class="platform-glyph-badge ${glyphClass}" style="width: 44px; height: 44px; border-radius: var(--radius-sm);">${glyphSvg}</div>
   `;
 
   return `
@@ -744,7 +810,7 @@ function renderVerifyResults(data) {
 
   } else if (data.catchall === true) {
     verdict.className = "verdict-banner unknown";
-    verdictIcon.textContent = "⚠️";
+    verdictIcon.textContent = "!";
     verdictTitle.textContent = "Catch-All Mail Server";
     verdictSub.textContent = "The domain server accepts mail addressed to any username, so individual mailbox delivery cannot be guaranteed.";
     verdictBadge.textContent = "Catch-All";
@@ -759,12 +825,12 @@ function renderVerifyResults(data) {
     vInboxSub.textContent = "Accepts any address";
 
     vProviderSub.textContent = "Configured Host";
-    noteEl.textContent = "ℹ️ Catch-all domains accept all incoming email to shield individual employee mailboxes from dictionary attacks. If this contact was obtained directly, delivery is likely normal.";
+    noteEl.textContent = "Catch-all domains accept all incoming email to shield individual employee mailboxes from dictionary attacks. If this contact was obtained directly, delivery is likely normal.";
     noteEl.classList.remove("hidden");
 
   } else if (isProtectedHost) {
     verdict.className = "verdict-banner protected";
-    verdictIcon.textContent = "🛡️";
+    verdictIcon.textContent = "✓";
     verdictTitle.textContent = "Protected Mail Server (Active MX)";
     verdictSub.textContent = `${provider} actively receives mail, but drops direct socket probes to safeguard user privacy.`;
     verdictBadge.textContent = "Protected";
@@ -779,12 +845,12 @@ function renderVerifyResults(data) {
     vInboxSub.textContent = "Probes filtered by host";
 
     vProviderSub.textContent = "Verified MX Host";
-    noteEl.textContent = `ℹ️ ${provider} deliberately drops automated SMTP verification probes to prevent user enumeration. Because the domain's MX servers are active, emails sent to a genuine recipient will deliver normally.`;
+    noteEl.textContent = `${provider} deliberately drops automated SMTP verification probes to prevent user enumeration. Because the domain's MX servers are active, emails sent to a genuine recipient will deliver normally.`;
     noteEl.classList.remove("hidden");
 
   } else {
     verdict.className = "verdict-banner unknown";
-    verdictIcon.textContent = "⚠️";
+    verdictIcon.textContent = "?";
     verdictTitle.textContent = "Unverifiable";
     verdictSub.textContent = data.error || "Remote mail server did not respond to verification probes.";
     verdictBadge.textContent = "Uncertain";
