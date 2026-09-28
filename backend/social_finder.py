@@ -1320,6 +1320,8 @@ async def search_spotify_users_pathfinder(
                 })
             print(f"[Spotify Pathfinder] Query '{clean_query}' → Found {len(results)} user profiles", flush=True)
             return results
+        elif r.status_code == 401:
+            print(f"[Spotify Pathfinder] ⚠️ HTTP 401: SPOTIFY_AUTH_TOKEN in .env has expired (Spotify Web tokens have a 1-hour TTL). Refresh the Bearer token in .env to resume direct user search.", flush=True)
         else:
             print(f"[Spotify Pathfinder] HTTP {r.status_code} for '{clean_query}': {r.text[:200]}", flush=True)
     except Exception as e:
