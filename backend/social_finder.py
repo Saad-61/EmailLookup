@@ -1296,10 +1296,74 @@ async def probe_twitter_profile(handle: str, client: httpx.AsyncClient) -> Optio
     return None
 
 
-async def probe_facebook_profile(handle: str, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
+async def probe_facebook_profile(handle: str, client: httpx.AsyncClient, proxy_url: Optional[str] = None) -> Optional[Dict[str, Any]]:
     clean = re.sub(r'[^a-zA-Z0-9._]', '', handle).lstrip("@").strip()
     if not clean or len(clean) < 3 or clean in ("sharer", "share", "login", "recover", "help", "policies", "privacy"):
         return None
+    url = f"https://www.facebook.com/{clean}"
+    
+    resp = None
+    p_url = proxy_url or get_random_proxy_url()
+    if p_url:
+        try:
+            async with httpx.AsyncClient(proxy=p_url, timeout=5.0, follow_redirects=True, verify=False) as px_client:
+                resp = await px_client.get(url, headers=TWITTER_HEADERS)
+        except Exception:
+            resp = None
+
+    if not resp or resp.status_code != 200:
+        try:
+            resp = await client.get(url, headers=TWITTER_HEADERS, timeout=3.5, follow_redirects=True)
+        except Exception:
+            return None
+
+    try:
+        if resp and resp.status_code == 200:
+            text = resp.text
+            if any(bad in text for bad in ("This content isn't available right now", "Page Not Found", "You must log in")):
+                return None
+            soup = BeautifulSoup(text, "html.parser")
+            og_title = soup.find("meta", property="og:title")
+            raw_title = og_title.get("content").strip() if (og_title and og_title.get("content")) else ""
+            
+            # If no og:title or generic "Facebook" title, account is not publicly confirmed
+            if not raw_title or raw_title.lower() in ("facebook", "log in to facebook", "log into facebook", "welcome to facebook", "error"):
+                return None
+
+            # Extract authentic canonical URL & handle from og:url or final redirected resp.url
+            og_url = soup.find("meta", property="og:url")
+            canonical_url = og_url.get("content").strip() if (og_url and og_url.get("content")) else str(resp.url)
+            m_handle = re.search(r"facebook\.com/([a-zA-Z0-9._-]+)/?$", canonical_url, re.IGNORECASE)
+            if m_handle:
+                c_cand = m_handle.group(1).rstrip("/")
+                if c_cand.lower() not in ("profile.php", "pages", "people", "sharer", "share", "login"):
+                    clean = c_cand
+                    url = f"https://www.facebook.com/{clean}"
+            
+            og_img = soup.find("meta", property="og:image")
+            raw_img = og_img.get("content") if og_img else None
+            avatar_url = html.unescape(raw_img) if (raw_img and "fb_icon" not in raw_img and "static.xx" not in raw_img) else None
+
+            og_desc = soup.find("meta", property="og:description")
+            raw_desc = og_desc.get("content") if og_desc else ""
+            bio = clean_bio_snippet(raw_desc, "facebook", clean)
+            display_name = clean_display_name(raw_title, clean, "facebook")
+
+            print(f"[Prober] [FACEBOOK] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
+            return {
+                "platform": "facebook",
+                "platform_label": "Facebook",
+                "handle": clean,
+                "name": display_name,
+                "url": url,
+                "avatar_url": avatar_url,
+                "snippet": bio,
+                "title": raw_title,
+                "discovery_method": "probing"
+            }
+    except Exception:
+        pass
+    return None
     url = f"https://www.facebook.com/{clean}"
     try:
         resp = await client.get(url, headers=LI_CRAWLER_HEADERS, timeout=3.5, follow_redirects=True)
@@ -1451,12 +1515,26 @@ async def fetch_linkedin_candidate_avatar(url: str, client: httpx.AsyncClient) -
 
 
 async def fetch_facebook_candidate_avatar(url: str, client: httpx.AsyncClient) -> Optional[str]:
-    """Extract authentic Facebook profile photo from public OpenGraph tags via crawler headers."""
+    """Extract authentic Facebook profile photo from public OpenGraph tags via residential proxy routing."""
     if not url or "facebook.com/" not in url:
         return None
+    resp = None
+    p_url = get_random_proxy_url()
+    if p_url:
+        try:
+            async with httpx.AsyncClient(proxy=p_url, timeout=5.0, follow_redirects=True, verify=False) as px_client:
+                resp = await px_client.get(url, headers=TWITTER_HEADERS)
+        except Exception:
+            resp = None
+
+    if not resp or resp.status_code != 200:
+        try:
+            resp = await client.get(url, headers=TWITTER_HEADERS, timeout=3.5, follow_redirects=True)
+        except Exception:
+            return None
+
     try:
-        resp = await client.get(url, headers=LI_CRAWLER_HEADERS, timeout=3.5, follow_redirects=True)
-        if resp.status_code == 200:
+        if resp and resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
             og_img = soup.find("meta", property="og:image")
             if og_img and og_img.get("content"):
@@ -1466,6 +1544,7 @@ async def fetch_facebook_candidate_avatar(url: str, client: httpx.AsyncClient) -
     except Exception:
         pass
     return None
+
 
 
 # ==========================================
