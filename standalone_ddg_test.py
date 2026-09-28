@@ -69,6 +69,7 @@ from social_finder import (
     probe_facebook_profile,
     probe_github_profile,
     probe_spotify_profile,
+    search_spotify_users_pathfinder,
     fetch_linkedin_candidate_avatar,
     fetch_facebook_candidate_avatar,
     jaro_winkler_similarity,
@@ -179,7 +180,7 @@ def _query_ddgs_sync(query: str, proxy_url: str, timeout: float = 4.5) -> List[D
     for r in results:
         link = r.get("href", "")
         if link and link not in seen:
-            if any(dom in link.lower() for dom in ("linkedin.com", "instagram.com", "facebook.com", "tiktok.com", "pinterest.com", "github.com", "x.com", "twitter.com")):
+            if any(dom in link.lower() for dom in ("linkedin.com", "instagram.com", "facebook.com", "tiktok.com", "pinterest.com", "github.com", "x.com", "twitter.com", "spotify.com")):
                 seen.add(link)
                 items.append({
                     "link": link,
@@ -355,11 +356,18 @@ async def search_social_candidates_ddg(
         if not has_verified_linkedin:
             ddg_search_queries.append(("linkedin", f'site:linkedin.com/in {clean_target}'))
 
+        # Build direct Spotify Pathfinder GraphQL searches
+        spotify_search_tasks = []
+        if clean_target:
+            spotify_search_tasks.append(search_spotify_users_pathfinder(clean_target, probe_client))
+        if first_tok and len(first_tok) >= 3 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
+            spotify_search_tasks.append(search_spotify_users_pathfinder(first_tok, probe_client))
+
         # Assign each query its own distinct clean residential IP
         sampled_ips = proxy_pool.sample_distinct(len(ddg_search_queries))
         query_configs = [(plat, q, sampled_ips[i]) for i, (plat, q) in enumerate(ddg_search_queries)]
 
-        print(f"[DDG Engine] 📡 Launching 125 direct probes + {len(query_configs)} DDG queries via residential proxy pool...", flush=True)
+        print(f"[DDG Engine] 📡 Launching 125 direct probes + Spotify GraphQL + {len(query_configs)} DDG queries via residential proxy pool...", flush=True)
 
         async def run_single_ddg(plat_tag: str, q_str: str, assigned_ip: str):
             hits, used_ip, attempts = await execute_ddg_html_query(q_str, assigned_ip)
@@ -367,10 +375,11 @@ async def search_social_candidates_ddg(
 
         query_tasks = [run_single_ddg(p, q, ip) for p, q, ip in query_configs]
 
-        # 3. Concurrently execute all Probes and DDG Queries
+        # 3. Concurrently execute all Probes, Spotify searches, and DDG Queries
         t_start = time.time()
-        probe_results_raw, *query_results_raw = await asyncio.gather(
+        probe_results_raw, spotify_results_raw, *query_results_raw = await asyncio.gather(
             asyncio.gather(*probe_tasks, return_exceptions=True),
+            asyncio.gather(*spotify_search_tasks, return_exceptions=True),
             *query_tasks
         )
         discovery_elapsed_ms = int((time.time() - t_start) * 1000)
@@ -384,6 +393,74 @@ async def search_social_candidates_ddg(
         if p_plat == "facebook":
             return f"facebook:{h.replace('.', '')}"
         return f"{p_plat}:{h}"
+
+    # Ingest Direct Spotify User Search Hits (with CDN avatars & authentic display names)
+    for sp_batch in spotify_results_raw:
+        if not isinstance(sp_batch, list):
+            continue
+        for sp_cand in sp_batch:
+            if not isinstance(sp_cand, dict) or not sp_cand.get("url"):
+                continue
+            h_clean = sp_cand["handle"].lstrip("@")
+            dedup_key = make_cand_key("spotify", h_clean)
+            cand_name = sp_cand.get("name") or h_clean
+
+            score, reasons, sub_scores, evidence = score_candidate(
+                {"platform": "spotify", "platform_label": "Spotify", "handle": h_clean, "url": sp_cand["url"]},
+                sp_cand.get("title") or f"{cand_name} on Spotify",
+                sp_cand.get("snippet", ""),
+                all_variations,
+                resolved_name,
+                resolved_location,
+                gh_username,
+                company_name,
+            )
+
+            is_direct_exact = (cand_name.lower() == clean_target.lower())
+            if not is_direct_exact and resolved_name:
+                is_direct_exact = (cand_name.lower() == resolved_name.lower())
+
+            if is_direct_exact:
+                score = max(score, 80)
+                reasons.append(f"Direct Spotify search exact display name match ('{cand_name}')")
+                sub_scores["name_score"] = max(sub_scores.get("name_score", 0), 45)
+                sub_scores["final_score"] = score
+            elif score >= 35:
+                score = max(score, 50)
+                sub_scores["final_score"] = score
+            elif score < 15:
+                if first_tok and first_tok.lower() in cand_name.lower():
+                    score = 45
+                    reasons.append(f"Direct Spotify search user match ('{cand_name}')")
+                    sub_scores = {"handle_score": 0, "name_score": 40, "company_score": 0, "location_score": 0, "final_score": 45}
+                else:
+                    continue
+
+            cand_obj = {
+                "platform": "spotify",
+                "platform_label": "Spotify",
+                "handle": f"@{h_clean}",
+                "name": cand_name,
+                "url": sp_cand["url"],
+                "snippet": sp_cand.get("snippet", f"Spotify profile for {cand_name}"),
+                "score": score,
+                "confidence_badge": "",
+                "confidence_level": "strong" if score >= 70 else "potential",
+                "reasons": reasons,
+                "sub_scores": sub_scores,
+                "evidence": evidence,
+                "avatar_url": sp_cand.get("avatar_url"),
+                "discovery_method": "spotify_api"
+            }
+            if dedup_key not in candidates_map:
+                candidates_map[dedup_key] = cand_obj
+            else:
+                existing = candidates_map[dedup_key]
+                has_better_avatar = not existing.get("avatar_url") and cand_obj.get("avatar_url")
+                if score > existing.get("score", 0) or has_better_avatar:
+                    if not cand_obj.get("avatar_url") and existing.get("avatar_url"):
+                        cand_obj["avatar_url"] = existing["avatar_url"]
+                    candidates_map[dedup_key] = cand_obj
 
     # Ingest Probe Hits
     for p_cand in probe_results_raw:

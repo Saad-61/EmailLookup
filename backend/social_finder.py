@@ -1233,41 +1233,97 @@ async def get_spotify_web_token(client: httpx.AsyncClient) -> Optional[str]:
 
 
 
-async def search_spotify_users_api(
+async def search_spotify_users_pathfinder(
     query: str,
-    token: str,
     client: httpx.AsyncClient,
-    limit: int = 20,
-) -> List[str]:
+    limit: int = 30,
+) -> List[Dict[str, Any]]:
     """
-    Search Spotify for user profiles by display name using the web-player access token.
-    Returns a list of Spotify user IDs whose display names match the query.
-    Unlike DDG site: queries, Spotify's own search filters BY display name, so results
-    are semantically relevant (e.g. searching 'mohid' returns profiles named 'mohid').
+    Search Spotify for user profiles by display name using Spotify's internal Pathfinder GraphQL API.
+    Uses SPOTIFY_CLIENT_TOKEN and SPOTIFY_AUTH_TOKEN from environment.
+    Directly returns user profiles with exact 20-character IDs, display names, and CDN avatars.
     """
+    load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"), override=True)
+    client_token = os.getenv("SPOTIFY_CLIENT_TOKEN", "").strip()
+    auth_token = os.getenv("SPOTIFY_AUTH_TOKEN", "").strip()
+
+    if not client_token:
+        client_token = "AAGDvMRXgPCnWeYEgUyO0sIlM39SrVNNVNuzI2d0Ds/mJYc5PHhkAq//jypphsAOppLGN1jZ69SLsm0QHpv149No/waUvMZrYS+wTE/uedi68D5jn1jPaJQGO4KM+/a3W7j5pD8DgqwVHrtYJf+Zc4qiMNvsrpUF4KBvVjS3xXU2kxrJgSFy+e7a+1yDu1ijQOjmSDML03+2S+cdwKleudDYdjMEaQfQ7Nwt4WxSvSkDjOVEuA1QAzZWNr+KEDZ2kAlEChAO1ZcT6OcZNtNGTLvGRFnkzftAyXqmyxOoG1tNN3Yu9TnDbgjxN9Avw090djoxJSuMFkuZSiI9dZpPIMg/vXs/BGeTumdGTBO1HyjKxkhQu7xOhc4="
+    if not auth_token:
+        auth_token = "BQAoZ-_mhxGk-PKNfPzVfphaVnIF4w7KbUSCL3Ow1Tj2UGExQOXFqIfNDKuFUrSvkT1cbP1mz019u5eXTCZ0GtixS20gC2wn1MZGLYOPD7jVhV96uWTynWubZODLPUdQ0dG095lwS8yP2UPrbimQkd2LxuBFy9RPS8CPLB4eCqT_g-AmKrxDsbFqgLKwsy_IiteD1DhhjDGnWVEdU_yY6GK4m6On6tc9JTb6rQV0e50Gaa-VGrCtrN5m8lpA1xd-iqMF_kQ-CtUSY2EIZdyrLaPwNbtVneJ7zspW24KN1x-gamGO5XQd_krHwVoIKwRjXz5-PQRJF6VUlSigi4JYnGAEfd15g0QxvwyQFuTAnIz6x-1pxUBtksRoXI0ErHXPli4_7AiCjyrHwwL1nLE"
+
+    clean_query = query.strip()
+    if not clean_query:
+        return []
+
+    url = "https://api-partner.spotify.com/pathfinder/v2/query"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Accept-Language": "en",
+        "Referer": "https://open.spotify.com/",
+        "Origin": "https://open.spotify.com",
+        "Authorization": f"Bearer {auth_token}" if not auth_token.startswith("Bearer ") else auth_token,
+        "client-token": client_token,
+        "app-platform": "WebPlayer",
+        "spotify-app-version": "1.3.4.71.gc1b8a0bfbc9b",
+        "Content-Type": "application/json;charset=UTF-8",
+    }
+    payload = {
+        "operationName": "searchUsers",
+        "variables": {
+            "searchTerm": clean_query,
+            "offset": 0,
+            "limit": limit,
+            "numberOfTopResults": 20,
+            "includeAudiobooks": True,
+            "includeAuthors": False,
+            "includeEpisodeContentRatingsV2": True,
+            "includePreReleases": False,
+            "includeAlbumPreReleases": False,
+        },
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "8f358dd82e62f61dd4ceaa9f8cd0889e644c9b707f1b724fbfb356a757cb7e5a",
+            }
+        },
+    }
+
     try:
-        resp = await client.get(
-            "https://api.spotify.com/v1/search",
-            params={"q": query, "type": "user", "limit": limit, "market": "US"},
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/json",
-                "App-Platform": "WebPlayer",
-            },
-            timeout=8.0,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            items = data.get("users", {}).get("items", []) or []
-            user_ids = [u["id"] for u in items if u and u.get("id") and u.get("type") == "user"]
-            print(f"[Spotify API] Search '{query}' → {len(user_ids)} user profiles found", flush=True)
-            return user_ids
-        elif resp.status_code in (401, 403):
-            print(f"[Spotify API] HTTP {resp.status_code} — user search blocked for this token type", flush=True)
+        r = await client.post(url, json=payload, headers=headers, timeout=5.0)
+        if r.status_code == 200:
+            data = r.json()
+            users_block = (data.get("data", {}) or {}).get("searchV2", {}).get("users", {}) or {}
+            items = users_block.get("items", []) or []
+            results = []
+            for it in items:
+                u_data = it.get("data", {}) or {}
+                uri = u_data.get("uri", "")
+                uid = uri.replace("spotify:user:", "").strip()
+                if not uid:
+                    continue
+                display_name = u_data.get("displayName", "").strip() or uid
+                avatar_list = (u_data.get("avatar", {}) or {}).get("sources", [])
+                avatar_url = avatar_list[0].get("url") if avatar_list else None
+
+                results.append({
+                    "platform": "spotify",
+                    "platform_label": "Spotify",
+                    "handle": uid,
+                    "name": display_name,
+                    "url": f"https://open.spotify.com/user/{uid}",
+                    "avatar_url": avatar_url,
+                    "snippet": f"Spotify profile for {display_name}",
+                    "title": f"{display_name} on Spotify",
+                    "discovery_method": "spotify_api",
+                })
+            print(f"[Spotify Pathfinder] Query '{clean_query}' → Found {len(results)} user profiles", flush=True)
+            return results
         else:
-            print(f"[Spotify API] Search HTTP {resp.status_code}", flush=True)
+            print(f"[Spotify Pathfinder] HTTP {r.status_code} for '{clean_query}': {r.text[:200]}", flush=True)
     except Exception as e:
-        print(f"[Spotify API] Search error for '{query}': {e}", flush=True)
+        print(f"[Spotify Pathfinder] Error for '{clean_query}': {e}", flush=True)
     return []
 
 async def probe_twitter_profile(handle: str, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
@@ -1744,8 +1800,7 @@ async def search_social_candidates(
             for s in gh_seeds:
                 probe_tasks.append(probe_github_profile(s, probe_client))
 
-        # 2. Build Focused DDG Search Queries
-        # Spotify & Instagram: use targeted keyword & user queries to maximize recall
+        # 2. Build Focused DDG Search Queries & Spotify Pathfinder Search Queries
         clean_target = query_target.replace('"', '').strip()
         first_tok = tokens[0] if tokens else ""
         ddg_search_queries = [
@@ -1762,11 +1817,18 @@ async def search_social_candidates(
         if not has_verified_linkedin:
             ddg_search_queries.append(("linkedin", f'{clean_target} linkedin'))
 
+        # Build direct Spotify Pathfinder GraphQL searches
+        spotify_search_tasks = []
+        if clean_target:
+            spotify_search_tasks.append(search_spotify_users_pathfinder(clean_target, probe_client))
+        if first_tok and len(first_tok) >= 3 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
+            spotify_search_tasks.append(search_spotify_users_pathfinder(first_tok, probe_client))
+
         # Assign each query its own distinct clean residential IP
         sampled_ips = proxy_pool.sample_distinct(len(ddg_search_queries))
         query_configs = [(plat, q, sampled_ips[i]) for i, (plat, q) in enumerate(ddg_search_queries)]
 
-        print(f"[DDG Engine] Launching direct probes + {len(query_configs)} DDG queries via residential proxy pool...", flush=True)
+        print(f"[DDG Engine] Launching direct probes + Spotify GraphQL + {len(query_configs)} DDG queries...", flush=True)
 
         async def run_single_ddg(plat_tag: str, q_str: str, assigned_ip: str):
             hits, used_ip, attempts = await execute_ddg_html_query(q_str, assigned_ip)
@@ -1774,10 +1836,11 @@ async def search_social_candidates(
 
         query_tasks = [run_single_ddg(p, q, ip) for p, q, ip in query_configs]
 
-        # 3. Concurrently execute all Probes and DDG Queries
+        # 3. Concurrently execute all Probes, Spotify API searches, and DDG Queries
         t_start = time.time()
-        probe_results_raw, *query_results_raw = await asyncio.gather(
+        probe_results_raw, spotify_results_raw, *query_results_raw = await asyncio.gather(
             asyncio.gather(*probe_tasks, return_exceptions=True),
+            asyncio.gather(*spotify_search_tasks, return_exceptions=True),
             *query_tasks
         )
         discovery_elapsed_ms = int((time.time() - t_start) * 1000)
@@ -1790,6 +1853,74 @@ async def search_social_candidates(
         if p_plat == "facebook":
             return f"facebook:{h.replace('.', '')}"
         return f"{p_plat}:{h}"
+
+    # Ingest Direct Spotify User Search Hits (with CDN avatars & authentic display names)
+    for sp_batch in spotify_results_raw:
+        if not isinstance(sp_batch, list):
+            continue
+        for sp_cand in sp_batch:
+            if not isinstance(sp_cand, dict) or not sp_cand.get("url"):
+                continue
+            h_clean = sp_cand["handle"].lstrip("@")
+            dedup_key = make_candidate_dedup_key("spotify", h_clean)
+            cand_name = sp_cand.get("name") or h_clean
+
+            score, reasons, sub_scores, evidence = score_candidate(
+                {"platform": "spotify", "platform_label": "Spotify", "handle": h_clean, "url": sp_cand["url"]},
+                sp_cand.get("title") or f"{cand_name} on Spotify",
+                sp_cand.get("snippet", ""),
+                all_variations,
+                effective_name or resolved_name,
+                resolved_location,
+                gh_username,
+                company_name,
+            )
+
+            is_direct_exact = (cand_name.lower() == clean_target.lower())
+            if not is_direct_exact and effective_name:
+                is_direct_exact = (cand_name.lower() == effective_name.lower())
+
+            if is_direct_exact:
+                score = max(score, 80)
+                reasons.append(f"Direct Spotify search exact display name match ('{cand_name}')")
+                sub_scores["name_score"] = max(sub_scores.get("name_score", 0), 45)
+                sub_scores["final_score"] = score
+            elif score >= 35:
+                score = max(score, 50)
+                sub_scores["final_score"] = score
+            elif score < 15:
+                if first_tok and first_tok.lower() in cand_name.lower():
+                    score = 45
+                    reasons.append(f"Direct Spotify search user match ('{cand_name}')")
+                    sub_scores = {"handle_score": 0, "name_score": 40, "company_score": 0, "location_score": 0, "final_score": 45}
+                else:
+                    continue
+
+            cand_obj = {
+                "platform": "spotify",
+                "platform_label": "Spotify",
+                "handle": f"@{h_clean}",
+                "name": cand_name,
+                "url": sp_cand["url"],
+                "snippet": sp_cand.get("snippet", f"Spotify profile for {cand_name}"),
+                "score": score,
+                "confidence_badge": "",
+                "confidence_level": "strong" if score >= 70 else "potential",
+                "reasons": reasons,
+                "sub_scores": sub_scores,
+                "evidence": evidence,
+                "avatar_url": sp_cand.get("avatar_url"),
+                "discovery_method": "spotify_api"
+            }
+            if dedup_key not in candidates_map:
+                candidates_map[dedup_key] = cand_obj
+            else:
+                existing = candidates_map[dedup_key]
+                has_better_avatar = not existing.get("avatar_url") and cand_obj.get("avatar_url")
+                if score > existing.get("score", 0) or has_better_avatar:
+                    if not cand_obj.get("avatar_url") and existing.get("avatar_url"):
+                        cand_obj["avatar_url"] = existing["avatar_url"]
+                    candidates_map[dedup_key] = cand_obj
 
     # Ingest Probe Hits
     for p_cand in probe_results_raw:
