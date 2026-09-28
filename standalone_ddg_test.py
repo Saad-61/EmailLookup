@@ -68,6 +68,7 @@ from social_finder import (
     probe_twitter_profile,
     probe_facebook_profile,
     probe_github_profile,
+    probe_spotify_profile,
     fetch_linkedin_candidate_avatar,
     fetch_facebook_candidate_avatar,
     jaro_winkler_similarity,
@@ -324,6 +325,7 @@ async def search_social_candidates_ddg(
     pin_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
     tw_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_") for s in probe_seeds if 4 <= len(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_")) <= 15))
     fb_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".") for s in probe_seeds if 5 <= len(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".")) <= 50))
+    sp_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._-]', '', s).lstrip("@").strip("._-") for s in probe_seeds if 2 <= len(re.sub(r'[^a-zA-Z0-9._-]', '', s).lstrip("@").strip("._-")) <= 40))
     gh_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-") for s in probe_seeds if 1 <= len(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-")) <= 39))
 
     limits = httpx.Limits(max_connections=60, max_keepalive_connections=25)
@@ -334,17 +336,22 @@ async def search_social_candidates_ddg(
         for s in pin_seeds: probe_tasks.append(probe_pinterest_profile(s, probe_client))
         for s in tw_seeds: probe_tasks.append(probe_twitter_profile(s, probe_client))
         for s in fb_seeds: probe_tasks.append(probe_facebook_profile(s, probe_client))
+        for s in sp_seeds: probe_tasks.append(probe_spotify_profile(s, probe_client))
         if not gh_username:
             for s in gh_seeds: probe_tasks.append(probe_github_profile(s, probe_client))
 
         # 2. Build Focused DDG Search Queries (skip LinkedIn if already verified)
         clean_target = query_target.replace('"', '').strip()
+        first_tok = tokens[0] if tokens else ""
         ddg_search_queries = [
-            ("instagram", f'site:instagram.com {clean_target}'),
+            ("instagram", f'{clean_target} instagram'),
             ("facebook", f'site:facebook.com {clean_target}'),
             ("tiktok", f'{clean_target} tiktok'),
             ("pinterest", f'{clean_target} pinterest'),
+            ("spotify", f'site:open.spotify.com/user/ {clean_target}'),
         ]
+        if first_tok and len(first_tok) >= 3 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
+            ddg_search_queries.append(("spotify", f'site:open.spotify.com/user/ {first_tok}'))
         if not has_verified_linkedin:
             ddg_search_queries.append(("linkedin", f'site:linkedin.com/in {clean_target}'))
 
@@ -473,15 +480,28 @@ async def search_social_candidates_ddg(
             if k not in candidates_map or score > candidates_map[k]["score"]:
                 candidates_map[k] = cand_obj
 
-    # 5. Concurrent Avatar Extraction & Deduplication (Parallelized for LinkedIn & Facebook)
-    linkedin_cands = [c for c in candidates_map.values() if not c.get("avatar_url") and c["platform"] == "linkedin"]
-    facebook_cands = [c for c in candidates_map.values() if not c.get("avatar_url") and c["platform"] == "facebook"]
+    # 5. Concurrent Candidate Enrichment (Parallelized for LinkedIn, Facebook, Instagram & Spotify)
+    enrich_tasks = []
+    li_count = fb_count = ig_count = sp_count = 0
+    for c in list(candidates_map.values()):
+        if not c.get("avatar_url"):
+            if c["platform"] == "linkedin" and li_count < 8:
+                enrich_tasks.append(("linkedin", c))
+                li_count += 1
+            elif c["platform"] == "facebook" and fb_count < 8:
+                enrich_tasks.append(("facebook", c))
+                fb_count += 1
+            elif c["platform"] == "instagram" and ig_count < 8:
+                enrich_tasks.append(("instagram", c))
+                ig_count += 1
+            elif c["platform"] == "spotify" and sp_count < 15:
+                enrich_tasks.append(("spotify", c))
+                sp_count += 1
 
-    if linkedin_cands or facebook_cands:
-        async with httpx.AsyncClient(timeout=3.0, verify=False) as av_client:
-            tasks = []
-            async def fetch_single_li(c_obj):
-                try:
+    if enrich_tasks:
+        async def enrich_single(plat, c_obj, av_client):
+            try:
+                if plat == "linkedin":
                     av, canon_url = await fetch_linkedin_candidate_avatar(c_obj["url"], av_client)
                     if av: c_obj["avatar_url"] = av
                     if canon_url and "linkedin.com/in/" in canon_url:
@@ -491,23 +511,40 @@ async def search_social_candidates_ddg(
                             if canon_slug and canon_slug.lower() not in ("dir", "pub", "feed"):
                                 c_obj["handle"] = f"@{canon_slug}"
                                 c_obj["url"] = f"https://www.linkedin.com/in/{canon_slug}"
-                except Exception:
-                    pass
-
-            async def fetch_single_fb(c_obj):
-                try:
+                elif plat == "facebook":
                     av = await fetch_facebook_candidate_avatar(c_obj["url"], av_client)
                     if av: c_obj["avatar_url"] = av
-                except Exception:
-                    pass
+                elif plat == "instagram":
+                    h_slug = c_obj["handle"].lstrip("@").strip()
+                    ig_data = await probe_instagram_profile(h_slug, av_client)
+                    if ig_data:
+                        if ig_data.get("avatar_url"): c_obj["avatar_url"] = ig_data["avatar_url"]
+                        if ig_data.get("name") and (not c_obj.get("name") or c_obj["name"] == h_slug):
+                            c_obj["name"] = ig_data["name"]
+                        if ig_data.get("snippet") and not c_obj.get("snippet"):
+                            c_obj["snippet"] = ig_data["snippet"]
+                elif plat == "spotify":
+                    h_slug = c_obj["handle"].lstrip("@").strip()
+                    sp_data = await probe_spotify_profile(h_slug, av_client)
+                    if sp_data:
+                        if sp_data.get("avatar_url"): c_obj["avatar_url"] = sp_data["avatar_url"]
+                        if sp_data.get("name") and (not c_obj.get("name") or c_obj["name"] == h_slug or c_obj["name"] == "on Spotify"):
+                            c_obj["name"] = sp_data["name"]
+                        if sp_data.get("snippet"):
+                            c_obj["snippet"] = sp_data["snippet"]
+                    else:
+                        if c_obj.get("score", 0) <= 30:
+                            c_obj["_remove"] = True
+            except Exception:
+                pass
 
-            for c in linkedin_cands[:8]:
-                tasks.append(fetch_single_li(c))
-            for c in facebook_cands[:6]:
-                tasks.append(fetch_single_fb(c))
+        async with httpx.AsyncClient(timeout=4.0, verify=False) as av_client:
+            await asyncio.gather(*[enrich_single(p, c, av_client) for p, c in enrich_tasks], return_exceptions=True)
 
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+    # Purge invalid noise
+    for dk in list(candidates_map.keys()):
+        if candidates_map[dk].get("_remove"):
+            del candidates_map[dk]
 
     # Post-enrichment deduplication pass by platform and handle
     merged: Dict[str, Dict[str, Any]] = {}

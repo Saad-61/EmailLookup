@@ -1189,7 +1189,52 @@ async def get_spotify_web_token(client: httpx.AsyncClient) -> Optional[str]:
     except Exception as e:
         print(f"[Spotify API] clienttoken.spotify.com error: {e}", flush=True)
 
-    # ── Strategy 2: GET get_access_token (requires sp_dc cookie; often fails) ─
+    # ── Strategy 1: User-Provided SPOTIFY_SP_DC Cookie ─────────────────────
+    sp_dc = os.getenv("SPOTIFY_SP_DC", "").strip()
+    if sp_dc:
+        try:
+            resp_dc = await client.get(
+                "https://open.spotify.com/get_access_token",
+                params={"reason": "transport", "productType": "web_player"},
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+                    "Accept": "application/json",
+                    "Referer": "https://open.spotify.com/",
+                    "Cookie": f"sp_dc={sp_dc}",
+                    "App-Platform": "WebPlayer",
+                },
+                timeout=6.0,
+            )
+            if resp_dc.status_code == 200:
+                data_dc = resp_dc.json()
+                token_dc = data_dc.get("accessToken")
+                if token_dc:
+                    print(f"[Spotify API] ✓ Authenticated token obtained via SPOTIFY_SP_DC cookie", flush=True)
+                    return token_dc
+        except Exception as e_dc:
+            print(f"[Spotify API] SPOTIFY_SP_DC cookie token error: {e_dc}", flush=True)
+
+    # ── Strategy 2: Spotify Developer Client ID / Secret ───────────────────
+    sp_client_id = os.getenv("SPOTIFY_CLIENT_ID", "").strip()
+    sp_client_secret = os.getenv("SPOTIFY_CLIENT_SECRET", "").strip()
+    if sp_client_id and sp_client_secret:
+        try:
+            resp_dev = await client.post(
+                "https://accounts.spotify.com/api/token",
+                data={"grant_type": "client_credentials"},
+                auth=(sp_client_id, sp_client_secret),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=6.0,
+            )
+            if resp_dev.status_code == 200:
+                token_dev = resp_dev.json().get("access_token")
+                if token_dev:
+                    print(f"[Spotify API] ✓ Token obtained via Developer Client ID", flush=True)
+                    return token_dev
+        except Exception as e_dev:
+            print(f"[Spotify API] Developer API token error: {e_dev}", flush=True)
+
+    # ── Strategy 3: GET get_access_token fallback ──────────────────────────
     try:
         resp2 = await client.get(
             "https://open.spotify.com/get_access_token",
@@ -1200,7 +1245,7 @@ async def get_spotify_web_token(client: httpx.AsyncClient) -> Optional[str]:
                 "Accept-Language": "en-US,en;q=0.9",
                 "Referer": "https://open.spotify.com/",
             },
-            timeout=8.0,
+            timeout=5.0,
             follow_redirects=True,
         )
         if resp2.status_code == 200:
@@ -1212,7 +1257,6 @@ async def get_spotify_web_token(client: httpx.AsyncClient) -> Optional[str]:
     except Exception as e2:
         print(f"[Spotify API] get_access_token fallback error: {e2}", flush=True)
 
-    print(f"[Spotify API] Could not obtain any Spotify token — Spotify search unavailable", flush=True)
     return None
 
 
