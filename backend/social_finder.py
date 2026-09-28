@@ -1107,7 +1107,7 @@ async def probe_spotify_profile(handle: str, client: httpx.AsyncClient) -> Optio
             og_img = soup.find("meta", property="og:image")
             raw_img = og_img.get("content") if og_img else None
             avatar_url = None
-            if raw_img and any(d in raw_img for d in ("scdn.co", "spotifycdn.com", "spotify.com")) and "default" not in raw_img and "icon" not in raw_img:
+            if raw_img and raw_img.startswith("http") and not any(x in raw_img.lower() for x in ("default", "icon", "placeholder", "spotify-logo", "logo.png", "generic")):
                 avatar_url = html.unescape(raw_img)
             
             og_desc = soup.find("meta", property="og:description")
