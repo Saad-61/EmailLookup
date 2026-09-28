@@ -567,6 +567,7 @@ async def search_social_candidates_ddg(
         "facebook": [c for c in all_cands if c["platform"] == "facebook"],
         "tiktok": [c for c in all_cands if c["platform"] == "tiktok"],
         "pinterest": [c for c in all_cands if c["platform"] == "pinterest"],
+        "spotify": [c for c in all_cands if c["platform"] == "spotify"],
         "github": [c for c in all_cands if c["platform"] == "github"],
     }
     print(f"[DDG Engine] ✓ Discovery complete! Total unique ranked candidates: {len(all_cands)}", flush=True)
