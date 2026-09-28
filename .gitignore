@@ -38,6 +38,7 @@ data/
 *.sqlite3
 scratch_*.py
 scratch/
+tests/
 CHANGES_AFTER_*.md
 *.patch
 
