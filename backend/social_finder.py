@@ -1147,48 +1147,6 @@ async def get_spotify_web_token(client: httpx.AsyncClient) -> Optional[str]:
       Works only if an sp_dc cookie is available (not the case here), but included
       as a fallback in case the clienttoken endpoint changes.
     """
-    import uuid
-
-    # ── Strategy 1: POST to clienttoken.spotify.com ─────────────────────────
-    try:
-        device_id = uuid.uuid4().hex
-        payload = {
-            "client_data": {
-                "client_version": "1.2.52.445.g4f5c8a37",
-                # Spotify web-player's public client ID (not a secret)
-                "client_id": "d8a5ed958d274c2e8ee717e6a4b0971d",
-                "js_sdk_data": {
-                    "device_brand": "unknown",
-                    "device_model": "desktop",
-                    "os": "Windows",
-                    "os_version": "NT 10.0",
-                    "device_id": device_id,
-                    "device_type": "computer",
-                },
-            }
-        }
-        resp = await client.post(
-            "https://clienttoken.spotify.com/v1/clienttoken",
-            json=payload,
-            headers={
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-            },
-            timeout=8.0,
-        )
-        if resp.status_code in (200, 201):
-            data = resp.json()
-            token = (data.get("granted_token") or {}).get("token")
-            if token:
-                print(f"[Spotify API] ✓ Client-credential token obtained (clienttoken.spotify.com)", flush=True)
-                return token
-            print(f"[Spotify API] clienttoken.spotify.com response missing token: {data}", flush=True)
-        else:
-            print(f"[Spotify API] clienttoken.spotify.com HTTP {resp.status_code}: {resp.text[:120]}", flush=True)
-    except Exception as e:
-        print(f"[Spotify API] clienttoken.spotify.com error: {e}", flush=True)
-
     # ── Strategy 1: User-Provided SPOTIFY_SP_DC Cookie ─────────────────────
     sp_dc = os.getenv("SPOTIFY_SP_DC", "").strip()
     if sp_dc:
@@ -1229,33 +1187,47 @@ async def get_spotify_web_token(client: httpx.AsyncClient) -> Optional[str]:
             if resp_dev.status_code == 200:
                 token_dev = resp_dev.json().get("access_token")
                 if token_dev:
-                    print(f"[Spotify API] ✓ Token obtained via Developer Client ID", flush=True)
+                    print(f"[Spotify API] ✓ Authenticated token obtained via Developer Client ID", flush=True)
                     return token_dev
         except Exception as e_dev:
             print(f"[Spotify API] Developer API token error: {e_dev}", flush=True)
 
-    # ── Strategy 3: GET get_access_token fallback ──────────────────────────
+    # ── Strategy 3: POST to clienttoken.spotify.com (Anonymous Fallback) ──
     try:
-        resp2 = await client.get(
-            "https://open.spotify.com/get_access_token",
-            params={"reason": "transport", "productType": "web_player"},
+        import uuid
+        device_id = uuid.uuid4().hex
+        payload = {
+            "client_data": {
+                "client_version": "1.2.52.445.g4f5c8a37",
+                "client_id": "d8a5ed958d274c2e8ee717e6a4b0971d",
+                "js_sdk_data": {
+                    "device_brand": "unknown",
+                    "device_model": "desktop",
+                    "os": "Windows",
+                    "os_version": "NT 10.0",
+                    "device_id": device_id,
+                    "device_type": "computer",
+                },
+            }
+        }
+        resp = await client.post(
+            "https://clienttoken.spotify.com/v1/clienttoken",
+            json=payload,
             headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+                "Content-Type": "application/json",
                 "Accept": "application/json",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": "https://open.spotify.com/",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
             },
-            timeout=5.0,
-            follow_redirects=True,
+            timeout=8.0,
         )
-        if resp2.status_code == 200:
-            data2 = resp2.json()
-            token2 = data2.get("accessToken")
-            if token2:
-                print(f"[Spotify API] ✓ Anonymous token obtained (get_access_token fallback)", flush=True)
-                return token2
-    except Exception as e2:
-        print(f"[Spotify API] get_access_token fallback error: {e2}", flush=True)
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            token = (data.get("granted_token") or {}).get("token")
+            if token:
+                print(f"[Spotify API] ✓ Client-credential token obtained (clienttoken.spotify.com)", flush=True)
+                return token
+    except Exception as e:
+        print(f"[Spotify API] clienttoken.spotify.com error: {e}", flush=True)
 
     return None
 
