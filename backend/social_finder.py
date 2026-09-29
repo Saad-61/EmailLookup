@@ -1074,28 +1074,34 @@ async def probe_spotify_profile(handle: str, client: httpx.AsyncClient) -> Optio
     display_name = None
     bio = f"Spotify profile for @{clean}"
     raw_title = ""
+    confirmed = False
 
     try:
         resp = await client.get(url, headers=LI_CRAWLER_HEADERS, timeout=5.0, follow_redirects=True)
         if resp.status_code == 200:
             text = resp.text
-            if not ("Page not found" in text or "Something went wrong" in text):
-                soup = BeautifulSoup(text, "html.parser")
-                og_title = soup.find("meta", property="og:title")
-                raw_title = og_title.get("content").strip() if (og_title and og_title.get("content")) else (soup.title.string.strip() if soup.title and soup.title.string else "")
+            if "Page not found" in text or "Something went wrong" in text:
+                return None
+            soup = BeautifulSoup(text, "html.parser")
+            og_title = soup.find("meta", property="og:title")
+            raw_title = og_title.get("content").strip() if (og_title and og_title.get("content")) else (soup.title.string.strip() if soup.title and soup.title.string else "")
+            
+            if raw_title and raw_title.lower() not in ("spotify", "spotify - web player", "spotify – web player", "page not found", "sign up", "log in"):
+                confirmed = True
+                og_img = soup.find("meta", property="og:image")
+                raw_img = og_img.get("content") if og_img else None
+                if raw_img and raw_img.startswith("http") and not any(x in raw_img.lower() for x in ("default", "icon", "placeholder", "spotify-logo", "logo.png", "generic")):
+                    avatar_url = html.unescape(raw_img)
                 
-                if raw_title and raw_title.lower() not in ("spotify", "spotify - web player", "spotify – web player", "page not found", "sign up", "log in"):
-                    og_img = soup.find("meta", property="og:image")
-                    raw_img = og_img.get("content") if og_img else None
-                    if raw_img and raw_img.startswith("http") and not any(x in raw_img.lower() for x in ("default", "icon", "placeholder", "spotify-logo", "logo.png", "generic")):
-                        avatar_url = html.unescape(raw_img)
-                    
-                    og_desc = soup.find("meta", property="og:description")
-                    raw_desc = og_desc.get("content") if og_desc else ""
-                    bio = clean_bio_snippet(raw_desc, "spotify", clean)
-                    display_name = clean_display_name(raw_title, clean, "spotify")
+                og_desc = soup.find("meta", property="og:description")
+                raw_desc = og_desc.get("content") if og_desc else ""
+                bio = clean_bio_snippet(raw_desc, "spotify", clean)
+                display_name = clean_display_name(raw_title, clean, "spotify")
     except Exception:
         pass
+
+    if not confirmed:
+        return None
 
     if not avatar_url:
         avatar_url = f"https://unavatar.io/spotify/{clean}"
@@ -1220,16 +1226,20 @@ async def probe_twitter_profile(handle: str, client: httpx.AsyncClient) -> Optio
     display_name = None
     bio = f"X / Twitter profile for @{clean}"
     raw_title = ""
+    confirmed = False
 
     try:
         resp = await client.get(url, headers=TWITTER_HEADERS, timeout=6.0, follow_redirects=True)
         if resp.status_code == 200:
             text = resp.text
-            if not ("This account doesn’t exist" in text or "account has been suspended" in text or "page doesn’t exist" in text):
-                soup = BeautifulSoup(text, "html.parser")
-                og_title = soup.find("meta", property="og:title")
-                raw_title = og_title.get("content") if og_title else (soup.title.string if soup.title else "")
-                
+            if "This account doesn’t exist" in text or "account has been suspended" in text or "page doesn’t exist" in text or "This account doesn't exist" in text:
+                return None
+            soup = BeautifulSoup(text, "html.parser")
+            og_title = soup.find("meta", property="og:title")
+            raw_title = og_title.get("content") if og_title else (soup.title.string if soup.title else "")
+            
+            if raw_title and not any(bad in raw_title.lower() for bad in ("x", "twitter", "page not found", "doesn't exist", "doesn’t exist")):
+                confirmed = True
                 og_img = soup.find("meta", property="og:image")
                 raw_img = og_img.get("content") if og_img else None
                 if raw_img and "pbs.twimg.com" in raw_img:
@@ -1242,21 +1252,25 @@ async def probe_twitter_profile(handle: str, client: httpx.AsyncClient) -> Optio
     except Exception:
         pass
 
-    if not avatar_url:
+    if not confirmed:
         try:
             m_resp = await client.get(f"https://api.microlink.io/?url=https://x.com/{clean}", timeout=4.0)
             if m_resp.status_code == 200:
                 m_data = m_resp.json()
-                img_data = m_data.get("data", {}).get("image", {})
-                img_u = img_data.get("url") if isinstance(img_data, dict) else img_data
-                if img_u and "pbs.twimg.com" in str(img_u):
-                    avatar_url = str(img_u)
-                if not display_name:
-                    d_title = m_data.get("data", {}).get("title")
-                    if d_title:
-                        display_name = clean_display_name(d_title, clean, "twitter")
+                if m_data.get("status") == "success":
+                    d_title = m_data.get("data", {}).get("title", "")
+                    if d_title and not any(bad in d_title for bad in ("Doesn’t Exist", "Doesn't Exist", "Page not found", "Suspended")):
+                        img_data = m_data.get("data", {}).get("image", {})
+                        img_u = img_data.get("url") if isinstance(img_data, dict) else img_data
+                        if img_u and "pbs.twimg.com" in str(img_u):
+                            avatar_url = str(img_u)
+                            confirmed = True
+                            display_name = clean_display_name(d_title, clean, "twitter")
         except Exception:
             pass
+
+    if not confirmed:
+        return None
 
     if not avatar_url:
         avatar_url = f"https://unavatar.io/twitter/{clean}"
