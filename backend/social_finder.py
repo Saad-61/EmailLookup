@@ -19,7 +19,7 @@ import urllib.parse
 import sys
 import time
 import unicodedata
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Set
 import httpx
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
@@ -1666,12 +1666,13 @@ async def search_social_candidates(
     company_name: Optional[str] = None,
     client: Optional[httpx.AsyncClient] = None,
     has_verified_linkedin: bool = False,
+    verified_platforms: Optional[Set[str]] = None,
     **kwargs,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
     """
     Master candidate discovery engine combining:
-    1. 5-platform high-speed direct probing with OpenGraph extraction.
-    2. Focused DuckDuckGo search queries distributed across 5 distinct residential proxy IPs.
+    1. High-speed direct probing with OpenGraph extraction for unverified platforms.
+    2. Focused DuckDuckGo search queries for unverified platforms distributed across distinct residential proxy IPs.
     3. Multi-anchor scoring with Jaro-Winkler string similarity and surname disambiguation.
     """
     local_part = email.split("@")[0].lower().strip() if "@" in email else ""
@@ -1679,6 +1680,13 @@ async def search_social_candidates(
     inferred_name = f"{inferred_first} {inferred_last}".strip() if (inferred_first and inferred_last) else (inferred_first or "")
 
     effective_name = resolved_name or (inferred_name if (inferred_name and len(inferred_name.split()) >= 2) else None)
+
+    # Track platforms that are already verified — bypass redundant probing and DDG searches for them
+    v_plats = set(verified_platforms) if verified_platforms else set()
+    if has_verified_linkedin:
+        v_plats.add("linkedin")
+    if gh_username:
+        v_plats.add("github")
 
     # Parse clean name tokens
     tokens = [p for p in re.findall(r"[a-zA-Z]+", effective_name or resolved_name or local_part)]
@@ -1695,64 +1703,72 @@ async def search_social_candidates(
 
     print(f"\n[DDG Engine] ---------------------------------------------------", flush=True)
     print(f"[DDG Engine] Target: {email} | Inferred Name: '{effective_name or resolved_name}' | Query: '{query_target}'", flush=True)
+    if v_plats:
+        print(f"[DDG Engine] Skipping redundant probes for already verified platforms: {sorted(list(v_plats))}", flush=True)
 
-    # 1. Build Direct Probe Tasks
+    # 1. Build Direct Probe Tasks (Skip if platform is already verified)
     ig_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
     tt_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 2 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 24))
     pin_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
-    sp_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
     tw_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_") for s in probe_seeds if 4 <= len(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_")) <= 15))
     fb_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".") for s in probe_seeds if 5 <= len(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".")) <= 50))
     gh_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-") for s in probe_seeds if 1 <= len(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-")) <= 39))
 
     limits = httpx.Limits(max_connections=60, max_keepalive_connections=25)
-    async with httpx.AsyncClient(timeout=4.0, limits=limits, verify=False) as probe_client:
+    async with httpx.AsyncClient(timeout=2.5, limits=limits, verify=False) as probe_client:
         probe_tasks = []
-        for s in ig_seeds:
-            probe_tasks.append(probe_instagram_profile(s, probe_client))
-        for s in tt_seeds:
-            probe_tasks.append(probe_tiktok_profile(s, probe_client))
-        for s in pin_seeds:
-            probe_tasks.append(probe_pinterest_profile(s, probe_client))
-        for s in sp_seeds:
-            probe_tasks.append(probe_spotify_profile(s, probe_client))
-        for s in tw_seeds:
-            probe_tasks.append(probe_twitter_profile(s, probe_client))
-        for s in fb_seeds:
-            probe_tasks.append(probe_facebook_profile(s, probe_client))
-        if not gh_username:
+        if "instagram" not in v_plats:
+            for s in ig_seeds:
+                probe_tasks.append(probe_instagram_profile(s, probe_client))
+        if "tiktok" not in v_plats:
+            for s in tt_seeds:
+                probe_tasks.append(probe_tiktok_profile(s, probe_client))
+        if "pinterest" not in v_plats:
+            for s in pin_seeds:
+                probe_tasks.append(probe_pinterest_profile(s, probe_client))
+        # Spotify probing disabled per directive
+        # if "spotify" not in v_plats:
+        #     for s in sp_seeds:
+        #         probe_tasks.append(probe_spotify_profile(s, probe_client))
+        if "twitter" not in v_plats:
+            for s in tw_seeds:
+                probe_tasks.append(probe_twitter_profile(s, probe_client))
+        if "facebook" not in v_plats:
+            for s in fb_seeds:
+                probe_tasks.append(probe_facebook_profile(s, probe_client))
+        if "github" not in v_plats and not gh_username:
             for s in gh_seeds:
                 probe_tasks.append(probe_github_profile(s, probe_client))
 
-        # 2. Build Focused DDG Search Queries & Spotify Pathfinder Search Queries
+        # 2. Build Focused DDG Search Queries (Skip if platform is already verified)
         clean_target = query_target.replace('"', '').strip()
         first_tok = tokens[0] if tokens else ""
-        ddg_search_queries = [
-            ("instagram", f'{clean_target} instagram'),
-            ("facebook", f'site:facebook.com {clean_target}'),
-            ("tiktok", f'{clean_target} tiktok'),
-            ("pinterest", f'{clean_target} pinterest'),
-            ("spotify", f'site:open.spotify.com/user/ {clean_target}'),
-        ]
-        if first_tok and len(first_tok) >= 3 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
-            ddg_search_queries.append(("instagram", f'{first_tok} instagram'))
-            ddg_search_queries.append(("spotify", f'site:open.spotify.com/user/ {first_tok}'))
+        ddg_search_queries = []
 
-        if not has_verified_linkedin:
+        if "instagram" not in v_plats:
+            ddg_search_queries.append(("instagram", f'{clean_target} instagram'))
+        if "facebook" not in v_plats:
+            ddg_search_queries.append(("facebook", f'site:facebook.com {clean_target}'))
+        if "tiktok" not in v_plats:
+            ddg_search_queries.append(("tiktok", f'{clean_target} tiktok'))
+        if "pinterest" not in v_plats:
+            ddg_search_queries.append(("pinterest", f'{clean_target} pinterest'))
+        if "linkedin" not in v_plats:
             ddg_search_queries.append(("linkedin", f'{clean_target} linkedin'))
+        # Spotify DDG search disabled per directive
 
-        # Build direct Spotify Pathfinder GraphQL searches
-        spotify_search_tasks = []
-        if clean_target:
-            spotify_search_tasks.append(search_spotify_users_pathfinder(clean_target, probe_client))
         if first_tok and len(first_tok) >= 3 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
-            spotify_search_tasks.append(search_spotify_users_pathfinder(first_tok, probe_client))
+            if "instagram" not in v_plats:
+                ddg_search_queries.append(("instagram", f'{first_tok} instagram'))
+
+        # Spotify Pathfinder search tasks disabled per directive
+        spotify_search_tasks = []
 
         # Assign each query its own distinct clean residential IP
         sampled_ips = proxy_pool.sample_distinct(len(ddg_search_queries))
         query_configs = [(plat, q, sampled_ips[i]) for i, (plat, q) in enumerate(ddg_search_queries)]
 
-        print(f"[DDG Engine] Launching direct probes + Spotify GraphQL + {len(query_configs)} DDG queries...", flush=True)
+        print(f"[DDG Engine] Launching direct probes ({len(probe_tasks)}) + {len(query_configs)} DDG queries...", flush=True)
 
         async def run_single_ddg(plat_tag: str, q_str: str, assigned_ip: str):
             hits, used_ip, attempts = await execute_ddg_html_query(q_str, assigned_ip)
@@ -1760,7 +1776,7 @@ async def search_social_candidates(
 
         query_tasks = [run_single_ddg(p, q, ip) for p, q, ip in query_configs]
 
-        # 3. Concurrently execute all Probes, Spotify API searches, and DDG Queries
+        # 3. Concurrently execute all Probes and DDG Queries
         t_start = time.time()
         probe_results_raw, spotify_results_raw, *query_results_raw = await asyncio.gather(
             asyncio.gather(*probe_tasks, return_exceptions=True),

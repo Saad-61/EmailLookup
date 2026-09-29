@@ -1969,8 +1969,13 @@ async def run_lookup(email: str) -> dict:
     gh_user = github.get("username") if (github and isinstance(github, dict)) else None
     comp_name = company.get("name") if (company and isinstance(company, dict)) else None
     social_candidates = []
-    # Only treat LinkedIn as 100% verified if corroborated by an authoritative source
-    has_verified_li = bool(linkedin_url and linkedin_confidence == 100 and linkedin_source in ("github", "gravatar", "wikidata", "harvested"))
+    # Compute set of platforms that already have a verified profile link
+    verified_platforms = set()
+    if has_verified_li:
+        verified_platforms.add("linkedin")
+    for p, data in profiles.items():
+        if data and (isinstance(data, dict) and (data.get("verified") or data.get("source") in ("github", "gravatar", "wikidata", "harvested"))):
+            verified_platforms.add(p)
 
     phase1_elapsed_ms = int((time.time() - start) * 1000)
     print(f"\n[Lookup Engine] Base Enrichment (Phase 1 & 2) completed in {phase1_elapsed_ms}ms (Gravatar, GitHub, Wikidata, Company, DB)", flush=True)
@@ -1985,6 +1990,7 @@ async def run_lookup(email: str) -> dict:
             company_name=comp_name,
             client=client,
             has_verified_linkedin=has_verified_li,
+            verified_platforms=verified_platforms,
         )
 
         # If a search-discovered LinkedIn candidate was found during base checks, add it to candidates list if not present
