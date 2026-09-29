@@ -426,6 +426,29 @@ function renderLookupResults(data) {
     return null;
   }
 
+  function resolveVerifiedAvatar(platform, p) {
+    if (p && (p.avatar_url || p.avatar)) return p.avatar_url || p.avatar;
+    const pHandle = (p && p.handle ? p.handle : "").replace(/^@/, "").toLowerCase();
+    const pUrl = (p && p.url ? p.url : "").toLowerCase();
+
+    const candList = (data.social_candidates_by_platform && data.social_candidates_by_platform[platform]) || [];
+    const allCands = data.social_candidates || [];
+    const searchPool = candList.length > 0 ? candList : allCands;
+
+    for (const c of searchPool) {
+      if (c.avatar_url) {
+        const cPlatform = (c.platform || "").toLowerCase();
+        if (cPlatform && cPlatform !== platform.toLowerCase()) continue;
+        const cHandle = (c.handle || "").replace(/^@/, "").toLowerCase();
+        const cUrl = (c.url || "").toLowerCase();
+        if (pHandle && cHandle && cHandle === pHandle) return c.avatar_url;
+        if (pUrl && cUrl && (pUrl.includes(cUrl) || cUrl.includes(pUrl))) return c.avatar_url;
+      }
+    }
+
+    return (data.person ? data.person.avatar : null) || (data.profiles && data.profiles.github ? data.profiles.github.avatar : null);
+  }
+
   if (profiles.linkedin) {
     const p = parseProfileVal(profiles.linkedin, "LinkedIn Profile");
     if (p && p.url) {
@@ -438,7 +461,7 @@ function renderLookupResults(data) {
           platform: "linkedin",
           name: `LinkedIn <span class="verified-pill">✓ 100% Verified</span>`,
           sub: displaySlug,
-          avatar_url: p.avatar_url || (data.person ? data.person.avatar : null),
+          avatar_url: resolveVerifiedAvatar("linkedin", p),
         }));
       }
     }
@@ -454,7 +477,7 @@ function renderLookupResults(data) {
       platform: "github",
       name: `@${ghUser} <span class="verified-pill">✓ 100% Verified</span>`,
       sub: typeof gh === "object" ? `${gh.repos ?? "?"} repos · ${gh.followers ?? "?"} followers` : "Verified Developer Profile",
-      avatar_url: ghAvatar,
+      avatar_url: ghAvatar || resolveVerifiedAvatar("github", { handle: ghUser, url: ghUrl }),
     }));
   }
 
@@ -468,7 +491,7 @@ function renderLookupResults(data) {
           platform: "twitter",
           name: `X / Twitter <span class="verified-pill">✓ 100% Verified</span>`,
           sub: `${p.handle || "Verified Account"} · View Profile`,
-          avatar_url: p.avatar_url,
+          avatar_url: resolveVerifiedAvatar("twitter", p),
         }));
       }
     }
@@ -484,7 +507,7 @@ function renderLookupResults(data) {
           platform: "instagram",
           name: `Instagram <span class="verified-pill">✓ 100% Verified</span>`,
           sub: `${p.handle || "Verified Account"} · View Profile`,
-          avatar_url: p.avatar_url,
+          avatar_url: resolveVerifiedAvatar("instagram", p),
         }));
       }
     }
@@ -500,7 +523,7 @@ function renderLookupResults(data) {
           platform: "facebook",
           name: `Facebook <span class="verified-pill">✓ 100% Verified</span>`,
           sub: `${p.handle || "Verified Account"} · View Profile`,
-          avatar_url: p.avatar_url,
+          avatar_url: resolveVerifiedAvatar("facebook", p),
         }));
       }
     }
@@ -516,7 +539,7 @@ function renderLookupResults(data) {
           platform: "youtube",
           name: `YouTube <span class="verified-pill">✓ Verified</span>`,
           sub: "Verified Channel",
-          avatar_url: p.avatar_url,
+          avatar_url: resolveVerifiedAvatar("youtube", p),
         }));
       }
     }
@@ -530,7 +553,7 @@ function renderLookupResults(data) {
         platform: "spotify",
         name: `Spotify <span class="verified-pill">✓ Verified</span>`,
         sub: `${p.handle || "Profile"} · Listen & View`,
-        avatar_url: p.avatar_url,
+        avatar_url: resolveVerifiedAvatar("spotify", p),
       }));
     }
   }

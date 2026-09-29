@@ -1929,6 +1929,21 @@ async def run_lookup(email: str) -> dict:
                 is_direct_verified = has_verified_li
 
             if is_direct_verified:
+                # Ensure direct verified profile carries an avatar_url if available from candidate probes or person avatar
+                if isinstance(prof, dict):
+                    if not prof.get("avatar_url") and not prof.get("avatar"):
+                        p_url = (prof.get("url") or "").rstrip("/").lower()
+                        p_handle = p_url.split("/").pop().replace("@", "")
+                        for cand in raw_candidates:
+                            if cand.get("platform") == p and cand.get("avatar_url"):
+                                c_url = (cand.get("url") or "").rstrip("/").lower()
+                                c_handle = (cand.get("handle") or "").replace("@", "").lower()
+                                if (p_handle and c_handle == p_handle) or (p_url and (p_url in c_url or c_url in p_url)):
+                                    prof["avatar_url"] = cand["avatar_url"]
+                                    break
+                    if not prof.get("avatar_url") and not prof.get("avatar") and person.get("avatar"):
+                        prof["avatar_url"] = person["avatar"]
+
                 # Platform is already confirmed and verified in top profiles — clear candidate accordion
                 by_plat[p] = []
             else:
