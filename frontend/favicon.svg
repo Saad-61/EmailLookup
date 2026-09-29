@@ -5,24 +5,21 @@
       <stop offset="100%" stop-color="#059669"/>
     </linearGradient>
     <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="0" stdDeviation="2.5" flood-color="#10b981" flood-opacity="0.5"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="2.5" flood-color="#10b981" flood-opacity="0.35"/>
     </filter>
   </defs>
 
-  <!-- Pitch black rounded container -->
-  <rect width="64" height="64" rx="14" fill="#050505"/>
-
-  <!-- Envelope outline — emerald -->
+  <!-- Envelope outline — floating emerald -->
   <g filter="url(#glow)">
     <path d="M14 20C14 16.6863 16.6863 14 20 14H44C47.3137 14 50 16.6863 50 20V42C50 45.3137 47.3137 48 44 48H20C16.6863 48 14 45.3137 14 42V20Z"
-          fill="none" stroke="url(#em-glow)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+          fill="none" stroke="url(#em-glow)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
 
     <!-- Envelope fold line -->
     <path d="M14 20L32 33L50 20"
-          fill="none" stroke="url(#em-glow)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+          fill="none" stroke="url(#em-glow)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
 
     <!-- Identity beacon -->
-    <circle cx="32" cy="33" r="5" fill="#10b981"/>
-    <circle cx="32" cy="33" r="2" fill="#050505"/>
+    <circle cx="32" cy="33" r="5.5" fill="#10b981"/>
+    <circle cx="32" cy="33" r="2.2" fill="#ffffff"/>
   </g>
 </svg>
