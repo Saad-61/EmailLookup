@@ -441,7 +441,7 @@ function renderLookupResults(data) {
         chips.push(buildProfileChip({
           href: p.url,
           platform: "linkedin",
-          name: `LinkedIn <span class="verified-pill">✓ 100% Verified</span>`,
+          name: `LinkedIn <span class="verified-pill">✓ Verified</span>`,
           sub: displaySlug,
           avatar_url: resolveVerifiedAvatar("linkedin", p),
         }));
@@ -457,7 +457,7 @@ function renderLookupResults(data) {
     chips.push(buildProfileChip({
       href: ghUrl,
       platform: "github",
-      name: `@${ghUser} <span class="verified-pill">✓ 100% Verified</span>`,
+      name: `@${ghUser} <span class="verified-pill">✓ Verified</span>`,
       sub: typeof gh === "object" ? `${gh.repos ?? "?"} repos · ${gh.followers ?? "?"} followers` : "Verified Developer Profile",
       avatar_url: ghAvatar || resolveVerifiedAvatar("github", { handle: ghUser, url: ghUrl }),
     }));
@@ -468,11 +468,17 @@ function renderLookupResults(data) {
     if (p && p.url) {
       const isDirect = p.verified || ["github", "gravatar"].includes(p.source);
       if (isDirect) {
+        let subText = "View Profile";
+        if (p.name && p.handle && p.name !== "X / Twitter") {
+          subText = `${p.name} (${p.handle}) · View Profile`;
+        } else if (p.handle) {
+          subText = `${p.handle} · View Profile`;
+        }
         chips.push(buildProfileChip({
           href: p.url,
           platform: "twitter",
-          name: `X / Twitter <span class="verified-pill">✓ 100% Verified</span>`,
-          sub: `${p.handle || "Verified Account"} · View Profile`,
+          name: `X / Twitter <span class="verified-pill">✓ Verified</span>`,
+          sub: subText,
           avatar_url: resolveVerifiedAvatar("twitter", p),
         }));
       }
@@ -484,11 +490,17 @@ function renderLookupResults(data) {
     if (p && p.url) {
       const isDirect = p.verified || ["github", "gravatar"].includes(p.source);
       if (isDirect) {
+        let subText = "View Profile";
+        if (p.name && p.handle && p.name !== "Instagram") {
+          subText = `${p.name} (${p.handle}) · View Profile`;
+        } else if (p.handle) {
+          subText = `${p.handle} · View Profile`;
+        }
         chips.push(buildProfileChip({
           href: p.url,
           platform: "instagram",
-          name: `Instagram <span class="verified-pill">✓ 100% Verified</span>`,
-          sub: `${p.handle || "Verified Account"} · View Profile`,
+          name: `Instagram <span class="verified-pill">✓ Verified</span>`,
+          sub: subText,
           avatar_url: resolveVerifiedAvatar("instagram", p),
         }));
       }
@@ -500,11 +512,17 @@ function renderLookupResults(data) {
     if (p && p.url) {
       const isDirect = p.verified || ["github", "gravatar"].includes(p.source);
       if (isDirect) {
+        let subText = "View Profile";
+        if (p.name && p.handle && p.name !== "Facebook") {
+          subText = `${p.name} (${p.handle}) · View Profile`;
+        } else if (p.handle) {
+          subText = `${p.handle} · View Profile`;
+        }
         chips.push(buildProfileChip({
           href: p.url,
           platform: "facebook",
-          name: `Facebook <span class="verified-pill">✓ 100% Verified</span>`,
-          sub: `${p.handle || "Verified Account"} · View Profile`,
+          name: `Facebook <span class="verified-pill">✓ Verified</span>`,
+          sub: subText,
           avatar_url: resolveVerifiedAvatar("facebook", p),
         }));
       }
@@ -530,11 +548,17 @@ function renderLookupResults(data) {
   if (profiles.spotify) {
     const p = parseProfileVal(profiles.spotify, "Spotify");
     if (p && p.url) {
+      let subText = "Listen & View";
+      if (p.name && p.name !== "Spotify") {
+        subText = `${p.name} · Listen & View`;
+      } else if (p.handle) {
+        subText = `${p.handle} · Listen & View`;
+      }
       chips.push(buildProfileChip({
         href: p.url,
         platform: "spotify",
         name: `Spotify <span class="verified-pill">✓ Verified</span>`,
-        sub: `${p.handle || "Profile"} · Listen & View`,
+        sub: subText,
         avatar_url: resolveVerifiedAvatar("spotify", p),
       }));
     }
@@ -657,7 +681,7 @@ function renderCandidateCard(c) {
   const glyphClass = `${c.platform}-glyph`;
 
   // Note: percentage badges are omitted. Only 100% verified profiles receive a badge.
-  const verifiedBadge = c.verified === true ? `<span class="verified-pill">✓ 100% Verified</span>` : "";
+  const verifiedBadge = c.verified === true ? `<span class="verified-pill">✓ Verified</span>` : "";
 
   const snippetHtml = c.snippet ? `<div class="candidate-snippet">${escapeHtml(c.snippet)}</div>` : "";
 

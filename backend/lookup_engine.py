@@ -1848,28 +1848,29 @@ async def run_lookup(email: str) -> dict:
     dir_spotify = gravatar.get("spotify_url") if isinstance(gravatar, dict) else None
     dir_youtube = gravatar.get("youtube_url") if isinstance(gravatar, dict) else None
 
-    # Probe direct verified profile links concurrently for authentic avatars
+    # Probe direct verified profile links concurrently for authentic avatars & display names
     async def probe_direct_profile(plat, url):
         if not url:
             return None
         try:
             handle = url.rstrip("/").split("/")[-1].replace("@", "")
             if plat == "twitter" and handle:
-                d = await probe_twitter_profile(handle, client)
-                return d.get("avatar_url") if d else None
+                return await probe_twitter_profile(handle, client)
             elif plat == "instagram" and handle:
-                d = await probe_instagram_profile(handle, client)
-                return d.get("avatar_url") if d else None
+                return await probe_instagram_profile(handle, client)
             elif plat == "spotify" and handle:
-                d = await probe_spotify_profile(handle, client)
-                return d.get("avatar_url") if d else None
-            elif plat == "facebook":
-                return await fetch_facebook_candidate_avatar(url, client)
+                return await probe_spotify_profile(handle, client)
+            elif plat == "facebook" and handle:
+                d = await probe_facebook_profile(handle, client)
+                if d:
+                    return d
+                fb_av = await fetch_facebook_candidate_avatar(url, client)
+                return {"avatar_url": fb_av} if fb_av else None
         except Exception:
             pass
         return None
 
-    tw_av, ig_av, fb_av, sp_av = await asyncio.gather(
+    tw_res, ig_res, fb_res, sp_res = await asyncio.gather(
         probe_direct_profile("twitter", dir_twitter),
         probe_direct_profile("instagram", dir_instagram),
         probe_direct_profile("facebook", dir_facebook),
@@ -1878,41 +1879,67 @@ async def run_lookup(email: str) -> dict:
     )
 
     if dir_twitter:
+        tw_d = tw_res if isinstance(tw_res, dict) else {}
+        tw_av = tw_d.get("avatar_url")
+        tw_name = tw_d.get("name")
+        tw_handle = tw_d.get("handle") or dir_twitter.rstrip("/").split("/")[-1].replace("@", "")
         profiles["twitter"] = {
             "url": dir_twitter,
+            "handle": f"@{tw_handle}" if tw_handle else "@twitter",
+            "name": tw_name,
             "source": "github" if (github and github.get("twitter_url")) else "gravatar",
             "confidence": 100,
             "verified": True,
             "avatar_url": tw_av if isinstance(tw_av, str) else None,
+            "avatar": tw_av if isinstance(tw_av, str) else None,
         }
 
     if dir_instagram:
+        ig_d = ig_res if isinstance(ig_res, dict) else {}
+        ig_av = ig_d.get("avatar_url")
+        ig_name = ig_d.get("name")
+        ig_handle = ig_d.get("handle") or dir_instagram.rstrip("/").split("/")[-1].replace("@", "")
         profiles["instagram"] = {
             "url": dir_instagram,
+            "handle": f"@{ig_handle}" if ig_handle else "@instagram",
+            "name": ig_name,
             "source": "github" if (github and github.get("instagram_url")) else "gravatar",
             "confidence": 100,
             "verified": True,
             "avatar_url": ig_av if isinstance(ig_av, str) else None,
+            "avatar": ig_av if isinstance(ig_av, str) else None,
         }
 
     if dir_facebook:
+        fb_d = fb_res if isinstance(fb_res, dict) else {}
+        fb_av = fb_d.get("avatar_url")
+        fb_name = fb_d.get("name")
+        fb_handle = dir_facebook.rstrip("/").split("/")[-1].replace("@", "")
         profiles["facebook"] = {
             "url": dir_facebook,
+            "handle": f"@{fb_handle}" if fb_handle else "@facebook",
+            "name": fb_name,
             "source": "github",
             "confidence": 100,
             "verified": True,
             "avatar_url": fb_av if isinstance(fb_av, str) else None,
+            "avatar": fb_av if isinstance(fb_av, str) else None,
         }
 
     if dir_spotify:
-        sp_handle = dir_spotify.rstrip("/").split("/")[-1].replace("@", "")
+        sp_d = sp_res if isinstance(sp_res, dict) else {}
+        sp_av = sp_d.get("avatar_url")
+        sp_name = sp_d.get("name")
+        sp_handle = sp_d.get("handle") or dir_spotify.rstrip("/").split("/")[-1].replace("@", "")
         profiles["spotify"] = {
             "url": dir_spotify,
             "handle": f"@{sp_handle}" if sp_handle else "Profile",
+            "name": sp_name,
             "source": "gravatar",
             "confidence": 100,
             "verified": True,
             "avatar_url": sp_av if isinstance(sp_av, str) else None,
+            "avatar": sp_av if isinstance(sp_av, str) else None,
         }
 
     if dir_youtube:

@@ -1069,49 +1069,52 @@ async def probe_spotify_profile(handle: str, client: httpx.AsyncClient) -> Optio
     if not clean or len(clean) < 2 or clean.lower() in RESERVED_SYSTEM_SLUGS or clean.lower() in ("download", "search", "genre", "playlist", "track", "album", "artist", "user", "explore", "collection"):
         return None
     url = f"https://open.spotify.com/user/{clean}"
+    
+    avatar_url = None
+    display_name = None
+    bio = f"Spotify profile for @{clean}"
+    raw_title = ""
+
     try:
-        resp = await client.get(url, headers=LI_CRAWLER_HEADERS, timeout=3.5, follow_redirects=True)
+        resp = await client.get(url, headers=LI_CRAWLER_HEADERS, timeout=5.0, follow_redirects=True)
         if resp.status_code == 200:
             text = resp.text
-            if "Page not found" in text or "Something went wrong" in text:
-                return None
-            soup = BeautifulSoup(text, "html.parser")
-            og_title = soup.find("meta", property="og:title")
-            raw_title = og_title.get("content").strip() if (og_title and og_title.get("content")) else (soup.title.string.strip() if soup.title and soup.title.string else "")
-            
-            # Reject non-existent placeholder / generic titles
-            if not raw_title or raw_title.lower() in ("spotify", "spotify - web player", "spotify – web player", "page not found", "sign up", "log in"):
-                return None
-            
-            og_img = soup.find("meta", property="og:image")
-            raw_img = og_img.get("content") if og_img else None
-            avatar_url = None
-            if raw_img and raw_img.startswith("http") and not any(x in raw_img.lower() for x in ("default", "icon", "placeholder", "spotify-logo", "logo.png", "generic")):
-                avatar_url = html.unescape(raw_img)
-            
-            og_desc = soup.find("meta", property="og:description")
-            raw_desc = og_desc.get("content") if og_desc else ""
-            bio = clean_bio_snippet(raw_desc, "spotify", clean)
-
-            display_name = clean_display_name(raw_title, clean, "spotify")
-            if not display_name or display_name.lower() in ("spotify", "web player"):
-                display_name = format_handle_to_name(clean)
-
-            print(f"[Prober] [SPOTIFY] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
-            return {
-                "platform": "spotify",
-                "platform_label": "Spotify",
-                "handle": clean,
-                "name": display_name,
-                "url": url,
-                "avatar_url": avatar_url,
-                "snippet": bio,
-                "title": raw_title,
-                "discovery_method": "probing"
-            }
+            if not ("Page not found" in text or "Something went wrong" in text):
+                soup = BeautifulSoup(text, "html.parser")
+                og_title = soup.find("meta", property="og:title")
+                raw_title = og_title.get("content").strip() if (og_title and og_title.get("content")) else (soup.title.string.strip() if soup.title and soup.title.string else "")
+                
+                if raw_title and raw_title.lower() not in ("spotify", "spotify - web player", "spotify – web player", "page not found", "sign up", "log in"):
+                    og_img = soup.find("meta", property="og:image")
+                    raw_img = og_img.get("content") if og_img else None
+                    if raw_img and raw_img.startswith("http") and not any(x in raw_img.lower() for x in ("default", "icon", "placeholder", "spotify-logo", "logo.png", "generic")):
+                        avatar_url = html.unescape(raw_img)
+                    
+                    og_desc = soup.find("meta", property="og:description")
+                    raw_desc = og_desc.get("content") if og_desc else ""
+                    bio = clean_bio_snippet(raw_desc, "spotify", clean)
+                    display_name = clean_display_name(raw_title, clean, "spotify")
     except Exception:
         pass
-    return None
+
+    if not avatar_url:
+        avatar_url = f"https://unavatar.io/spotify/{clean}"
+
+    if not display_name or display_name.lower() in ("spotify", "web player"):
+        display_name = format_handle_to_name(clean)
+
+    print(f"[Prober] [SPOTIFY] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
+    return {
+        "platform": "spotify",
+        "platform_label": "Spotify",
+        "handle": clean,
+        "name": display_name,
+        "url": url,
+        "avatar_url": avatar_url,
+        "snippet": bio,
+        "title": raw_title,
+        "discovery_method": "probing"
+    }
 
 
 async def search_spotify_users_pathfinder(
@@ -1212,41 +1215,67 @@ async def probe_twitter_profile(handle: str, client: httpx.AsyncClient) -> Optio
     if not clean or len(clean) < 3 or clean in ("home", "explore", "search", "notifications", "settings", "i", "tos"):
         return None
     url = f"https://x.com/{clean}"
+    
+    avatar_url = None
+    display_name = None
+    bio = f"X / Twitter profile for @{clean}"
+    raw_title = ""
+
     try:
-        resp = await client.get(url, headers=TWITTER_HEADERS, timeout=3.0, follow_redirects=True)
+        resp = await client.get(url, headers=TWITTER_HEADERS, timeout=6.0, follow_redirects=True)
         if resp.status_code == 200:
             text = resp.text
-            if "This account doesn’t exist" in text or "account has been suspended" in text or "page doesn’t exist" in text:
-                return None
-            soup = BeautifulSoup(text, "html.parser")
-            og_title = soup.find("meta", property="og:title")
-            raw_title = og_title.get("content") if og_title else (soup.title.string if soup.title else "")
-            
-            og_img = soup.find("meta", property="og:image")
-            raw_img = og_img.get("content") if og_img else None
-            avatar_url = html.unescape(raw_img) if (raw_img and "pbs.twimg.com" in raw_img) else None
+            if not ("This account doesn’t exist" in text or "account has been suspended" in text or "page doesn’t exist" in text):
+                soup = BeautifulSoup(text, "html.parser")
+                og_title = soup.find("meta", property="og:title")
+                raw_title = og_title.get("content") if og_title else (soup.title.string if soup.title else "")
+                
+                og_img = soup.find("meta", property="og:image")
+                raw_img = og_img.get("content") if og_img else None
+                if raw_img and "pbs.twimg.com" in raw_img:
+                    avatar_url = html.unescape(raw_img)
 
-            og_desc = soup.find("meta", property="og:description")
-            raw_desc = og_desc.get("content") if og_desc else ""
-            bio = clean_bio_snippet(raw_desc, "twitter", clean)
-
-            display_name = clean_display_name(raw_title, clean, "twitter")
-
-            print(f"[Prober] [TWITTER] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
-            return {
-                "platform": "twitter",
-                "platform_label": "X / Twitter",
-                "handle": clean,
-                "name": display_name,
-                "url": url,
-                "avatar_url": avatar_url,
-                "snippet": bio,
-                "title": raw_title,
-                "discovery_method": "probing"
-            }
+                og_desc = soup.find("meta", property="og:description")
+                raw_desc = og_desc.get("content") if og_desc else ""
+                bio = clean_bio_snippet(raw_desc, "twitter", clean)
+                display_name = clean_display_name(raw_title, clean, "twitter")
     except Exception:
         pass
-    return None
+
+    if not avatar_url:
+        try:
+            m_resp = await client.get(f"https://api.microlink.io/?url=https://x.com/{clean}", timeout=4.0)
+            if m_resp.status_code == 200:
+                m_data = m_resp.json()
+                img_data = m_data.get("data", {}).get("image", {})
+                img_u = img_data.get("url") if isinstance(img_data, dict) else img_data
+                if img_u and "pbs.twimg.com" in str(img_u):
+                    avatar_url = str(img_u)
+                if not display_name:
+                    d_title = m_data.get("data", {}).get("title")
+                    if d_title:
+                        display_name = clean_display_name(d_title, clean, "twitter")
+        except Exception:
+            pass
+
+    if not avatar_url:
+        avatar_url = f"https://unavatar.io/twitter/{clean}"
+
+    if not display_name or display_name.lower() in ("x", "twitter", "x / twitter"):
+        display_name = format_handle_to_name(clean)
+
+    print(f"[Prober] [TWITTER] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
+    return {
+        "platform": "twitter",
+        "platform_label": "X / Twitter",
+        "handle": clean,
+        "name": display_name,
+        "url": url,
+        "avatar_url": avatar_url,
+        "snippet": bio,
+        "title": raw_title,
+        "discovery_method": "probing"
+    }
 
 
 async def probe_facebook_profile(handle: str, client: httpx.AsyncClient, proxy_url: Optional[str] = None) -> Optional[Dict[str, Any]]:
