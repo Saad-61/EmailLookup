@@ -1236,9 +1236,9 @@ async def probe_twitter_profile(handle: str, client: httpx.AsyncClient) -> Optio
                 return None
             soup = BeautifulSoup(text, "html.parser")
             og_title = soup.find("meta", property="og:title")
-            raw_title = og_title.get("content") if og_title else (soup.title.string if soup.title else "")
+            raw_title = og_title.get("content").strip() if (og_title and og_title.get("content")) else (soup.title.string.strip() if soup.title and soup.title.string else "")
             
-            if raw_title and not any(bad in raw_title.lower() for bad in ("x", "twitter", "page not found", "doesn't exist", "doesn’t exist")):
+            if raw_title and not any(bad in raw_title.lower() for bad in ("page not found", "doesn't exist", "doesn’t exist", "suspended", "something went wrong")):
                 confirmed = True
                 og_img = soup.find("meta", property="og:image")
                 raw_img = og_img.get("content") if og_img else None
@@ -1259,13 +1259,13 @@ async def probe_twitter_profile(handle: str, client: httpx.AsyncClient) -> Optio
                 m_data = m_resp.json()
                 if m_data.get("status") == "success":
                     d_title = m_data.get("data", {}).get("title", "")
-                    if d_title and not any(bad in d_title for bad in ("Doesn’t Exist", "Doesn't Exist", "Page not found", "Suspended")):
+                    if d_title and not any(bad in d_title.lower() for bad in ("page not found", "doesn't exist", "doesn’t exist", "suspended")):
                         img_data = m_data.get("data", {}).get("image", {})
                         img_u = img_data.get("url") if isinstance(img_data, dict) else img_data
                         if img_u and "pbs.twimg.com" in str(img_u):
                             avatar_url = str(img_u)
-                            confirmed = True
-                            display_name = clean_display_name(d_title, clean, "twitter")
+                        confirmed = True
+                        display_name = clean_display_name(d_title, clean, "twitter")
         except Exception:
             pass
 
@@ -1747,6 +1747,8 @@ async def search_social_candidates(
 
         if "instagram" not in v_plats:
             ddg_search_queries.append(("instagram", f'{clean_target} instagram'))
+        if "twitter" not in v_plats:
+            ddg_search_queries.append(("twitter", f'{clean_target} twitter'))
         if "facebook" not in v_plats:
             ddg_search_queries.append(("facebook", f'site:facebook.com {clean_target}'))
         if "tiktok" not in v_plats:
@@ -1755,14 +1757,20 @@ async def search_social_candidates(
             ddg_search_queries.append(("pinterest", f'{clean_target} pinterest'))
         if "linkedin" not in v_plats:
             ddg_search_queries.append(("linkedin", f'{clean_target} linkedin'))
-        # Spotify DDG search disabled per directive
 
         if first_tok and len(first_tok) >= 3 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
             if "instagram" not in v_plats:
                 ddg_search_queries.append(("instagram", f'{first_tok} instagram'))
+            if "twitter" not in v_plats:
+                ddg_search_queries.append(("twitter", f'{first_tok} twitter'))
 
-        # Spotify Pathfinder search tasks disabled per directive
+        # Re-enable direct Spotify Pathfinder GraphQL searches
         spotify_search_tasks = []
+        if "spotify" not in v_plats:
+            if clean_target:
+                spotify_search_tasks.append(search_spotify_users_pathfinder(clean_target, probe_client))
+            if first_tok and len(first_tok) >= 3 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
+                spotify_search_tasks.append(search_spotify_users_pathfinder(first_tok, probe_client))
 
         # Assign each query its own distinct clean residential IP
         sampled_ips = proxy_pool.sample_distinct(len(ddg_search_queries))
