@@ -429,7 +429,7 @@ function renderLookupResults(data) {
   function resolveVerifiedAvatar(platform, p) {
     if (p && (p.avatar_url || p.avatar)) return p.avatar_url || p.avatar;
     const pHandle = (p && p.handle ? p.handle : "").replace(/^@/, "").toLowerCase();
-    const pUrl = (p && p.url ? p.url : "").toLowerCase();
+    const pUrl = (p && p.url ? p.url : "").toLowerCase().replace(/\/$/, "");
     const pSlug = (pUrl.split("/").filter(Boolean).pop() || "").split("?")[0].replace(/^@/, "").toLowerCase();
 
     const candList = (data.social_candidates_by_platform && data.social_candidates_by_platform[platform]) || [];
@@ -442,12 +442,13 @@ function renderLookupResults(data) {
         if (cPlatform && cPlatform !== platform.toLowerCase()) continue;
 
         const cHandle = (c.handle || "").replace(/^@/, "").toLowerCase();
-        const cUrl = (c.url || "").toLowerCase();
+        const cUrl = (c.url || "").toLowerCase().replace(/\/$/, "");
         const cSlug = (cUrl.split("/").filter(Boolean).pop() || "").split("?")[0].replace(/^@/, "").toLowerCase();
 
-        const matchHandle = pHandle && cHandle && (cHandle === pHandle || cHandle.includes(pHandle) || pHandle.includes(cHandle));
-        const matchUrl = pUrl && cUrl && (pUrl.includes(cUrl) || cUrl.includes(pUrl));
-        const matchSlug = pSlug && cSlug && (pSlug === cSlug || pSlug.includes(cSlug) || cSlug.includes(pSlug));
+        // Require EXACT match to prevent handle mismatch contamination (e.g. hamzaakhtar vs hamzaakhtar_03)
+        const matchHandle = pHandle && cHandle && cHandle === pHandle;
+        const matchUrl = pUrl && cUrl && cUrl === pUrl;
+        const matchSlug = pSlug && cSlug && cSlug === pSlug;
 
         if (matchHandle || matchUrl || matchSlug) {
           return c.avatar_url;

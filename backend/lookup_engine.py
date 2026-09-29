@@ -1801,7 +1801,14 @@ async def run_lookup(email: str) -> dict:
     # ── Profiles ──
     profiles = {}
     if linkedin_url:
-        profiles["linkedin"] = linkedin_url
+        profiles["linkedin"] = {
+            "url": linkedin_url,
+            "confidence": linkedin_confidence,
+            "verified": (linkedin_confidence == 100),
+            "source": linkedin_source or "search",
+            "avatar_url": li_avatar or resolved_avatar,
+            "avatar": li_avatar or resolved_avatar,
+        }
         profiles["linkedin_confidence"] = linkedin_confidence
         profiles["linkedin_verified"] = (linkedin_confidence == 100)
         profiles["linkedin_source"] = linkedin_source or "search"
