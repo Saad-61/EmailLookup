@@ -1224,7 +1224,7 @@ async def probe_twitter_profile(handle: str, client: httpx.AsyncClient) -> Optio
             
             og_img = soup.find("meta", property="og:image")
             raw_img = og_img.get("content") if og_img else None
-            avatar_url = html.unescape(raw_img) if (raw_img and "pbs.twimg.com" in raw_img) else f"https://unavatar.io/x/{clean}"
+            avatar_url = html.unescape(raw_img) if (raw_img and "pbs.twimg.com" in raw_img) else None
 
             og_desc = soup.find("meta", property="og:description")
             raw_desc = og_desc.get("content") if og_desc else ""

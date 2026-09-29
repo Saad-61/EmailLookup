@@ -432,17 +432,13 @@ function renderLookupResults(data) {
     const pUrl = (p && p.url ? p.url : "").toLowerCase();
 
     const candList = (data.social_candidates_by_platform && data.social_candidates_by_platform[platform]) || [];
-    const allCands = data.social_candidates || [];
-    const searchPool = candList.length > 0 ? candList : allCands;
-
-    for (const c of searchPool) {
-      if (c.avatar_url) {
-        const cPlatform = (c.platform || "").toLowerCase();
-        if (cPlatform && cPlatform !== platform.toLowerCase()) continue;
+    for (const c of candList) {
+      if (c.avatar_url && (c.discovery_method === "probing" || c.discovery_method === "api" || c.discovery_method === "direct")) {
         const cHandle = (c.handle || "").replace(/^@/, "").toLowerCase();
         const cUrl = (c.url || "").toLowerCase();
-        if (pHandle && cHandle && cHandle === pHandle) return c.avatar_url;
-        if (pUrl && cUrl && (pUrl.includes(cUrl) || cUrl.includes(pUrl))) return c.avatar_url;
+        if ((pHandle && cHandle && cHandle === pHandle) || (pUrl && cUrl && (pUrl.includes(cUrl) || cUrl.includes(pUrl)))) {
+          return c.avatar_url;
+        }
       }
     }
 
