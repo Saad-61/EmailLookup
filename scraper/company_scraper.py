@@ -40,8 +40,6 @@ if env_path.exists():
         if "=" in line and not line.strip().startswith("#"):
             k, v = line.split("=", 1)
             os.environ.setdefault(k.strip(), v.strip())
-
-SERPAPI_KEY = os.getenv("SERPAPI_KEY", "")
 DB_PATH = Path(__file__).parent.parent / "data" / "profiles.db"
 
 BROWSER_HEADERS = {
@@ -147,25 +145,7 @@ async def harvest_via_search(domain: str, client: httpx.AsyncClient) -> list:
     results = []
     seen_names = set()
 
-    # Query 1: Find emails directly on the web
-    query_email = f'"{domain}" email OR "@ {domain}" OR "@{domain}"'
-    try:
-        if SERPAPI_KEY:
-            resp = await client.get(
-                "https://serpapi.com/search.json",
-                params={"q": query_email, "api_key": SERPAPI_KEY, "num": 10},
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                for item in resp.json().get("organic_results", []):
-                    text = (item.get("title", "") + " " + item.get("snippet", "")).lower()
-                    emails = re.findall(r'[a-zA-Z0-9._%+-]+@' + re.escape(domain), text)
-                    for em in emails:
-                        results.append({"email": em, "name": em.split("@")[0].replace(".", " ").title()})
-    except Exception:
-        pass
-
-    # Query 2: Find employee names via LinkedIn search results
+    # Query 1: Find employee names via LinkedIn search results
     query_names = f'site:linkedin.com/in "{domain}"'
     try:
         resp = await client.get(
