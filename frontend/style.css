@@ -13,78 +13,78 @@
 }
 
 :root {
-  /* ── Canvas & Surfaces (Faithful Supabase Charcoal Dark) ── */
-  --bg-page: #121212;                       /* Warm dark charcoal canvas */
-  --bg-card: #1c1c1c;                       /* Pure Supabase container surface */
-  --bg-card-subtle: #141414;                /* Inset monospace sub-surface */
-  --bg-hover: #222222;                      /* Interactive hover */
-  --bg-active: #2a2a2a;                     /* Active click state */
+  /* ── Canvas & Surfaces (Crisp Technical Light Surface) ── */
+  --bg-page: #f8fafc;                       /* Slate-50 crisp light canvas */
+  --bg-card: #ffffff;                       /* Pure white container surface */
+  --bg-card-subtle: #f1f5f9;                /* Inset slate-100 sub-surface */
+  --bg-hover: #f1f5f9;                      /* Interactive hover */
+  --bg-active: #e2e8f0;                     /* Active click state */
 
   /* ── Text & Hierarchy ── */
-  --text-main: #ededed;                     /* High-contrast crisp white */
-  --text-secondary: #a1a1aa;                /* Zinc-400 legible body text */
-  --text-muted: #71717a;                    /* Zinc-500 secondary metadata */
-  --text-light: #52525b;                    /* Zinc-600 subtle hints */
-  --text-inverse: #050505;
+  --text-main: #0f172a;                     /* High-contrast Slate-900 */
+  --text-secondary: #334155;                /* Slate-700 legible body text */
+  --text-muted: #64748b;                    /* Slate-500 secondary metadata */
+  --text-light: #94a3b8;                    /* Slate-400 subtle hints */
+  --text-inverse: #ffffff;
 
   /* ── Borders & Tech Hairlines ── */
-  --border-subtle: #262626;                 /* 1px clean dark hairline */
-  --border-card: #282828;                   /* 1px dark technical container */
-  --border-hover: #383838;                  /* Interactive border hover */
-  --border-focus: #24b47e;                  /* Electric emerald focus */
-  --ring-focus: rgba(36, 180, 126, 0.2);
+  --border-subtle: #e2e8f0;                 /* 1px clean light hairline */
+  --border-card: #e2e8f0;                   /* 1px light technical container */
+  --border-hover: #cbd5e1;                  /* Interactive border hover */
+  --border-focus: #059669;                  /* Electric emerald focus */
+  --ring-focus: rgba(5, 150, 105, 0.2);
 
-  /* ── Primary Action / Brand (Supabase Emerald Green) ── */
-  --brand-primary: #24b47e;                 /* Supabase Emerald Green */
-  --brand-hover: #1ea06e;                   /* Deep Emerald */
-  --brand-active: #178a5e;                  /* Dark Emerald */
-  --brand-gradient: linear-gradient(135deg, #24b47e 0%, #1ea06e 100%);
-  --brand-gradient-hover: linear-gradient(135deg, #1ea06e 0%, #178a5e 100%);
-  --brand-subtle: rgba(36, 180, 126, 0.1);  /* Telemetry emerald sub-surface */
-  --brand-border: rgba(36, 180, 126, 0.35); /* Emerald hairline */
-  --shadow-glow: 0 0 18px rgba(36, 180, 126, 0.22);
+  /* ── Primary Action / Brand (Emerald Green) ── */
+  --brand-primary: #059669;                 /* Emerald Green 600 */
+  --brand-hover: #047857;                   /* Deep Emerald */
+  --brand-active: #065f46;                  /* Dark Emerald */
+  --brand-gradient: linear-gradient(135deg, #059669 0%, #047857 100%);
+  --brand-gradient-hover: linear-gradient(135deg, #047857 0%, #065f46 100%);
+  --brand-subtle: rgba(5, 150, 105, 0.08);  /* Telemetry emerald sub-surface */
+  --brand-border: rgba(5, 150, 105, 0.25); /* Emerald hairline */
+  --shadow-glow: 0 0 18px rgba(5, 150, 105, 0.18);
 
   /* ── Semantic Status Tokens ── */
-  --status-success: #24b47e;
-  --status-success-bg: rgba(36, 180, 126, 0.1);
-  --status-success-border: rgba(36, 180, 126, 0.3);
-  --status-success-text: #34d399;
+  --status-success: #059669;
+  --status-success-bg: rgba(5, 150, 105, 0.08);
+  --status-success-border: rgba(5, 150, 105, 0.25);
+  --status-success-text: #047857;
 
   --status-danger: #ef4444;
-  --status-danger-bg: rgba(239, 68, 68, 0.1);
-  --status-danger-border: rgba(239, 68, 68, 0.3);
-  --status-danger-text: #f87171;
+  --status-danger-bg: rgba(239, 68, 68, 0.08);
+  --status-danger-border: rgba(239, 68, 68, 0.25);
+  --status-danger-text: #dc2626;
 
-  --status-warn: #f59e0b;
-  --status-warn-bg: rgba(245, 158, 11, 0.1);
-  --status-warn-border: rgba(245, 158, 11, 0.3);
-  --status-warn-text: #fbbf24;
+  --status-warn: #d97706;
+  --status-warn-bg: rgba(217, 119, 6, 0.08);
+  --status-warn-border: rgba(217, 119, 6, 0.25);
+  --status-warn-text: #b45309;
 
-  --status-info: #06b6d4;
-  --status-info-bg: rgba(6, 182, 212, 0.1);
-  --status-info-border: rgba(6, 182, 212, 0.3);
-  --status-info-text: #22d3ee;
+  --status-info: #0284c7;
+  --status-info-bg: rgba(2, 132, 199, 0.08);
+  --status-info-border: rgba(2, 132, 199, 0.25);
+  --status-info-text: #0369a1;
 
-  /* ── Platform Specific Brand Colors (Vibrant Official Logos) ── */
+  /* ── Platform Specific Brand Colors ── */
   --brand-linkedin: #0a66c2;
   --brand-instagram: #e1306c;
   --brand-twitter: #1d9bf0;
   --brand-facebook: #1877f2;
-  --brand-tiktok: #ff0050;
+  --brand-tiktok: #000000;
   --brand-pinterest: #e60023;
   --brand-spotify: #1db954;
-  --brand-github: #ededed;
+  --brand-github: #0f172a;
 
-  /* ── Radii & Elevation (Supabase Geometry) ── */
+  /* ── Radii & Elevation ── */
   --radius-xl: 10px;
   --radius-lg: 8px;
   --radius-md: 6px;
   --radius-sm: 4px;
   --radius-pill: 9999px;
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.45);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.08);
 
   /* ── Typography ── */
   --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -95,7 +95,7 @@
   --transition-smooth: 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* ── Base Page Setup (Supabase #121212 Canvas) ─────────────────────────────── */
+/* ── Base Page Setup (Crisp Light Canvas) ─────────────────────────────── */
 body {
   font-family: var(--font-sans);
   background-color: var(--bg-page);
@@ -118,7 +118,7 @@ body {
 
 /* ── Header ────────────────────────────────────────────────────────────────── */
 .site-header {
-  background: rgba(20, 20, 20, 0.95);
+  background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border-subtle);
@@ -1050,11 +1050,11 @@ body {
 .cand-tab-btn[data-plat="instagram"] .cand-tab-icon { color: #e1306c !important; }
 .cand-tab-btn[data-plat="linkedin"] .cand-tab-icon { color: #0a66c2 !important; }
 .cand-tab-btn[data-plat="facebook"] .cand-tab-icon { color: #1877f2 !important; }
-.cand-tab-btn[data-plat="twitter"] .cand-tab-icon { color: #ffffff !important; }
+.cand-tab-btn[data-plat="twitter"] .cand-tab-icon { color: #0f172a !important; }
 .cand-tab-btn[data-plat="pinterest"] .cand-tab-icon { color: #e60023 !important; }
-.cand-tab-btn[data-plat="tiktok"] .cand-tab-icon { color: #ff0050 !important; }
+.cand-tab-btn[data-plat="tiktok"] .cand-tab-icon { color: #0f172a !important; }
 .cand-tab-btn[data-plat="spotify"] .cand-tab-icon { color: #1db954 !important; }
-.cand-tab-btn[data-plat="github"] .cand-tab-icon { color: #ededed !important; }
+.cand-tab-btn[data-plat="github"] .cand-tab-icon { color: #0f172a !important; }
 
 .cand-tab-badge {
   font-family: var(--font-mono);
@@ -1071,7 +1071,7 @@ body {
 .cand-tab-btn.active .cand-tab-badge {
   background: var(--brand-primary);
   border-color: var(--brand-primary);
-  color: #050505;
+  color: #ffffff;
 }
 
 /* Internal Scrollable Candidate List Container */
@@ -1081,7 +1081,7 @@ body {
   overflow-x: hidden;
   padding-right: 6px;
   scrollbar-width: thin;
-  scrollbar-color: #333333 transparent;
+  scrollbar-color: #cbd5e1 transparent;
 }
 
 .cand-scroll-container::-webkit-scrollbar {
@@ -1093,12 +1093,12 @@ body {
 }
 
 .cand-scroll-container::-webkit-scrollbar-thumb {
-  background: #333333;
+  background: #cbd5e1;
   border-radius: 4px;
 }
 
 .cand-scroll-container::-webkit-scrollbar-thumb:hover {
-  background: #444444;
+  background: #94a3b8;
 }
 
 .cand-items-list {
@@ -1120,12 +1120,12 @@ body {
 
 .linkedin-glyph { background: var(--brand-linkedin); }
 .instagram-glyph { background: #e1306c; }
-.twitter-glyph { background: #111111; border: 1px solid var(--border-subtle); }
+.twitter-glyph { background: #0f172a; border: 1px solid var(--border-subtle); }
 .facebook-glyph { background: var(--brand-facebook); }
-.tiktok-glyph { background: #ff0050; }
+.tiktok-glyph { background: #0f172a; }
 .pinterest-glyph { background: var(--brand-pinterest); }
 .spotify-glyph { background: var(--brand-spotify); }
-.github-glyph { background: #333333; }
+.github-glyph { background: #0f172a; }
 
 .cand-count-badge {
   font-family: var(--font-mono);
@@ -1143,7 +1143,7 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 14px 16px;
-  background: var(--bg-card-subtle);
+  background: var(--bg-card);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1154,7 +1154,7 @@ body {
 
 .candidate-card:hover {
   border-color: var(--border-hover);
-  background: #181818;
+  background: var(--bg-card-subtle);
   transform: translateY(-1px);
 }
 
