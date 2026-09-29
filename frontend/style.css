@@ -1120,7 +1120,7 @@ body {
 
 .linkedin-glyph { background: var(--brand-linkedin); }
 .instagram-glyph { background: #e1306c; }
-.twitter-glyph { background: var(--brand-twitter); }
+.twitter-glyph { background: #111111; border: 1px solid var(--border-subtle); }
 .facebook-glyph { background: var(--brand-facebook); }
 .tiktok-glyph { background: #ff0050; }
 .pinterest-glyph { background: var(--brand-pinterest); }

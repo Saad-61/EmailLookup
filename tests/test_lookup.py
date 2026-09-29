@@ -1,7 +1,7 @@
 """
 tests/test_lookup.py
 ---------------------
-Automated test suite to verify lookup engine accuracy against real test emails.
+Automated test suite to verify lookup engine accuracy against real test emails and unit helpers.
 
 Run with:
     python tests/test_lookup.py
@@ -11,6 +11,7 @@ import asyncio
 import os
 import sys
 import json
+import httpx
 from pathlib import Path
 
 # Add backend to sys.path
@@ -20,7 +21,30 @@ sys.path.insert(0, str(backend_path))
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from lookup_engine import run_lookup
+from lookup_engine import run_lookup, lookup_gravatar, clean_social_url
+from social_finder import parse_social_url
+
+def run_unit_tests():
+    print("\n========================================================")
+    print("       RUNNING UNIT TESTS (URL PARSER & GRAVATAR)       ")
+    print("========================================================\n")
+
+    # 1. Test Twitter status/post URL parsing to profile handle
+    tw_status_url = "https://x.com/ShayyanAmin/status/178901234567"
+    parsed_tw = parse_social_url(tw_status_url)
+    assert parsed_tw is not None, "Twitter status URL should be parsed!"
+    assert parsed_tw["handle"] == "ShayyanAmin", f"Expected handle 'ShayyanAmin', got '{parsed_tw['handle']}'"
+    assert parsed_tw["url"] == "https://x.com/ShayyanAmin", f"Expected profile URL 'https://x.com/ShayyanAmin', got '{parsed_tw['url']}'"
+    print("   [OK] Twitter Status URL Parser: Passed (Status post -> User profile handle @ShayyanAmin)")
+
+    # 2. Test Spotify URL cleaning
+    sp_url = "spotify:user:saadlife61"
+    cleaned_sp = clean_social_url(sp_url, platform="spotify")
+    assert cleaned_sp == "https://open.spotify.com/user/saadlife61", f"Got '{cleaned_sp}'"
+    print("   [OK] Spotify URI Sanitizer: Passed (spotify:user:saadlife61 -> open.spotify.com/user/saadlife61)")
+
+    print("-" * 56 + "\n")
+
 
 TEST_CASES = [
     {
@@ -28,22 +52,32 @@ TEST_CASES = [
         "description": "User's Gmail address",
         "expected_name_keywords": ["Saad", "Asif"],
         "expected_github": "Saad-61",
+        "expected_profiles": ["github", "linkedin", "twitter", "spotify"],
     },
     {
         "email": "torvalds@linux-foundation.org",
         "description": "Linus Torvalds (Linux creator)",
         "expected_name_keywords": ["Linus", "Torvalds"],
+        "expected_profiles": ["github", "linkedin"],
     },
     {
         "email": "bill@microsoft.com",
         "description": "Corporate email test",
+        "expected_name_keywords": ["Bill", "Gates"],
     }
 ]
 
-async def run_tests():
+async def run_integration_tests():
     print("\n========================================================")
-    print("       RUNNING AUTOMATED LOOKUP ENGINE ACCURACY TEST    ")
+    print("       RUNNING AUTOMATED LOOKUP ENGINE E2E ACCURACY TEST ")
     print("========================================================\n")
+
+    # Gravatar unit test for saadasif78656@gmail.com
+    async with httpx.AsyncClient(timeout=8) as client:
+        grav = await lookup_gravatar("saadasif78656@gmail.com", client)
+        assert grav.get("facebook_url") is None, "Facebook should NOT be extracted from Gravatar!"
+        print(f"   [OK] Gravatar Isolation: Verified Facebook is excluded. Gravatar extracted keys: {list(grav.keys())}")
+        print("-" * 56 + "\n")
 
     for tc in TEST_CASES:
         email = tc["email"]
@@ -61,8 +95,11 @@ async def run_tests():
         print(f"   * Resolved Name:  {person.get('name') or 'N/A'}")
         print(f"   * Avatar:         {person.get('avatar') or 'N/A'}")
         print(f"   * Bio:            {person.get('bio') or 'N/A'}")
+        print(f"   * Verified Profiles: {list(profiles.keys())}")
         print(f"   * GitHub Profile: {json.dumps(profiles.get('github', {})) if profiles.get('github') else 'None'}")
-        print(f"   * LinkedIn URL:   {profiles.get('linkedin') or 'None'}")
+        print(f"   * LinkedIn Profile: {json.dumps(profiles.get('linkedin', {})) if profiles.get('linkedin') else 'None'}")
+        print(f"   * Twitter Profile: {json.dumps(profiles.get('twitter', {})) if profiles.get('twitter') else 'None'}")
+        print(f"   * Spotify Profile: {json.dumps(profiles.get('spotify', {})) if profiles.get('spotify') else 'None'}")
         print(f"   * Social Cands:   {len(social_candidates)} discovered ({ {k: len(v) for k, v in cands_by_plat.items()} })")
 
         # Assertions / Warnings
@@ -81,7 +118,15 @@ async def run_tests():
             else:
                 print(f"   [WARN] GitHub username: MISMATCH (Got '@{gh_username}', expected '@{tc['expected_github']}')")
 
+        if "expected_profiles" in tc:
+            for p_key in tc["expected_profiles"]:
+                if p_key in profiles:
+                    print(f"   [OK] Verified Profile '{p_key}': FOUND ({profiles[p_key].get('url') if isinstance(profiles[p_key], dict) else profiles[p_key]})")
+                else:
+                    print(f"   [WARN] Verified Profile '{p_key}': MISSING")
+
         print("-" * 56 + "\n")
 
 if __name__ == "__main__":
-    asyncio.run(run_tests())
+    run_unit_tests()
+    asyncio.run(run_integration_tests())

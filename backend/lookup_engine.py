@@ -511,9 +511,9 @@ async def lookup_gravatar(email: str, client: httpx.AsyncClient) -> dict:
                 elif "instagram" in label or "instagram.com" in url:
                     cl = clean_social_url(url, "instagram")
                     if cl: result["instagram_url"] = cl
-                elif "facebook" in label or "facebook.com" in url:
-                    cl = clean_social_url(url, "facebook")
-                    if cl: result["facebook_url"] = cl
+                elif "spotify" in label or "spotify.com" in url or "spotify:user" in url:
+                    cl = clean_social_url(url, "spotify")
+                    if cl: result["spotify_url"] = cl
                 elif "youtube" in label or "youtube.com" in url:
                     result["youtube_url"] = url
                 elif not result.get("website") and url and not any(k in url for k in ["gravatar.com", "wordpress.com"]):
@@ -620,8 +620,8 @@ def clean_social_url(raw_url: Optional[str], platform: Optional[str] = None) -> 
         return None
 
     # 5. Spotify
-    if "spotify.com/user/" in clean_low and (platform is None or platform == "spotify"):
-        m = re.search(r"spotify\.com/user/([a-zA-Z0-9_.-]{2,50})", s, re.IGNORECASE)
+    if ("spotify.com/user/" in clean_low or "spotify:user:" in clean_low) and (platform is None or platform == "spotify"):
+        m = re.search(r"(?:spotify\.com/user/|spotify:user:)([a-zA-Z0-9_.-]{2,50})", s, re.IGNORECASE)
         if m:
             handle = m.group(1).split("?")[0].rstrip("/").strip()
             if handle.lower() not in RESERVED_SOCIAL_SLUGS and len(handle) >= 2:
@@ -1844,7 +1844,8 @@ async def run_lookup(email: str) -> dict:
     # Direct socials from verified GitHub & Gravatar profiles (100% confirmed)
     dir_twitter = (github.get("twitter_url") if isinstance(github, dict) else None) or (gravatar.get("twitter_url") if isinstance(gravatar, dict) else None)
     dir_instagram = (github.get("instagram_url") if isinstance(github, dict) else None) or (gravatar.get("instagram_url") if isinstance(gravatar, dict) else None)
-    dir_facebook = (github.get("facebook_url") if isinstance(github, dict) else None) or (gravatar.get("facebook_url") if isinstance(gravatar, dict) else None)
+    dir_facebook = (github.get("facebook_url") if isinstance(github, dict) else None)
+    dir_spotify = gravatar.get("spotify_url") if isinstance(gravatar, dict) else None
     dir_youtube = gravatar.get("youtube_url") if isinstance(gravatar, dict) else None
 
     # Probe direct verified profile links concurrently for authentic avatars
@@ -1859,16 +1860,20 @@ async def run_lookup(email: str) -> dict:
             elif plat == "instagram" and handle:
                 d = await probe_instagram_profile(handle, client)
                 return d.get("avatar_url") if d else None
+            elif plat == "spotify" and handle:
+                d = await probe_spotify_profile(handle, client)
+                return d.get("avatar_url") if d else None
             elif plat == "facebook":
                 return await fetch_facebook_candidate_avatar(url, client)
         except Exception:
             pass
         return None
 
-    tw_av, ig_av, fb_av = await asyncio.gather(
+    tw_av, ig_av, fb_av, sp_av = await asyncio.gather(
         probe_direct_profile("twitter", dir_twitter),
         probe_direct_profile("instagram", dir_instagram),
         probe_direct_profile("facebook", dir_facebook),
+        probe_direct_profile("spotify", dir_spotify),
         return_exceptions=True,
     )
 
@@ -1893,10 +1898,21 @@ async def run_lookup(email: str) -> dict:
     if dir_facebook:
         profiles["facebook"] = {
             "url": dir_facebook,
-            "source": "github" if (github and github.get("facebook_url")) else "gravatar",
+            "source": "github",
             "confidence": 100,
             "verified": True,
             "avatar_url": fb_av if isinstance(fb_av, str) else None,
+        }
+
+    if dir_spotify:
+        sp_handle = dir_spotify.rstrip("/").split("/")[-1].replace("@", "")
+        profiles["spotify"] = {
+            "url": dir_spotify,
+            "handle": f"@{sp_handle}" if sp_handle else "Profile",
+            "source": "gravatar",
+            "confidence": 100,
+            "verified": True,
+            "avatar_url": sp_av if isinstance(sp_av, str) else None,
         }
 
     if dir_youtube:

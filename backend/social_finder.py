@@ -454,11 +454,11 @@ def parse_social_url(url: str) -> Optional[Dict[str, str]]:
         clean = clean[m_nested[-1].start():]
     clean = re.sub(r"^(https?):/+([^\s/])", r"\1://\2", clean, flags=re.IGNORECASE)
 
-    # Twitter / X
-    tw_match = re.search(r"https?://(?:[a-z0-9-]+\.)?(?:x\.com|twitter\.com)/([a-zA-Z0-9_]{1,25})$", clean, re.IGNORECASE)
+    # Twitter / X (Profiles & Status/Post URLs)
+    tw_match = re.search(r"https?://(?:[a-z0-9-]+\.)?(?:x\.com|twitter\.com)/([a-zA-Z0-9_]{1,25})(?:/status(?:es)?/\d+)?/?$", clean, re.IGNORECASE)
     if tw_match:
         handle = tw_match.group(1)
-        if handle.lower() not in RESERVED_SYSTEM_SLUGS and handle.lower() not in ("home", "explore", "search", "notifications", "messages", "settings", "i", "privacy", "tos", "intent", "share"):
+        if handle.lower() not in RESERVED_SYSTEM_SLUGS and handle.lower() not in ("home", "explore", "search", "notifications", "messages", "settings", "i", "privacy", "tos", "intent", "share", "status", "statuses"):
             return {
                 "platform": "twitter",
                 "platform_label": "X / Twitter",
