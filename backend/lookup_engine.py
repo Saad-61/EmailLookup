@@ -31,9 +31,23 @@ except Exception:
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"), override=True)
 try:
-    from social_finder import search_social_candidates, jaro_winkler_similarity
+    from social_finder import (
+        search_social_candidates,
+        jaro_winkler_similarity,
+        probe_twitter_profile,
+        probe_instagram_profile,
+        probe_spotify_profile,
+        fetch_facebook_candidate_avatar,
+    )
 except ImportError:
-    from backend.social_finder import search_social_candidates, jaro_winkler_similarity
+    from backend.social_finder import (
+        search_social_candidates,
+        jaro_winkler_similarity,
+        probe_twitter_profile,
+        probe_instagram_profile,
+        probe_spotify_profile,
+        fetch_facebook_candidate_avatar,
+    )
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
@@ -1806,8 +1820,8 @@ async def run_lookup(email: str) -> dict:
             "confidence": linkedin_confidence,
             "verified": (linkedin_confidence == 100),
             "source": linkedin_source or "search",
-            "avatar_url": li_avatar or resolved_avatar,
-            "avatar": li_avatar or resolved_avatar,
+            "avatar_url": li_avatar,
+            "avatar": li_avatar,
         }
         profiles["linkedin_confidence"] = linkedin_confidence
         profiles["linkedin_verified"] = (linkedin_confidence == 100)
@@ -1829,39 +1843,69 @@ async def run_lookup(email: str) -> dict:
 
     # Direct socials from verified GitHub & Gravatar profiles (100% confirmed)
     dir_twitter = (github.get("twitter_url") if isinstance(github, dict) else None) or (gravatar.get("twitter_url") if isinstance(gravatar, dict) else None)
+    dir_instagram = (github.get("instagram_url") if isinstance(github, dict) else None) or (gravatar.get("instagram_url") if isinstance(gravatar, dict) else None)
+    dir_facebook = (github.get("facebook_url") if isinstance(github, dict) else None) or (gravatar.get("facebook_url") if isinstance(gravatar, dict) else None)
+    dir_youtube = gravatar.get("youtube_url") if isinstance(gravatar, dict) else None
+
+    # Probe direct verified profile links concurrently for authentic avatars
+    async def probe_direct_profile(plat, url):
+        if not url:
+            return None
+        try:
+            handle = url.rstrip("/").split("/")[-1].replace("@", "")
+            if plat == "twitter" and handle:
+                d = await probe_twitter_profile(handle, client)
+                return d.get("avatar_url") if d else None
+            elif plat == "instagram" and handle:
+                d = await probe_instagram_profile(handle, client)
+                return d.get("avatar_url") if d else None
+            elif plat == "facebook":
+                return await fetch_facebook_candidate_avatar(url, client)
+        except Exception:
+            pass
+        return None
+
+    tw_av, ig_av, fb_av = await asyncio.gather(
+        probe_direct_profile("twitter", dir_twitter),
+        probe_direct_profile("instagram", dir_instagram),
+        probe_direct_profile("facebook", dir_facebook),
+        return_exceptions=True,
+    )
+
     if dir_twitter:
         profiles["twitter"] = {
             "url": dir_twitter,
             "source": "github" if (github and github.get("twitter_url")) else "gravatar",
             "confidence": 100,
             "verified": True,
+            "avatar_url": tw_av if isinstance(tw_av, str) else None,
         }
 
-    dir_instagram = (github.get("instagram_url") if isinstance(github, dict) else None) or (gravatar.get("instagram_url") if isinstance(gravatar, dict) else None)
     if dir_instagram:
         profiles["instagram"] = {
             "url": dir_instagram,
             "source": "github" if (github and github.get("instagram_url")) else "gravatar",
             "confidence": 100,
             "verified": True,
+            "avatar_url": ig_av if isinstance(ig_av, str) else None,
         }
 
-    dir_facebook = (github.get("facebook_url") if isinstance(github, dict) else None) or (gravatar.get("facebook_url") if isinstance(gravatar, dict) else None)
     if dir_facebook:
         profiles["facebook"] = {
             "url": dir_facebook,
             "source": "github" if (github and github.get("facebook_url")) else "gravatar",
             "confidence": 100,
             "verified": True,
+            "avatar_url": fb_av if isinstance(fb_av, str) else None,
         }
 
-    dir_youtube = gravatar.get("youtube_url") if isinstance(gravatar, dict) else None
     if dir_youtube:
         profiles["youtube"] = {
             "url": dir_youtube,
             "source": "gravatar",
             "confidence": 100,
             "verified": True,
+            "avatar_url": None,
         }
 
     if github and isinstance(github, dict) and github.get("username"):
