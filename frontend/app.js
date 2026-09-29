@@ -430,13 +430,26 @@ function renderLookupResults(data) {
     if (p && (p.avatar_url || p.avatar)) return p.avatar_url || p.avatar;
     const pHandle = (p && p.handle ? p.handle : "").replace(/^@/, "").toLowerCase();
     const pUrl = (p && p.url ? p.url : "").toLowerCase();
+    const pSlug = (pUrl.split("/").filter(Boolean).pop() || "").split("?")[0].replace(/^@/, "").toLowerCase();
 
     const candList = (data.social_candidates_by_platform && data.social_candidates_by_platform[platform]) || [];
-    for (const c of candList) {
-      if (c.avatar_url && (c.discovery_method === "probing" || c.discovery_method === "api" || c.discovery_method === "direct")) {
+    const allCands = data.social_candidates || [];
+    const searchPool = candList.length > 0 ? candList : allCands;
+
+    for (const c of searchPool) {
+      if (c.avatar_url) {
+        const cPlatform = (c.platform || "").toLowerCase();
+        if (cPlatform && cPlatform !== platform.toLowerCase()) continue;
+
         const cHandle = (c.handle || "").replace(/^@/, "").toLowerCase();
         const cUrl = (c.url || "").toLowerCase();
-        if ((pHandle && cHandle && cHandle === pHandle) || (pUrl && cUrl && (pUrl.includes(cUrl) || cUrl.includes(pUrl)))) {
+        const cSlug = (cUrl.split("/").filter(Boolean).pop() || "").split("?")[0].replace(/^@/, "").toLowerCase();
+
+        const matchHandle = pHandle && cHandle && (cHandle === pHandle || cHandle.includes(pHandle) || pHandle.includes(cHandle));
+        const matchUrl = pUrl && cUrl && (pUrl.includes(cUrl) || cUrl.includes(pUrl));
+        const matchSlug = pSlug && cSlug && (pSlug === cSlug || pSlug.includes(cSlug) || cSlug.includes(pSlug));
+
+        if (matchHandle || matchUrl || matchSlug) {
           return c.avatar_url;
         }
       }
