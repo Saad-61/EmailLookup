@@ -446,7 +446,7 @@ function renderLookupResults(data) {
       }
     }
 
-    return (data.person ? data.person.avatar : null) || (data.profiles && data.profiles.github ? data.profiles.github.avatar : null);
+    return null;
   }
 
   if (profiles.linkedin) {

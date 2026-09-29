@@ -1940,9 +1940,7 @@ async def run_lookup(email: str) -> dict:
                                 c_handle = (cand.get("handle") or "").replace("@", "").lower()
                                 if (p_handle and c_handle == p_handle) or (p_url and (p_url in c_url or c_url in p_url)):
                                     prof["avatar_url"] = cand["avatar_url"]
-                                    break
-                    if not prof.get("avatar_url") and not prof.get("avatar") and person.get("avatar"):
-                        prof["avatar_url"] = person["avatar"]
+                    # Note: We do not copy person.avatar across platforms so each verified chip only shows its own platform avatar if found.
 
                 # Platform is already confirmed and verified in top profiles — clear candidate accordion
                 by_plat[p] = []
