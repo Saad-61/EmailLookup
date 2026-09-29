@@ -1,17 +1,17 @@
 """
-standalone_ddg_test.py
-----------------------
+standalone_server.py
+--------------------
 Standalone test script and interactive server evaluating DuckDuckGo with Residential Proxy Rotation
 as a direct replacement for SearXNG.
 
 Usage:
   1. CLI manual test:
-       python standalone_ddg_test.py sarah.jenkins.hr@gmail.com
-       python standalone_ddg_test.py saadasif78656@gmail.com
+       python standalone/standalone_server.py sarah.jenkins.hr@gmail.com
+       python standalone/standalone_server.py saadasif78656@gmail.com
 
   2. Frontend Web Server (Serves the UI on port 8001):
-       python standalone_ddg_test.py --server
-       python standalone_ddg_test.py --server --port 8001
+       python standalone/standalone_server.py --server
+       python standalone/standalone_server.py --server --port 8001
 """
 
 import asyncio
@@ -32,7 +32,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 
 # Add backend directory to sys.path
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR / "backend"))
 
 import httpx
@@ -279,9 +279,6 @@ async def execute_ddg_html_query(
     else:
         print(f"  [Failover] ℹ️ 0 hits retrieved via backup failover for '{query[:35]}...'", flush=True)
     return items, used_ip, attempts
-
-
-
 
 
 # ── 3. HYBRID SOCIAL DISCOVERY USING DDG PROXY POOL ──────────────────────────

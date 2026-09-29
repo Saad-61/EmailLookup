@@ -38,7 +38,7 @@ data/
 *.sqlite3
 scratch_*.py
 scratch/
-tests/
+!tests/test_lookup.py
 CHANGES_AFTER_*.md
 *.patch
 

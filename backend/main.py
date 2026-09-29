@@ -220,10 +220,9 @@ async def email_lookup(request: LookupRequest):
         platforms=platforms,
         phone=lookup_result.get("phone"),
         address=None,
-        deliverability=(lookup_result.get("email_quality") or {}).get("deliverability"),
-        autocorrect=lookup_result.get("autocorrect") or (lookup_result.get("email_quality") or {}).get("autocorrect"),
+        deliverability=lookup_result.get("deliverability"),
+        autocorrect=lookup_result.get("autocorrect"),
         company=lookup_result.get("company"),
-        email_quality=lookup_result.get("email_quality"),
         social_candidates=lookup_result.get("social_candidates", []),
         social_candidates_by_platform=lookup_result.get("social_candidates_by_platform", {}),
     )

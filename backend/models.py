@@ -65,7 +65,6 @@ class LookupResponse(BaseModel):
     deliverability: Optional[str] = None
     autocorrect: Optional[str] = None
     company: Optional[dict] = None
-    email_quality: Optional[dict] = None
     social_candidates: List[dict] = []
     social_candidates_by_platform: dict = {}
     cached: bool = False

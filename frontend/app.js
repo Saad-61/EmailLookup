@@ -600,8 +600,7 @@ function renderLookupResults(data) {
   // ── Global Typo Banner ──
   const acBanner = document.getElementById("lookup-autocorrect");
   const acEmail = document.getElementById("autocorrect-email");
-  const acBtn = document.getElementById("autocorrect-apply-btn");
-  const autocorrectTarget = data.autocorrect || (data.email_quality || {}).autocorrect;
+  const autocorrectTarget = data.autocorrect;
   if (autocorrectTarget && autocorrectTarget.toLowerCase() !== (data.email || "").toLowerCase()) {
     if (acBanner && acEmail) {
       acEmail.textContent = autocorrectTarget;

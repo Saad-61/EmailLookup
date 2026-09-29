@@ -696,27 +696,6 @@ def clean_bio_snippet(raw_snippet: str, platform: str, handle: str) -> str:
     return s
 
 
-def parse_ddg_html_response(html_text: str) -> List[Dict[str, str]]:
-    """Legacy parser preserved for backward-compatibility with lookup_engine."""
-    results = []
-    if not html_text:
-        return results
-    try:
-        soup = BeautifulSoup(html_text, "html.parser")
-        for res in soup.find_all("div", class_="result"):
-            a_tag = res.find("a", class_="result__url") or res.find("a", class_="result__snippet")
-            t_tag = res.find("a", class_="result__title")
-            s_tag = res.find("a", class_="result__snippet") or res.find("div", class_="result__snippet")
-            if a_tag and a_tag.get("href"):
-                link = a_tag["href"]
-                title = t_tag.get_text(strip=True) if t_tag else ""
-                snippet = s_tag.get_text(strip=True) if s_tag else ""
-                results.append({"link": link, "title": title, "snippet": snippet})
-    except Exception:
-        pass
-    return results
-
-
 # ==========================================
 # 5. MULTI-ANCHOR SCORING & DISAMBIGUATION
 # ==========================================

@@ -9,7 +9,6 @@ This document outlines environment setup, local execution, diagnostic commands, 
 ### System Requirements
 - Python 3.11 or higher
 - Git
-- SearXNG Docker instance (running locally on port 8888 or remote)
 
 ### Installation Steps
 
@@ -43,29 +42,7 @@ uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 
 ---
 
-## 3. SearXNG & Proxy Configuration
-
-SearXNG provides fast multi-engine meta-search over rotated datacenter/residential proxies without getting blocked.
-
-### Starting SearXNG
-```bash
-docker run -d -p 8888:8080 -v ${PWD}/searxng:/etc/searxng searxng/searxng:latest
-```
-
-### Environment Variables
-Configure your `.env` with:
-```ini
-SEARXNG_URL=http://localhost:8888/search
-PROXY_USERNAME=your_username
-PROXY_PASSWORD=your_password
-PROXY_IPS=ip1:port,ip2:port
-GOOGLE_API_KEY=your_key_here
-GOOGLE_CSE_ID=your_cse_id_here
-```
-
----
-
-## 4. Port 25 Diagnostic Verification
+## 3. Port 25 Diagnostic Verification
 
 The SMTP verifier relies on outbound TCP connectivity to Port 25. Many consumer ISPs block Port 25 by default.
 
@@ -89,10 +66,10 @@ curl http://127.0.0.1:8000/api/port-check
 
 ---
 
-## 5. Cache Management & API Endpoints
+## 4. Cache Management & API Endpoints
 
 ### Cache Database Location
-The SQLite cache database is auto-created at `data/cache.db` with WAL mode enabled.
+The SQLite cache database is auto-created at `data/cache.db`.
 
 ### Invalidate Cache Entry
 To force a fresh live lookup and bypass cached data for a specific email address, issue a POST request to `/api/cache/invalidate`:
@@ -105,10 +82,21 @@ curl -X POST "http://127.0.0.1:8000/api/cache/invalidate" \
 
 ---
 
-## 6. Running Automated Tests
+## 5. Running Automated Tests
 
-Run the test suite to verify lookup engine accuracy and candidate resolution:
+Run the test suite to verify lookup engine performance and candidate resolution:
 
 ```bash
 python tests/test_lookup.py
+```
+
+### Adding New Test Cases
+To add test cases, open `tests/test_lookup.py` and add entries to `TEST_CASES`:
+
+```python
+TEST_CASES.append({
+    "email": "testuser@domain.com",
+    "description": "Custom test case",
+    "expected_name_keywords": ["First", "Last"]
+})
 ```

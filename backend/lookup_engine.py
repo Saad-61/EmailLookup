@@ -1091,10 +1091,6 @@ async def fetch_linkedin_details(
     return avatar_url, location, name, headline, company_data, education_data, role_type
 
 
-async def fetch_linkedin_avatar(linkedin_url: Optional[str], client: httpx.AsyncClient) -> Optional[str]:
-    res = await fetch_linkedin_details(linkedin_url, client)
-    return res[0] if res else None
-
 async def is_github_default_avatar(avatar_url: Optional[str], client: httpx.AsyncClient) -> bool:
     """
     Detects if a GitHub avatar is an auto-generated identicon (default geometric PNG).
@@ -1112,251 +1108,6 @@ async def is_github_default_avatar(avatar_url: Optional[str], client: httpx.Asyn
     except Exception:
         pass
     return False
-
-
-def is_valid_linkedin_candidate(clean_url: str, title: str, snippet: str, target_handle: str, target_name: str, anchor: str) -> tuple[bool, int]:
-    title_l = title.lower()
-    snippet_l = snippet.lower()
-    url_l = clean_url.lower()
-    url_slug = clean_url.split("/in/")[-1].lower().rstrip("/")
-
-    # 1. Handle match
-    if target_handle:
-        h = target_handle.lower()
-        has_digits = bool(re.search(r"\d", h))
-        digits = re.findall(r"\d+", h)
-        h_no_num = re.sub(r"\d+", "", h)
-
-        if h == url_slug or f"-{h}" in url_slug or f"{h}-" in url_slug or f"-{h}-" in url_slug:
-            return True, 95
-
-        # If handle has numbers (e.g. mominawaqar12, sharafat706),
-        # do NOT match a generic name slug (like momina-waqar) unless the slug or title also contains those digits!
-        if has_digits:
-            distinctive_digits = [d for d in digits if len(d) >= 2]
-            if any(d in url_slug for d in distinctive_digits) or any(d in title_l for d in distinctive_digits):
-                if len(h_no_num) >= 4 and h_no_num in url_slug.replace("-", ""):
-                    return True, 90
-        else:
-            if len(h_no_num) >= 5 and h_no_num in url_slug.replace("-", ""):
-                return True, 90
-
-        # Handle strictly matches the PERSON's name before '-' or '|', NOT the company or job title!
-        title_person = title_l.split(" - ")[0].split(" | ")[0].strip()
-        title_person_slug = re.sub(r"[^a-z0-9]", "", title_person)
-        if len(h) >= 4 and (h in title_person.split() or h == title_person_slug):
-            return True, 85
-
-    # 2. Name match
-    if target_name:
-        parts = [p for p in target_name.lower().split() if len(p) >= 2]
-        if len(parts) >= 2:
-            first, last = parts[0], parts[-1]
-            has_first = first in title_l or first in url_l
-            has_last = last in title_l or last in url_l
-            if has_first and has_last:
-                if anchor:
-                    anchor_tokens = [t.strip() for t in re.split(r"[,/]", anchor.lower()) if len(t.strip()) >= 3]
-                    if any(t in snippet_l or t in title_l for t in anchor_tokens):
-                        return True, 90
-                    return False, 0
-                return True, 80
-            if has_first and (last in snippet_l):
-                return True, 75
-        elif len(parts) == 1:
-            first = parts[0]
-            if (first in title_l or first in url_l):
-                return True, 70
-
-    return False, 0
-
-
-# ── Contextual Anchored LinkedIn Search ──────────────────────────────────────
-
-async def search_linkedin_anchored(
-    email: str,
-    email_type: str,
-    domain: str,
-    resolved_name: Optional[str],
-    resolved_location: Optional[str],
-    company_name: Optional[str],
-    gh_data: Optional[dict],
-    client: httpx.AsyncClient,
-) -> Optional[str]:
-    """
-    Step 1: Contextual Anchored Search for LinkedIn.
-    Anchors queries using verified context:
-    - Personal email handle: site:linkedin.com/in "{handle}"
-    - Corporate email: site:linkedin.com/in "{name}" "{company}"
-    - GitHub metadata: site:linkedin.com/in "{gh_name}" "{gh_location}"
-    - Name + location: site:linkedin.com/in "{name}" "{location}"
-    Strictly verifies candidate name and anchor keywords from title/snippet.
-    """
-    local_part = email.split("@")[0].lower() if "@" in email else ""
-    gh_user = gh_data if isinstance(gh_data, dict) else {}
-    gh_username = gh_user.get("username")
-    gh_name = gh_user.get("name")
-    gh_company = gh_user.get("company")
-    gh_location = gh_user.get("location")
-
-    # Filter out timezone pseudo-locations from text search strings
-    clean_location = resolved_location
-    if clean_location and clean_location.startswith("UTC"):
-        clean_location = None
-
-    # Derive company name if corporate email
-    corp_anchor = company_name
-    if not corp_anchor and email_type == "corporate" and domain:
-        corp_anchor = domain.split(".")[0].capitalize()
-
-    # If corporate email and no resolved_name, derive clean name from local_part
-    eff_name = resolved_name
-    if not eff_name and email_type == "corporate" and local_part:
-        if "." in local_part or "_" in local_part:
-            eff_name = local_part.replace(".", " ").replace("_", " ").title()
-        elif len(local_part) >= 3 and not re.match(r"^(admin|info|sales|support|contact|help|billing|team)", local_part):
-            eff_name = local_part.title()
-
-    # Formulate prioritized query candidate list
-    queries_to_try = []
-
-    # Priority A: If we have a verified full human name (>= 2 words, like "Atisam Hameed", "Sundar Pichai")
-    # Real human names are by far the most effective way to locate a person on LinkedIn!
-    has_full_name = bool(eff_name and len(eff_name.split()) >= 2)
-    clean_gh_comp = gh_company.lstrip("@").strip() if (gh_company and isinstance(gh_company, str)) else None
-    effective_org = corp_anchor or clean_gh_comp
-
-    if has_full_name:
-        # 1. Full Name + Organization Anchor (Highest precision for verified workplace)
-        if effective_org:
-            queries_to_try.append({
-                "q": f'site:linkedin.com/in "{eff_name}" "{effective_org}"',
-                "target_name": eff_name,
-                "anchor": effective_org,
-                "type": "corporate",
-            })
-        # 2. Full Name + Clean Location (Geo precision)
-        if clean_location:
-            queries_to_try.append({
-                "q": f'site:linkedin.com/in "{eff_name}" "{clean_location}"',
-                "target_name": eff_name,
-                "anchor": clean_location,
-                "type": "name_loc",
-            })
-        # 3. Full Name alone (Reliably matches LinkedIn title & URL slug)
-        queries_to_try.append({
-            "q": f'site:linkedin.com/in "{eff_name}"',
-            "target_name": eff_name,
-            "type": "name",
-        })
-
-    # Priority B: Corporate domain without full name
-    elif corp_anchor and eff_name:
-        queries_to_try.append({
-            "q": f'site:linkedin.com/in "{eff_name}" "{corp_anchor}"',
-            "target_name": eff_name,
-            "anchor": corp_anchor,
-            "type": "corporate",
-        })
-
-    # Priority C: Handles (GitHub username & email local_part)
-    if gh_username:
-        queries_to_try.append({
-            "q": f'site:linkedin.com/in "{gh_username}"',
-            "target_handle": gh_username,
-            "type": "handle",
-        })
-        # If gh_username is camelCase or has underscores, also try spaced/unquoted
-        spaced_gh = re.sub(r"([a-z])([A-Z])", r"\1 \2", gh_username).replace("_", " ").strip()
-        if " " in spaced_gh and spaced_gh.lower() != (eff_name or "").lower():
-            queries_to_try.append({
-                "q": f'site:linkedin.com/in "{spaced_gh}"',
-                "target_name": spaced_gh,
-                "type": "name",
-            })
-
-    if email_type == "personal" and local_part and len(local_part) >= 4:
-        if not re.match(r"^(admin|info|sales|support|contact|help|hello)", local_part):
-            queries_to_try.append({
-                "q": f'site:linkedin.com/in "{local_part}"',
-                "target_handle": local_part,
-                "type": "handle",
-            })
-            # Also try unquoted handle (helps match hyphenated slugs like ahtisham-dilawar)
-            queries_to_try.append({
-                "q": f'site:linkedin.com/in {local_part}',
-                "target_handle": local_part,
-                "target_name": eff_name,
-                "type": "handle",
-            })
-            spaced_local = re.sub(r"([a-z])([A-Z])", r"\1 \2", local_part).replace(".", " ").replace("_", " ").title()
-            if " " in spaced_local and spaced_local.lower() != (eff_name or "").lower():
-                queries_to_try.append({
-                    "q": f'site:linkedin.com/in "{spaced_local}"',
-                    "target_name": spaced_local,
-                    "type": "name",
-                })
-
-    # Priority D: Direct Email Search
-    queries_to_try.append({
-        "q": f'"{email}" site:linkedin.com/in',
-        "target_email": email,
-        "type": "email",
-    })
-
-    # Deduplicate queries while preserving order
-    seen_q = set()
-    unique_queries = []
-    for item in queries_to_try:
-        q_str = item["q"]
-        if q_str not in seen_q:
-            seen_q.add(q_str)
-            unique_queries.append(item)
-
-    # Prioritize the top 4 most targeted queries
-    active_queries = unique_queries[:4]
-
-    # Execute search queries
-    for item in active_queries:
-        query = item["q"]
-        target_name = item.get("target_name", "")
-        target_handle = item.get("target_handle", "")
-        anchor = item.get("anchor", "")
-
-        print(f"[LinkedIn Search] Sending query ({item.get('type', 'heuristic')}): {query}", flush=True)
-
-        # ── Strategy 1: Local SearXNG Metasearch Engine (Primary 100% Free Engine) ──
-        searxng_url = os.getenv("SEARXNG_URL", "http://localhost:8888/search")
-        try:
-            sx_resp = await client.get(
-                searxng_url,
-                params={"q": query, "format": "json"},
-                timeout=7.0,
-            )
-            if sx_resp.status_code == 200:
-                sx_results = sx_resp.json().get("results", [])
-                for r in sx_results:
-                    link = r.get("url", "")
-                    if "linkedin.com/in/" not in link or "/in/dir/" in link or "/pub/dir/" in link:
-                        continue
-                    clean_url = link.split("?")[0].rstrip("/")
-                    title = (r.get("title") or "").lower()
-                    snippet = (r.get("content") or "").lower()
-                    is_valid, conf = is_valid_linkedin_candidate(clean_url, title, snippet, target_handle, target_name, anchor)
-                    if is_valid:
-                        print(f"[LinkedIn Search] [OK] Verified LinkedIn candidate (SearXNG): {clean_url} (Confidence: {conf}%)", flush=True)
-                        return clean_url, None, conf
-        except Exception as e:
-            print(f"[LinkedIn Search] [-] SearXNG error/offline: {e}", flush=True)
-
-    return None, None, 0
-
-
-# ── AbstractAPI (Deprecated & Removed for Performance) ─────────────────────────
-
-async def lookup_abstractapi(email: str, client: Optional[httpx.AsyncClient] = None) -> dict:
-    """Deprecated: AbstractAPI removed due to quota exhaustion & latency overhead."""
-    return {}
 
 
 def _strip_html(text: str) -> str:
@@ -1665,7 +1416,7 @@ async def run_lookup(email: str) -> dict:
             "phone": None,
             "address": None,
             "company": None,
-            "email_quality": {"deliverability": "invalid"},
+            "deliverability": "invalid",
         }
 
     domain = email.split("@")[-1] if "@" in email else ""
@@ -2217,22 +1968,7 @@ async def run_lookup(email: str) -> dict:
         company = None
 
     # ── Phone from GitHub bio ──
-    phone = github.get("phone_froAm_bio") if github else None
-
-    # ── Email quality & deliverability (Instant Local Calculation) ──
-    email_quality = {
-        "quality_score": 0.90 if email_type == "corporate" else 0.75,
-        "deliverability": "deliverable",
-        "is_disposable": False,
-        "is_free_email": email_type == "personal",
-        "is_catchall": False,
-        "is_role_account": False,
-        "smtp_provider": domain.split(".")[0].capitalize() if domain else None,
-        "autocorrect": None,
-        "address_risk": "Low",
-        "domain_risk": "Low",
-        "domain_age_days": None,
-    }
+    phone = github.get("phone_from_bio") if github else None
 
     # Detect typos in domain or provider
     autocorrect_suggestion = detect_email_typo(email)
@@ -2254,6 +1990,6 @@ async def run_lookup(email: str) -> dict:
         "phone": phone,
         "address": None,
         "company": company,
-        "email_quality": email_quality,
         "autocorrect": autocorrect_suggestion,
     }
+
