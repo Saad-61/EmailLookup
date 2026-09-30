@@ -37,7 +37,9 @@ try:
         probe_twitter_profile,
         probe_instagram_profile,
         probe_spotify_profile,
+        probe_facebook_profile,
         fetch_facebook_candidate_avatar,
+        get_random_proxy_url,
     )
 except ImportError:
     from backend.social_finder import (
@@ -46,7 +48,9 @@ except ImportError:
         probe_twitter_profile,
         probe_instagram_profile,
         probe_spotify_profile,
+        probe_facebook_profile,
         fetch_facebook_candidate_avatar,
+        get_random_proxy_url,
     )
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
@@ -1855,6 +1859,7 @@ async def run_lookup(email: str) -> dict:
     dir_youtube = gravatar.get("youtube_url") if isinstance(gravatar, dict) else None
 
     # Probe direct verified profile links concurrently for authentic avatars & display names
+    # Instagram needs a proxy client (same reason candidates use one — bot detection is aggressive)
     async def probe_direct_profile(plat, url):
         if not url:
             return None
@@ -1863,6 +1868,15 @@ async def run_lookup(email: str) -> dict:
             if plat == "twitter" and handle:
                 return await probe_twitter_profile(handle, client)
             elif plat == "instagram" and handle:
+                # Use a dedicated proxy client for Instagram — direct IPs get bot-blocked
+                proxy_url = get_random_proxy_url()
+                if proxy_url:
+                    try:
+                        async with httpx.AsyncClient(proxy=proxy_url, timeout=5.0, follow_redirects=True, verify=False) as px:
+                            return await probe_instagram_profile(handle, px)
+                    except Exception:
+                        pass
+                # Fallback to shared client if no proxy available
                 return await probe_instagram_profile(handle, client)
             elif plat == "spotify" and handle:
                 return await probe_spotify_profile(handle, client)
@@ -1908,6 +1922,9 @@ async def run_lookup(email: str) -> dict:
         ig_av = ig_d.get("avatar_url")
         ig_name = ig_d.get("name")
         ig_handle = ig_d.get("handle") or dir_instagram.rstrip("/").split("/")[-1].replace("@", "")
+        # Fallback to unavatar.io for verified Instagram handles that probe couldn't fetch
+        if not ig_av and ig_handle:
+            ig_av = f"https://unavatar.io/instagram/{ig_handle}"
         profiles["instagram"] = {
             "url": dir_instagram,
             "handle": f"@{ig_handle}" if ig_handle else "@instagram",
