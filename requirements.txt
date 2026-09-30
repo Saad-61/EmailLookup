@@ -22,3 +22,7 @@ duckduckgo-search>=6.0.0
 
 # Headless Browser Automation (Spotify dynamic TOTP token auto-refresher)
 playwright>=1.40.0
+
+# Google Account Information Extractor (GAIE / GHunt)
+ghunt>=2.3.4
+

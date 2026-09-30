@@ -15,6 +15,8 @@ class GithubProfile(BaseModel):
 
 class PersonInfo(BaseModel):
     name: Optional[str] = None
+    google_name: Optional[str] = None
+    gaia_id: Optional[str] = None
     avatar: Optional[str] = None
     bio: Optional[str] = None
     location: Optional[str] = None
