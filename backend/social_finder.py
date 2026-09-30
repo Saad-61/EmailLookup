@@ -1972,10 +1972,6 @@ async def search_social_candidates(
         if "pinterest" not in v_plats:
             for s in pin_seeds:
                 probe_tasks.append(probe_pinterest_profile(s, probe_client))
-        # Spotify probing disabled per directive
-        # if "spotify" not in v_plats:
-        #     for s in sp_seeds:
-        #         probe_tasks.append(probe_spotify_profile(s, probe_client))
         if "twitter" not in v_plats:
             for s in tw_seeds:
                 probe_tasks.append(probe_twitter_profile(s, probe_client))

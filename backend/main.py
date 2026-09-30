@@ -267,7 +267,7 @@ async def invalidate_cache(request: CacheInvalidateRequest):
 @app.post("/api/verify", response_model=VerifyResponse)
 async def email_verify(request: VerifyRequest):
     """
-    Email verifier — performs SMTP handshake or uses AbstractAPI fallback.
+    Email verifier — performs MX domain check, catch-all detection, and direct SMTP handshake.
     Results are cached for 6 hours.
     """
     email = request.email.lower().strip()

@@ -946,7 +946,6 @@ function renderVerifyResults(data) {
     smtp: "Direct SMTP Handshake (Port 25)",
     smtp_catchall: "SMTP (Catch-All Detected)",
     mx_only: "MX DNS Record Only",
-    abstractapi: "AbstractAPI (Port 25 Fallback)",
   };
   document.getElementById("v-method").textContent =
     METHOD_LABELS[data.method_used] || data.method_used || "—";

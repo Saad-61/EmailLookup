@@ -1,3 +1,14 @@
+"""
+smtp_verifier.py
+----------------
+Direct SMTP socket verification engine:
+- Resolves DNS MX records ordered by preference priority.
+- Identifies major email service providers.
+- Probes Port 25 outbound connectivity.
+- Detects catch-all configurations with random probe addresses.
+- Executes RFC 5321 HELO/EHLO, MAIL FROM, and RCPT TO socket verification.
+"""
+
 import socket
 import smtplib
 import time
@@ -145,26 +156,13 @@ def verify_email_smtp(email: str) -> dict:
     base["port25_available"] = port_open
 
     if not port_open:
-        # Fallback: AbstractAPI
-        abstract_key = os.getenv("ABSTRACT_API_KEY", "")
-        if abstract_key:
-            result = _verify_via_abstract_api(email, abstract_key)
-            result["mx_record"] = mx_host
-            result["mx_provider"] = base["mx_provider"]
-            result["port25_available"] = False
-            result["response_time_ms"] = int((time.time() - start) * 1000)
-            return result
-        else:
-            # MX exists, that's all we can say
-            base["valid"] = None
-            base["confidence"] = 40
-            base["method_used"] = "mx_only"
-            base["error"] = (
-                "Port 25 is blocked by your ISP. "
-                "Add an ABSTRACT_API_KEY in .env for full verification."
-            )
-            base["response_time_ms"] = int((time.time() - start) * 1000)
-            return base
+        # Port 25 is blocked by network/ISP — MX records verified, socket handshakes unavailable
+        base["valid"] = None
+        base["confidence"] = 40
+        base["method_used"] = "mx_only"
+        base["error"] = "Port 25 is restricted by ISP/network. Verified MX records successfully."
+        base["response_time_ms"] = int((time.time() - start) * 1000)
+        return base
 
     # 3. Catch-all probe
     from_addr, helo_host = get_smtp_sender_config()
@@ -217,36 +215,4 @@ def verify_email_smtp(email: str) -> dict:
         base["confidence"] = 0
 
     base["response_time_ms"] = int((time.time() - start) * 1000)
-    return base
-
-
-# ── AbstractAPI fallback ──────────────────────────────────────────────────────
-
-def _verify_via_abstract_api(email: str, api_key: str) -> dict:
-    """Verify email using AbstractAPI when port 25 is blocked."""
-    import urllib.request
-    import json as _json
-
-    url = f"https://emailvalidation.abstractapi.com/v1/?api_key={api_key}&email={email}"
-    base = {
-        "email": email,
-        "valid": None,
-        "catchall": None,
-        "mx_provider": None,
-        "mx_record": None,
-        "confidence": None,
-        "port25_available": False,
-        "method_used": "abstractapi",
-        "error": None,
-    }
-    try:
-        with urllib.request.urlopen(url, timeout=8) as resp:
-            data = _json.loads(resp.read())
-            deliverability = data.get("deliverability", "")
-            base["valid"] = deliverability == "DELIVERABLE"
-            base["catchall"] = data.get("is_catchall_email", {}).get("value", False)
-            base["confidence"] = int(data.get("quality_score", 0) * 100)
-            base["mx_record"] = data.get("smtp_provider", None)
-    except Exception as e:
-        base["error"] = f"AbstractAPI error: {e}"
     return base
