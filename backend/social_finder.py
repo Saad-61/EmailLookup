@@ -1103,9 +1103,6 @@ async def probe_spotify_profile(handle: str, client: httpx.AsyncClient) -> Optio
     if not confirmed:
         return None
 
-    if not avatar_url:
-        avatar_url = f"https://unavatar.io/spotify/{clean}"
-
     if not display_name or display_name.lower() in ("spotify", "web player"):
         display_name = format_handle_to_name(clean)
 
@@ -1271,9 +1268,6 @@ async def probe_twitter_profile(handle: str, client: httpx.AsyncClient) -> Optio
 
     if not confirmed:
         return None
-
-    if not avatar_url:
-        avatar_url = f"https://unavatar.io/twitter/{clean}"
 
     if not display_name or display_name.lower() in ("x", "twitter", "x / twitter"):
         display_name = format_handle_to_name(clean)

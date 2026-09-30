@@ -1825,19 +1825,13 @@ async def run_lookup(email: str) -> dict:
     # ── Profiles ──
     profiles = {}
     if linkedin_url:
-        # If LinkedIn scraping returned no avatar, fall back to Gravatar / GitHub avatar (same verified person)
-        effective_li_avatar = li_avatar
-        if not effective_li_avatar and gravatar and isinstance(gravatar, dict) and gravatar.get("avatar"):
-            effective_li_avatar = gravatar["avatar"]
-        if not effective_li_avatar and github and isinstance(github, dict) and github.get("avatar"):
-            effective_li_avatar = github["avatar"]
         profiles["linkedin"] = {
             "url": linkedin_url,
             "confidence": linkedin_confidence,
             "verified": (linkedin_confidence == 100),
             "source": linkedin_source or "search",
-            "avatar_url": effective_li_avatar,
-            "avatar": effective_li_avatar,
+            "avatar_url": li_avatar if isinstance(li_avatar, str) else None,
+            "avatar": li_avatar if isinstance(li_avatar, str) else None,
         }
         profiles["linkedin_confidence"] = linkedin_confidence
         profiles["linkedin_verified"] = (linkedin_confidence == 100)
@@ -1928,9 +1922,6 @@ async def run_lookup(email: str) -> dict:
         tw_av = tw_d.get("avatar_url")
         tw_name = tw_d.get("name")
         tw_handle = tw_d.get("handle") or dir_twitter.rstrip("/").split("/")[-1].replace("@", "")
-        # Fallback to unavatar.io for verified handles that probe couldn't fetch
-        if not tw_av and tw_handle:
-            tw_av = f"https://unavatar.io/twitter/{tw_handle}"
         profiles["twitter"] = {
             "url": dir_twitter,
             "handle": f"@{tw_handle}" if tw_handle else "@twitter",
@@ -1947,9 +1938,6 @@ async def run_lookup(email: str) -> dict:
         ig_av = ig_d.get("avatar_url")
         ig_name = ig_d.get("name")
         ig_handle = ig_d.get("handle") or dir_instagram.rstrip("/").split("/")[-1].replace("@", "")
-        # Fallback to unavatar.io for verified Instagram handles that probe couldn't fetch
-        if not ig_av and ig_handle:
-            ig_av = f"https://unavatar.io/instagram/{ig_handle}"
         profiles["instagram"] = {
             "url": dir_instagram,
             "handle": f"@{ig_handle}" if ig_handle else "@instagram",
@@ -1982,9 +1970,6 @@ async def run_lookup(email: str) -> dict:
         sp_av = sp_d.get("avatar_url")
         sp_name = sp_d.get("name")
         sp_handle = sp_d.get("handle") or dir_spotify.rstrip("/").split("/")[-1].replace("@", "")
-        # Spotify fallback to gravatar avatar only if probe/pathfinder returned nothing
-        if not sp_av and gravatar and isinstance(gravatar, dict) and gravatar.get("avatar"):
-            sp_av = gravatar["avatar"]
         profiles["spotify"] = {
             "url": dir_spotify,
             "handle": f"@{sp_handle}" if sp_handle else "Profile",
