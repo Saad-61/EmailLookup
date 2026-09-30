@@ -78,8 +78,9 @@ When a request arrives at `POST /api/lookup`:
 4. **Social Candidate Discovery (`social_finder.py`)**:
    - Generates name & email stem variants (e.g., `saadasif`, `saad.asif`, `.v2`, `_09`).
    - Strips bare single-token surnames to prevent search noise.
-   - Searches public platform indexes and parses profile candidates.
-   - Directly probes platforms (Instagram, TikTok, Pinterest, Spotify GraphQL) with specialized extractors and headers.
+   - Distributes focused search queries across a pool of 20+ residential proxy IPs with automatic failover.
+   - Probes public OpenGraph tags directly on supported platforms (Instagram, TikTok, Pinterest, Facebook, GitHub).
+   - **Spotify Pathfinder GraphQL Auto-Refresher**: Uses a background Playwright worker to solve Spotify's dynamic client-side TOTP challenge against `open.spotify.com/api/token`. Automatically warms up the Bearer token on boot, proactive renewal 5 minutes before expiry, and stores in memory cache for 0ms lookup latency.
 5. **Score & Penalty Filtering**:
    - Scores candidates based on stem matches, full-name overlap, and location consistency.
    - **Conflicting Given Name Penalty**: If a candidate shares a surname (e.g. `Rauf`) but has a completely different given name (e.g., `Haris` vs `Dameesha`), its score is capped at 15% with a reason note (`Conflicting given name`), suppressing false positives.

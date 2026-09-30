@@ -24,6 +24,9 @@ source .venv/bin/activate
 
 # 3. Install backend dependencies
 pip install -r requirements.txt
+
+# 4. Install Playwright browser binaries
+playwright install chromium
 ```
 
 ---
