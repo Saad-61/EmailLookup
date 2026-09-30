@@ -42,6 +42,16 @@ except Exception:
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"), override=True)
 
+# ==========================================
+# Spotify Token Cache (sp_dc auto-refresh)
+# ==========================================
+_spotify_token_cache: Dict[str, Any] = {
+    "access_token": "",
+    "client_token": "",
+    "expires_at": 0.0,  # Unix timestamp
+}
+_spotify_refresh_lock = asyncio.Lock()
+
 
 # ==========================================
 # 1. STRING SIMILARITY & JARO-WINKLER
@@ -1180,6 +1190,175 @@ async def probe_spotify_profile(handle: str, client: httpx.AsyncClient) -> Optio
     }
 
 
+async def _fetch_spotify_token_via_sp_dc(sp_dc: str) -> Optional[Dict[str, Any]]:
+    """
+    Exchanges a long-lived sp_dc session cookie for a short-lived Bearer access token
+    by launching a lightweight headless browser with Playwright.
+    Uses sync_playwright via asyncio.to_thread with WindowsProactorEventLoopPolicy.
+    """
+    sp_key = os.getenv("SPOTIFY_SP_KEY", "").strip()
+
+    async with _spotify_refresh_lock:
+        # Double check cache inside lock
+        now = time.time()
+        if _spotify_token_cache["access_token"] and now < _spotify_token_cache["expires_at"] - 300:
+            return {
+                "access_token": _spotify_token_cache["access_token"],
+                "client_token": _spotify_token_cache["client_token"],
+                "expires_in": int(_spotify_token_cache["expires_at"] - now),
+            }
+
+        def _sync_worker() -> Optional[Dict[str, Any]]:
+            if sys.platform == "win32":
+                try:
+                    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+                except Exception:
+                    pass
+
+            try:
+                from playwright.sync_api import sync_playwright
+            except ImportError:
+                print("[Spotify Auto-Refresher] Playwright not installed. Run: pip install playwright && playwright install chromium", flush=True)
+                return None
+
+            tokens: Dict[str, Any] = {"access_token": "", "client_token": "", "expires_in": 3600}
+            try:
+                print("[Spotify Auto-Refresher] 🔄 Auto-refreshing Bearer token via headless browser...", flush=True)
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(headless=True)
+                    context = browser.new_context(
+                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+                        viewport={"width": 1280, "height": 800},
+                    )
+                    cookies = [
+                        {"name": "sp_dc", "value": sp_dc, "domain": ".spotify.com", "path": "/"},
+                    ]
+                    if sp_key:
+                        cookies.append({"name": "sp_key", "value": sp_key, "domain": ".spotify.com", "path": "/"})
+
+                    context.add_cookies(cookies)
+                    page = context.new_page()
+
+                    def on_response(response):
+                        try:
+                            url = response.url
+                            if "token" in url.lower() or "clienttoken" in url.lower():
+                                content_type = response.headers.get("content-type", "")
+                                if "json" in content_type:
+                                    data = response.json()
+                                    if "accessToken" in data and not tokens["access_token"]:
+                                        tokens["access_token"] = data["accessToken"]
+                                        exp_ms = data.get("accessTokenExpirationTimestampMs", 0)
+                                        if exp_ms:
+                                            tokens["expires_in"] = max(300, int((exp_ms / 1000) - time.time()))
+                                    if "client_token" in data or "granted_token" in data:
+                                        ct = (data.get("granted_token", {}) or {}).get("token") or data.get("client_token")
+                                        if ct and not tokens["client_token"]:
+                                            tokens["client_token"] = ct
+                        except Exception:
+                            pass
+
+                    page.on("response", on_response)
+
+                    try:
+                        page.goto("https://open.spotify.com/", wait_until="domcontentloaded", timeout=15000)
+                        for _ in range(12):
+                            if tokens["access_token"]:
+                                break
+                            time.sleep(0.3)
+
+                        # In-page fetch fallback if not intercepted
+                        if not tokens["access_token"]:
+                            res = page.evaluate('''async () => {
+                                try {
+                                    const r = await fetch('https://open.spotify.com/get_access_token?reason=transport&productType=web_player');
+                                    return await r.json();
+                                } catch(e) {
+                                    return null;
+                                }
+                            }''')
+                            if isinstance(res, dict) and "accessToken" in res:
+                                tokens["access_token"] = res["accessToken"]
+                                exp_ms = res.get("accessTokenExpirationTimestampMs", 0)
+                                if exp_ms:
+                                    tokens["expires_in"] = max(300, int((exp_ms / 1000) - time.time()))
+                    finally:
+                        browser.close()
+
+                if tokens["access_token"]:
+                    remaining_mins = tokens["expires_in"] // 60
+                    print(f"[Spotify Auto-Refresher] ✅ Bearer token auto-refreshed successfully (~{remaining_mins}m valid)", flush=True)
+                    return tokens
+                else:
+                    print("[Spotify Auto-Refresher] ⚠️ Could not capture accessToken from session", flush=True)
+                    return None
+            except Exception as e:
+                print(f"[Spotify Auto-Refresher] ⚠️ Error during token refresh: {e}", flush=True)
+                return None
+
+        return await asyncio.to_thread(_sync_worker)
+
+
+async def _get_spotify_tokens() -> Tuple[str, str]:
+    """
+    Returns (access_token, client_token), refreshing from sp_dc if the cached token
+    is missing or within 5 minutes of expiry. Falls back to env-hardcoded tokens if
+    SPOTIFY_SP_DC is not set.
+    """
+    global _spotify_token_cache
+    now = time.time()
+    # Return cached tokens if still valid (with 5-minute buffer)
+    if _spotify_token_cache["access_token"] and now < _spotify_token_cache["expires_at"] - 300:
+        return _spotify_token_cache["access_token"], _spotify_token_cache["client_token"]
+
+    load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"), override=True)
+    sp_dc = os.getenv("SPOTIFY_SP_DC", "").strip()
+
+    if sp_dc:
+        # Auto-refresh via sp_dc cookie
+        result = await _fetch_spotify_token_via_sp_dc(sp_dc)
+        if result:
+            _spotify_token_cache["access_token"] = result["access_token"]
+            _spotify_token_cache["client_token"] = result.get("client_token", "")
+            _spotify_token_cache["expires_at"] = now + result["expires_in"]
+            return _spotify_token_cache["access_token"], _spotify_token_cache["client_token"]
+
+    # Fallback: use manually-set env tokens
+    auth_token = os.getenv("SPOTIFY_AUTH_TOKEN", "").strip()
+    client_token = os.getenv("SPOTIFY_CLIENT_TOKEN", "").strip()
+    return auth_token, client_token
+
+
+async def start_spotify_auto_refresher_daemon():
+    """
+    Background daemon task launched on FastAPI startup:
+    1. Warms up the Bearer access token upon server launch (if SPOTIFY_SP_DC is set).
+    2. Proactively refreshes the token 5 minutes before its 1-hour expiration.
+    """
+    load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"), override=True)
+    sp_dc = os.getenv("SPOTIFY_SP_DC", "").strip()
+    if not sp_dc:
+        return
+
+    print("[Spotify Auto-Refresher] 🚀 Background refresher daemon initialized.", flush=True)
+    while True:
+        try:
+            now = time.time()
+            # If missing or within 5 minutes of expiration, refresh
+            if not _spotify_token_cache["access_token"] or now >= _spotify_token_cache["expires_at"] - 300:
+                await _get_spotify_tokens()
+
+            # Sleep until 5 minutes before expiration (at least 30s)
+            remaining_to_refresh = max(30, int((_spotify_token_cache["expires_at"] - 300) - time.time()))
+            await asyncio.sleep(remaining_to_refresh)
+        except asyncio.CancelledError:
+            print("[Spotify Auto-Refresher] 🛑 Daemon stopped cleanly.", flush=True)
+            break
+        except Exception as e:
+            print(f"[Spotify Auto-Refresher] ⚠️ Background daemon error: {e}", flush=True)
+            await asyncio.sleep(60)
+
+
 async def search_spotify_users_pathfinder(
     query: str,
     client: httpx.AsyncClient,
@@ -1187,86 +1366,99 @@ async def search_spotify_users_pathfinder(
 ) -> List[Dict[str, Any]]:
     """
     Search Spotify for user profiles by display name using Spotify's internal Pathfinder GraphQL API.
-    Uses SPOTIFY_CLIENT_TOKEN and SPOTIFY_AUTH_TOKEN from environment.
-    Directly returns user profiles with exact 20-character IDs, display names, and CDN avatars.
+    Automatically refreshes the Bearer token via SPOTIFY_SP_DC (if set) or falls back to
+    SPOTIFY_AUTH_TOKEN / SPOTIFY_CLIENT_TOKEN from environment.
     """
-    load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"), override=True)
-    client_token = os.getenv("SPOTIFY_CLIENT_TOKEN", "").strip()
-    auth_token = os.getenv("SPOTIFY_AUTH_TOKEN", "").strip()
-
-    if not client_token or not auth_token:
-        return []
-
     clean_query = query.strip()
     if not clean_query:
         return []
 
-    url = "https://api-partner.spotify.com/pathfinder/v2/query"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-        "Accept": "application/json",
-        "Accept-Language": "en",
-        "Referer": "https://open.spotify.com/",
-        "Origin": "https://open.spotify.com",
-        "Authorization": f"Bearer {auth_token}" if not auth_token.startswith("Bearer ") else auth_token,
-        "client-token": client_token,
-        "app-platform": "WebPlayer",
-        "spotify-app-version": "1.3.4.71.gc1b8a0bfbc9b",
-        "Content-Type": "application/json;charset=UTF-8",
-    }
-    payload = {
-        "operationName": "searchUsers",
-        "variables": {
-            "searchTerm": clean_query,
-            "offset": 0,
-            "limit": limit,
-            "numberOfTopResults": 20,
-            "includeAudiobooks": True,
-            "includeAuthors": False,
-            "includeEpisodeContentRatingsV2": True,
-            "includePreReleases": False,
-            "includeAlbumPreReleases": False,
-        },
-        "extensions": {
-            "persistedQuery": {
-                "version": 1,
-                "sha256Hash": "8f358dd82e62f61dd4ceaa9f8cd0889e644c9b707f1b724fbfb356a757cb7e5a",
-            }
-        },
-    }
+    auth_token, client_token = await _get_spotify_tokens()
+    if not auth_token:
+        return []
+
+    async def _do_search(at: str, ct: str) -> Optional[httpx.Response]:
+        url = "https://api-partner.spotify.com/pathfinder/v2/query"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+            "Accept-Language": "en",
+            "Referer": "https://open.spotify.com/",
+            "Origin": "https://open.spotify.com",
+            "Authorization": f"Bearer {at}" if not at.startswith("Bearer ") else at,
+            "app-platform": "WebPlayer",
+            "spotify-app-version": "1.3.4.71.gc1b8a0bfbc9b",
+            "Content-Type": "application/json;charset=UTF-8",
+        }
+        if ct:
+            headers["client-token"] = ct
+        payload = {
+            "operationName": "searchUsers",
+            "variables": {
+                "searchTerm": clean_query,
+                "offset": 0,
+                "limit": limit,
+                "numberOfTopResults": 20,
+                "includeAudiobooks": True,
+                "includeAuthors": False,
+                "includeEpisodeContentRatingsV2": True,
+                "includePreReleases": False,
+                "includeAlbumPreReleases": False,
+            },
+            "extensions": {
+                "persistedQuery": {
+                    "version": 1,
+                    "sha256Hash": "8f358dd82e62f61dd4ceaa9f8cd0889e644c9b707f1b724fbfb356a757cb7e5a",
+                }
+            },
+        }
+        return await client.post(url, json=payload, headers=headers, timeout=6.0)
+
+    def _parse_results(r: httpx.Response) -> List[Dict[str, Any]]:
+        data = r.json()
+        users_block = (data.get("data", {}) or {}).get("searchV2", {}).get("users", {}) or {}
+        items = users_block.get("items", []) or []
+        results = []
+        for it in items:
+            u_data = it.get("data", {}) or {}
+            uri = u_data.get("uri", "")
+            uid = uri.replace("spotify:user:", "").strip()
+            if not uid:
+                continue
+            display_name = u_data.get("displayName", "").strip() or uid
+            avatar_list = (u_data.get("avatar", {}) or {}).get("sources", [])
+            avatar_url = avatar_list[0].get("url") if avatar_list else None
+            results.append({
+                "platform": "spotify",
+                "platform_label": "Spotify",
+                "handle": uid,
+                "name": display_name,
+                "url": f"https://open.spotify.com/user/{uid}",
+                "avatar_url": avatar_url,
+                "snippet": f"Spotify profile for {display_name}",
+                "title": f"{display_name} on Spotify",
+                "discovery_method": "spotify_api",
+            })
+        return results
 
     try:
-        r = await client.post(url, json=payload, headers=headers, timeout=5.0)
+        r = await _do_search(auth_token, client_token)
         if r.status_code == 200:
-            data = r.json()
-            users_block = (data.get("data", {}) or {}).get("searchV2", {}).get("users", {}) or {}
-            items = users_block.get("items", []) or []
-            results = []
-            for it in items:
-                u_data = it.get("data", {}) or {}
-                uri = u_data.get("uri", "")
-                uid = uri.replace("spotify:user:", "").strip()
-                if not uid:
-                    continue
-                display_name = u_data.get("displayName", "").strip() or uid
-                avatar_list = (u_data.get("avatar", {}) or {}).get("sources", [])
-                avatar_url = avatar_list[0].get("url") if avatar_list else None
-
-                results.append({
-                    "platform": "spotify",
-                    "platform_label": "Spotify",
-                    "handle": uid,
-                    "name": display_name,
-                    "url": f"https://open.spotify.com/user/{uid}",
-                    "avatar_url": avatar_url,
-                    "snippet": f"Spotify profile for {display_name}",
-                    "title": f"{display_name} on Spotify",
-                    "discovery_method": "spotify_api",
-                })
+            results = _parse_results(r)
             print(f"[Spotify Pathfinder] Query '{clean_query}' → Found {len(results)} user profiles", flush=True)
             return results
         elif r.status_code == 401:
-            print(f"[Spotify Pathfinder] ⚠️ HTTP 401: SPOTIFY_AUTH_TOKEN in .env has expired (Spotify Web tokens have a 1-hour TTL). Refresh the Bearer token in .env to resume direct user search.", flush=True)
+            # Token expired mid-session — force a refresh and retry once
+            print(f"[Spotify Pathfinder] ⚠️ HTTP 401 for '{clean_query}' — forcing token refresh and retrying...", flush=True)
+            _spotify_token_cache["expires_at"] = 0.0  # invalidate cache
+            new_at, new_ct = await _get_spotify_tokens()
+            if new_at and new_at != auth_token:
+                r2 = await _do_search(new_at, new_ct)
+                if r2.status_code == 200:
+                    results = _parse_results(r2)
+                    print(f"[Spotify Pathfinder] Retry OK — '{clean_query}' → {len(results)} profiles", flush=True)
+                    return results
+            print(f"[Spotify Pathfinder] ⚠️ Token refresh failed or SPOTIFY_SP_DC not set. Add SPOTIFY_SP_DC to .env for auto-refresh.", flush=True)
         else:
             print(f"[Spotify Pathfinder] HTTP {r.status_code} for '{clean_query}': {r.text[:200]}", flush=True)
     except Exception as e:

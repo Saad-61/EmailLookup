@@ -55,8 +55,24 @@ from cache import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if sys.platform == "win32":
+        try:
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        except Exception:
+            pass
     await init_db()
-    yield
+    
+    # Start proactive background Spotify token auto-refresher
+    from social_finder import start_spotify_auto_refresher_daemon
+    refresher_task = asyncio.create_task(start_spotify_auto_refresher_daemon())
+    try:
+        yield
+    finally:
+        refresher_task.cancel()
+        try:
+            await refresher_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(
