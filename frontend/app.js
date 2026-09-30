@@ -109,6 +109,39 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
+// ── Email Validation & Typo Checking ─────────────────────────────────────────
+const INVALID_TYPO_DOMAINS = new Set([
+  "gmil.com", "gmai.com", "gamil.com", "gmial.com", "gmaill.com", "gmal.com",
+  "gmaik.com", "gmaul.com", "gmajl.com", "gnail.com", "gmaili.com",
+  "yaho.com", "yahooo.com", "yaho.co", "yhaoo.com",
+  "hotmial.com", "hotmaill.com", "hotmai.com", "hotmil.com",
+  "outlok.com", "outloo.com", "outllok.com",
+  "iclod.com", "protonmal.com",
+]);
+
+const INVALID_TLD_TYPOS = ["cor", "cpm", "ocm", "comm", "coom", "con", "cm", "xom", "vom"];
+
+function isValidEmailAddress(email) {
+  if (!email || typeof email !== "string") return false;
+  const trimmed = email.trim();
+  const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!EMAIL_REGEX.test(trimmed)) return false;
+
+  const parts = trimmed.split("@");
+  if (parts.length !== 2) return false;
+  const domain = parts[1].toLowerCase().trim();
+
+  if (INVALID_TYPO_DOMAINS.has(domain)) {
+    return false;
+  }
+  for (const typo of INVALID_TLD_TYPOS) {
+    if (domain.endsWith(`.${typo}`)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // ── ─────────────────────────────────────────────────────────────────────────
 //    REVERSE LOOKUP
 // ── ─────────────────────────────────────────────────────────────────────────
@@ -120,16 +153,15 @@ document.getElementById("lookup-input").addEventListener("keydown", e => {
 });
 
 async function doLookup(forceRefresh = false) {
-  const email = document.getElementById("lookup-input").value.trim();
-  const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-  if (!email || !EMAIL_REGEX.test(email)) {
-    showError("lookup-error", "Please enter a valid email address (e.g. name@company.com).");
+  const inputEl = document.getElementById("lookup-input");
+  const email = inputEl.value.trim();
+
+  if (!isValidEmailAddress(email)) {
+    showError("lookup-error", "Please enter a valid email address.");
     return;
   }
 
   hideError("lookup-error");
-  const acBanner = document.getElementById("lookup-autocorrect");
-  if (acBanner) acBanner.classList.add("hidden");
 
   // Show shimmer skeleton state
   showLookupSkeleton();
@@ -213,12 +245,12 @@ if (copyNameBtn) {
 
 // ── Candidate Profiles State & Tab Switching ──
 let currentLookupCandidates = {};
-let currentCandidatePlatform = "instagram";
+let currentCandidatePlatform = "linkedin";
 
 const CANDIDATE_PLATFORMS = [
-  { id: "instagram", label: "Instagram", icon: SVG_ICONS.instagram },
   { id: "linkedin", label: "LinkedIn", icon: SVG_ICONS.linkedin },
   { id: "github", label: "GitHub", icon: SVG_ICONS.github },
+  { id: "instagram", label: "Instagram", icon: SVG_ICONS.instagram },
   { id: "facebook", label: "Facebook", icon: SVG_ICONS.facebook },
   { id: "twitter", label: "X", icon: SVG_ICONS.twitter },
   { id: "pinterest", label: "Pinterest", icon: SVG_ICONS.pinterest },
@@ -616,31 +648,20 @@ function renderLookupResults(data) {
     }
   }
 
-  // Activate Instagram by default if it has candidates, otherwise the first available platform
-  if ((byPlat.instagram || []).length > 0) {
+  // Activate LinkedIn by default if it has candidates, then GitHub, then Instagram, otherwise the first available platform
+  if ((byPlat.linkedin || []).length > 0) {
+    switchCandidateTab("linkedin");
+  } else if ((byPlat.github || []).length > 0) {
+    switchCandidateTab("github");
+  } else if ((byPlat.instagram || []).length > 0) {
     switchCandidateTab("instagram");
   } else if (visiblePlats.length > 0) {
     switchCandidateTab(visiblePlats[0].id);
   } else {
-    switchCandidateTab("instagram");
+    switchCandidateTab("linkedin");
   }
 
-  // ── Global Typo Banner ──
-  const acBanner = document.getElementById("lookup-autocorrect");
-  const acEmail = document.getElementById("autocorrect-email");
-  const autocorrectTarget = data.autocorrect;
-  if (autocorrectTarget && autocorrectTarget.toLowerCase() !== (data.email || "").toLowerCase()) {
-    if (acBanner && acEmail) {
-      acEmail.textContent = autocorrectTarget;
-      acBanner.classList.remove("hidden");
-      acBtn.onclick = () => {
-        document.getElementById("lookup-input").value = autocorrectTarget;
-        doLookup(false);
-      };
-    }
-  } else if (acBanner) {
-    acBanner.classList.add("hidden");
-  }
+
 
   // ── Query Time ──
   document.getElementById("query-time").textContent = `Query completed in ${data.query_time_ms}ms`;
@@ -735,9 +756,8 @@ document.getElementById("verify-input").addEventListener("keydown", e => {
 
 verifyBtn.addEventListener("click", async () => {
   const email = document.getElementById("verify-input").value.trim();
-  const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-  if (!email || !EMAIL_REGEX.test(email)) {
-    showError("verify-error", "Please enter a valid email address (e.g. name@company.com).");
+  if (!isValidEmailAddress(email)) {
+    showError("verify-error", "Please enter a valid email address.");
     return;
   }
 

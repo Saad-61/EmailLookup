@@ -42,7 +42,7 @@ from models import (
     CacheInvalidateRequest, CacheInvalidateResponse,
     VerifyRequest, VerifyResponse, PortCheckResponse,
 )
-from lookup_engine import run_lookup
+from lookup_engine import run_lookup, is_valid_email
 from smtp_verifier import verify_email_smtp, check_port25
 from platform_checker import check_platforms
 from cache import (
@@ -151,10 +151,10 @@ async def email_lookup(request: LookupRequest):
     """
     email = request.email.lower().strip()
 
-    if not EMAIL_REGEX.match(email):
+    if not is_valid_email(email):
         raise HTTPException(
-            status_code=422,
-            detail="Invalid email address syntax. Please enter a valid email (e.g. name@company.com)."
+            status_code=400,
+            detail="Please enter a valid email address."
         )
 
     start_time = time.time()
@@ -256,10 +256,10 @@ async def email_verify(request: VerifyRequest):
     """
     email = request.email.lower().strip()
  
-    if not EMAIL_REGEX.match(email):
+    if not is_valid_email(email):
         raise HTTPException(
-            status_code=422,
-            detail="Invalid email address syntax. Please enter a valid email (e.g. name@company.com)."
+            status_code=400,
+            detail="Please enter a valid email address."
         )
 
     cached = await get_verify_cache(email)

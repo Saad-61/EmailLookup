@@ -17,7 +17,7 @@ import httpx
 import aiosqlite
 import sqlite3
 import random
-from typing import Optional
+from typing import Optional, List, Tuple, Dict, Any, Set
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 import sys
@@ -97,6 +97,37 @@ def is_clean_human_name(name: Optional[str]) -> bool:
     return True
 
 
+INVALID_TYPO_DOMAINS = {
+    "gmil.com", "gmai.com", "gamil.com", "gmial.com", "gmaill.com", "gmal.com",
+    "gmaik.com", "gmaul.com", "gmajl.com", "gnail.com", "gmaili.com",
+    "yaho.com", "yahooo.com", "yaho.co", "yhaoo.com",
+    "hotmial.com", "hotmaill.com", "hotmai.com", "hotmil.com",
+    "outlok.com", "outloo.com", "outllok.com",
+    "iclod.com", "protonmal.com", "microsft.com", "micosoft.com",
+}
+
+INVALID_TLD_TYPOS = ["cor", "cpm", "ocm", "comm", "coom", "con", "cm", "xom", "vom"]
+
+
+def is_valid_email(email: str) -> bool:
+    """Validates email format and ensures domain is not a known common typo."""
+    if not email or not isinstance(email, str):
+        return False
+    email = email.strip()
+    if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
+        return False
+    parts = email.split("@", 1)
+    if len(parts) != 2:
+        return False
+    domain = parts[1].strip().lower()
+    if domain in INVALID_TYPO_DOMAINS:
+        return False
+    for typo in INVALID_TLD_TYPOS:
+        if domain.endswith(f".{typo}"):
+            return False
+    return True
+
+
 def detect_email_typo(email: str) -> Optional[str]:
     """
     Detects common TLD or domain typos in email addresses and suggests corrections.
@@ -110,20 +141,22 @@ def detect_email_typo(email: str) -> Optional[str]:
     domain = domain.strip().lower()
 
     # Common TLD typos for .com
-    com_typos = ["cor", "cpm", "ocm", "comm", "coom", "con", "cm", "xom", "vom"]
-    for typo in com_typos:
+    for typo in INVALID_TLD_TYPOS:
         if domain.endswith(f".{typo}"):
             corrected_domain = domain[:-len(typo)] + "com"
             return f"{local}@{corrected_domain}"
 
     # Common domain typos
     known_domain_typos = {
+        "gmil.com": "gmail.com",
         "gmai.com": "gmail.com",
         "gamil.com": "gmail.com",
         "gmial.com": "gmail.com",
         "gmaill.com": "gmail.com",
+        "gmal.com": "gmail.com",
         "yaho.com": "yahoo.com",
         "yahooo.com": "yahoo.com",
+        "yaho.co": "yahoo.com",
         "hotmial.com": "hotmail.com",
         "hotmaill.com": "hotmail.com",
         "outlok.com": "outlook.com",
@@ -176,40 +209,113 @@ COMMON_FIRST_NAMES = {
     "gerald", "carl", "terry", "sean", "austin", "arthur", "lawrence", "jesse", "dylan",
     "bryan", "joe", "jordan", "billy", "albert", "bruce", "willie", "gabriel", "logan",
     "alan", "juan", "wayne", "roy", "ralph", "randy", "eugene", "vincent", "russell",
-    "louis", "philip", "bobby", "johnny", "bradley", "haseeb", "rauf", "collison"
+    "louis", "philip", "bobby", "johnny", "bradley", "haseeb", "rauf", "collison",
+    "tauqeer", "tauqir", "touqeer", "touqir", "shafiq", "shafique"
 }
+
+LEET_REPLACEMENTS = [
+    ("33", "ee"),
+    ("00", "oo"),
+    ("3", "e"),
+    ("0", "o"),
+    ("1", "i"),
+    ("4", "a"),
+    ("5", "s"),
+    ("7", "t"),
+]
+
+
+def normalize_handle_leetspeak(text: str) -> List[str]:
+    """Generates candidate normalized strings by substituting leetspeak digits with letters."""
+    if not text:
+        return []
+    variants = [text.lower()]
+    curr = text.lower()
+    for num, char in LEET_REPLACEMENTS:
+        if num in curr:
+            curr = curr.replace(num, char)
+            variants.append(curr)
+    return list(dict.fromkeys(variants))
 
 
 def split_concatenated_name(local_part: str) -> Optional[str]:
     """
-    Parses concatenated names from personal email usernames with or without delimiters and titles.
-    e.g. 'nomanghaffar074' -> 'Noman Ghaffar'
+    Parses concatenated names from personal email usernames with or without delimiters, titles, and leetspeak numbers.
+    e.g. 'tauq33raslam'   -> 'Tauqeer Aslam'
+         'saad0asif'      -> 'Saad Asif'
+         'saad00'         -> 'Saad'
+         'nomanghaffar074' -> 'Noman Ghaffar'
          'ch.fahadahmad11' -> 'Ch Fahad Ahmad'
          'dr.saadasif99'   -> 'Dr Saad Asif'
          'mominawaqar18'   -> 'Momina Waqar'
     """
     if not local_part:
         return None
-    clean = re.sub(r"[\d._+-]+", "", local_part.lower()).strip()
-    if len(clean) < 4:
-        return None
 
-    # Check for title prefix
-    title = ""
-    s = clean
-    for t in sorted(TITLE_PREFIXES, key=len, reverse=True):
-        if s.startswith(t) and len(s) >= len(t) + 4:
-            title = t.capitalize()
-            s = s[len(t):]
-            break
+    # 1. Check for explicit delimiters (., _, -)
+    if any(sep in local_part for sep in (".", "_", "-")):
+        chunks = [re.sub(r"[\d._+-]+", "", c).strip().lower() for c in re.split(r"[._+-]", local_part)]
+        chunks = [c for c in chunks if len(c) >= 2]
+        if chunks and chunks[-1] in ROLE_SUFFIXES and len(chunks) >= 3:
+            chunks = chunks[:-1]
+
+        title = ""
+        if chunks and chunks[0] in TITLE_PREFIXES and len(chunks) >= 2:
+            title = chunks[0].capitalize()
+            chunks = chunks[1:]
+
+        if len(chunks) >= 2:
+            fn = f"{title} {chunks[0].capitalize()}".strip() if title else chunks[0].capitalize()
+            return f"{fn} {chunks[1].capitalize()}".strip()
+        elif len(chunks) == 1:
+            s = chunks[0]
+            for fn in sorted(COMMON_FIRST_NAMES, key=len, reverse=True):
+                if s.startswith(fn) and len(s) > len(fn):
+                    rem = s[len(fn):]
+                    if len(rem) >= 2 and rem.isalpha():
+                        fn_cap = f"{title} {fn.capitalize()}".strip() if title else fn.capitalize()
+                        return f"{fn_cap} {rem.capitalize()}".strip()
+            fn_cap = f"{title} {s.capitalize()}".strip() if title else s.capitalize()
+            return fn_cap
+
+    # 2. Check if internal digits act as a separator between two name tokens (e.g. saad0asif)
+    digit_chunks = [c.strip().lower() for c in re.split(r"\d+", local_part) if c.strip()]
+    if len(digit_chunks) >= 2:
+        c0, c1 = digit_chunks[0], digit_chunks[1]
+        if c0 in COMMON_FIRST_NAMES and len(c1) >= 2 and c1.isalpha():
+            return f"{c0.capitalize()} {c1.capitalize()}"
+
+    # 3. Direct clean stripped check (e.g. saad00 -> Saad, nomanghaffar074 -> Noman Ghaffar)
+    clean_stripped = re.sub(r"\d+$", "", local_part).lower().strip()
+    clean_alpha = re.sub(r"[\d._+-]+", "", clean_stripped)
+
+    if clean_alpha in COMMON_FIRST_NAMES:
+        return clean_alpha.capitalize()
 
     for fn in sorted(COMMON_FIRST_NAMES, key=len, reverse=True):
-        if s.startswith(fn) and len(s) > len(fn):
-            remainder = s[len(fn):]
-            if remainder.isalpha() and len(remainder) >= 2:
-                core = f"{fn.capitalize()} {remainder.capitalize()}"
-                return f"{title} {core}".strip() if title else core
-    return None
+        if clean_alpha.startswith(fn) and len(clean_alpha) > len(fn):
+            rem = clean_alpha[len(fn):]
+            if len(rem) >= 2 and rem.isalpha() and rem not in ("oo", "ee", "o", "e", "a", "i", "s", "t"):
+                return f"{fn.capitalize()} {rem.capitalize()}"
+
+    # 4. Leetspeak substitution ONLY for internal digits (e.g. tauq33raslam -> Tauqeer Aslam, n0manghaffar -> Noman Ghaffar)
+    if any(c.isdigit() for c in clean_stripped):
+        curr = clean_stripped
+        for num, char in LEET_REPLACEMENTS:
+            if num in curr:
+                curr = curr.replace(num, char)
+        curr_clean = re.sub(r"[\d._+-]+", "", curr).strip()
+
+        if curr_clean in COMMON_FIRST_NAMES:
+            return curr_clean.capitalize()
+
+        for fn in sorted(COMMON_FIRST_NAMES, key=len, reverse=True):
+            if curr_clean.startswith(fn) and len(curr_clean) > len(fn):
+                rem = curr_clean[len(fn):]
+                if len(rem) >= 2 and rem.isalpha() and rem not in ("oo", "ee", "o", "e", "a", "i", "s", "t"):
+                    return f"{fn.capitalize()} {rem.capitalize()}"
+
+    return clean_alpha.capitalize() if len(clean_alpha) >= 3 else None
 
 
 US_STATES = {
@@ -594,7 +700,8 @@ def clean_social_url(raw_url: Optional[str], platform: Optional[str] = None) -> 
     if "linkedin.com/in/" in clean_low and (platform is None or platform == "linkedin"):
         m = re.search(r"linkedin\.com/in/([a-zA-Z0-9_/%-]+)", s, re.IGNORECASE)
         if m:
-            slug = m.group(1).split("?")[0].rstrip("/").strip()
+            raw_slug = m.group(1).split("?")[0].split("#")[0].rstrip("/").strip()
+            slug = raw_slug.split("/")[0].strip()
             if slug.lower() not in RESERVED_SOCIAL_SLUGS and len(slug) >= 3:
                 return f"https://www.linkedin.com/in/{slug}"
         return None
@@ -1139,6 +1246,37 @@ def _strip_html(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
+def format_company_name_from_domain(stem: str) -> str:
+    """Formats raw domain stems into proper company display names (e.g. contentarcade -> Content Arcade)."""
+    if not stem:
+        return ""
+    if any(sep in stem for sep in ("-", "_", ".")):
+        return " ".join(w.capitalize() for w in re.split(r"[-_.]", stem) if w)
+
+    known_words = {
+        "content", "arcade", "cloud", "tech", "soft", "system", "systems", "lab", "labs",
+        "studio", "studios", "digital", "media", "data", "link", "net", "web", "app", "apps",
+        "pay", "group", "holdings", "solutions", "global", "venture", "ventures", "capital",
+        "secure", "security", "stream", "flow", "box", "hub", "stack", "point", "works",
+        "kraft", "base", "smart", "wave", "logic", "logics", "matrix", "vision", "prime",
+        "byte", "bytes", "code", "dev", "peak", "spark", "forge", "craft", "alpha", "beta",
+        "space", "mind", "pulse", "care", "health", "life", "auto", "moto", "travel",
+        "market", "shop", "store", "deal", "deals", "trade", "corp", "power", "energy"
+    }
+
+    s = stem.lower()
+    for w in sorted(known_words, key=len, reverse=True):
+        if s.startswith(w) and len(s) > len(w):
+            rem = s[len(w):]
+            if len(rem) >= 3 and (rem in known_words or rem.isalpha()):
+                return f"{w.capitalize()} {rem.capitalize()}"
+
+    return stem.capitalize()
+
+
+PERSONAL_PORTFOLIO_TLDS = {".me", ".bio", ".page", ".link", ".site", ".dev", ".fyi", ".space", ".name"}
+
+
 # ── Company enrichment (for corporate emails) ─────────────────────────────────
 
 async def lookup_company(
@@ -1148,8 +1286,8 @@ async def lookup_company(
 ) -> Optional[dict]:
     """
     Look up company intelligence from local company_domains (5.48M records)
-    or fallback to Clearbit live autocomplete API.
-    Works for corporate domains AND personal emails with company hints (e.g. GitHub company, LinkedIn title, or email keywords).
+    or fallback to Clearbit live autocomplete API with corporate domain synthesis guarantee.
+    Works for corporate domains AND personal emails with company hints.
     """
     personal_domains = {
         "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
@@ -1159,8 +1297,16 @@ async def lookup_company(
     clean_dom = domain.lower().strip() if domain else ""
     is_personal = clean_dom in personal_domains or not clean_dom
 
+    # Filter out personal portfolio domains from being treated as companies
+    if company_hint:
+        hint_low = company_hint.lower().strip()
+        if any(hint_low.endswith(tld) or f"{tld}/" in hint_low for tld in PERSONAL_PORTFOLIO_TLDS):
+            return None
+
     if is_personal and not company_hint:
         return None
+
+    stem = clean_dom.split(".")[0] if clean_dom else ""
 
     # Step 1: Check local company_domains SQLite database (5.48M records, 0 ms offline)
     if os.path.exists(PROFILES_DB_PATH):
@@ -1170,18 +1316,18 @@ async def lookup_company(
                 await db.execute("PRAGMA busy_timeout=15000;")
                 db.row_factory = aiosqlite.Row
 
-                # Direct domain match
+                # Direct domain match (exact or stem)
                 if not is_personal and clean_dom:
                     async with db.execute(
-                        "SELECT * FROM company_domains WHERE domain = ? LIMIT 1",
-                        (clean_dom,)
+                        "SELECT * FROM company_domains WHERE domain = ? OR domain = ? LIMIT 1",
+                        (clean_dom, f"{stem}.com")
                     ) as cursor:
                         row = await cursor.fetchone()
                         if row:
                             r = dict(row)
-                            c_dom = r.get("domain") or clean_dom
+                            c_dom = clean_dom or r.get("domain")
                             return {
-                                "name": r.get("company_name") or c_dom.split(".")[0].capitalize(),
+                                "name": r.get("company_name") or format_company_name_from_domain(stem),
                                 "domain": c_dom,
                                 "logo": f"https://unavatar.io/{c_dom}",
                                 "industry": r.get("industry"),
@@ -1196,7 +1342,6 @@ async def lookup_company(
                     hint = company_hint.strip()
                     if hint.startswith("@"):
                         hint = hint[1:].strip()
-                    # Strip leading "The " or trailing Inc/LLC
                     clean_h = re.sub(r"^(the|a)\s+", "", hint, flags=re.IGNORECASE)
                     clean_h = re.sub(r"\s+(inc\.?|llc\.?|ltd\.?|corp\.?|corporation|group|technologies|solutions|services|pvt\.?)$", "", clean_h, flags=re.IGNORECASE).strip()
                     if len(clean_h) >= 3:
@@ -1230,23 +1375,32 @@ async def lookup_company(
             pass
 
     # Step 2: Fallback to Clearbit Autocomplete API (Live fetching)
-    query_str = company_hint or clean_dom
-    if query_str and (not is_personal or (company_hint and len(company_hint) >= 3)):
+    query_candidates = []
+    if company_hint and len(company_hint) >= 3:
+        query_candidates.append(company_hint)
+    elif not is_personal and clean_dom:
+        query_candidates.append(clean_dom)
+        if stem and stem != clean_dom:
+            query_candidates.append(stem)
+
+    for query_str in query_candidates:
         try:
             resp = await client.get(
                 f"https://autocomplete.clearbit.com/v1/companies/suggest?query={query_str}",
                 headers=BROWSER_HEADERS,
-                timeout=6,
+                timeout=5,
             )
             if resp.status_code == 200:
                 companies = resp.json()
-                if companies:
-                    c = companies[0]
+                for c in companies:
                     c_dom = c.get("domain") or ""
+                    # Ensure candidate is not a personal portfolio domain
+                    if any(c_dom.lower().endswith(tld) for tld in PERSONAL_PORTFOLIO_TLDS):
+                        continue
                     return {
-                        "name": c.get("name"),
-                        "domain": c_dom,
-                        "logo": c.get("logo") or (f"https://unavatar.io/{c_dom}" if c_dom else None),
+                        "name": c.get("name") or format_company_name_from_domain(stem),
+                        "domain": clean_dom if not is_personal else c_dom,
+                        "logo": c.get("logo") or (f"https://unavatar.io/{clean_dom or c_dom}"),
                         "industry": None,
                         "country": None,
                         "rank": None,
@@ -1255,6 +1409,20 @@ async def lookup_company(
                     }
         except Exception:
             pass
+
+    # Step 3: Synthesis Guarantee for Corporate Domains
+    if not is_personal and clean_dom:
+        return {
+            "name": format_company_name_from_domain(stem),
+            "domain": clean_dom,
+            "logo": f"https://unavatar.io/{clean_dom}",
+            "industry": None,
+            "country": None,
+            "rank": None,
+            "email_format": None,
+            "mx_provider": None,
+        }
+
     return None
 
 
@@ -1429,7 +1597,7 @@ async def run_lookup(email: str) -> dict:
     """
     start = time.time()
     email = email.lower().strip()
-    if not EMAIL_REGEX.match(email):
+    if not is_valid_email(email):
         return {
             "email": email,
             "email_type": "invalid",
@@ -1437,10 +1605,13 @@ async def run_lookup(email: str) -> dict:
             "query_time_ms": int((time.time() - start) * 1000),
             "person": {"name": None, "avatar": None, "bio": None, "location": None, "website": None},
             "profiles": {},
+            "social_candidates": [],
+            "social_candidates_by_platform": {},
             "phone": None,
             "address": None,
             "company": None,
             "deliverability": "invalid",
+            "autocorrect": None,
         }
 
     domain = email.split("@")[-1] if "@" in email else ""
@@ -2154,11 +2325,6 @@ async def run_lookup(email: str) -> dict:
     # ── Phone from GitHub bio ──
     phone = github.get("phone_from_bio") if github else None
 
-    # Detect typos in domain or provider
-    autocorrect_suggestion = detect_email_typo(email)
-    if autocorrect_suggestion and autocorrect_suggestion.lower() == email.lower():
-        autocorrect_suggestion = None
-
     elapsed_ms = int((time.time() - start) * 1000)
     print(f"[Lookup Engine] <<< Reverse lookup complete for '{email}' in {elapsed_ms}ms.\n", flush=True)
 
@@ -2174,6 +2340,6 @@ async def run_lookup(email: str) -> dict:
         "phone": phone,
         "address": None,
         "company": company,
-        "autocorrect": autocorrect_suggestion,
+        "autocorrect": None,
     }
 

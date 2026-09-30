@@ -226,8 +226,33 @@ COMMON_FIRST_NAMES = {
     "gerald", "carl", "terry", "sean", "austin", "arthur", "lawrence", "jesse", "dylan",
     "bryan", "joe", "jordan", "billy", "albert", "bruce", "willie", "gabriel", "logan",
     "alan", "juan", "wayne", "roy", "ralph", "randy", "eugene", "vincent", "russell",
-    "louis", "philip", "bobby", "johnny", "bradley", "haseeb", "rauf", "collison"
+    "louis", "philip", "bobby", "johnny", "bradley", "haseeb", "rauf", "collison",
+    "tauqeer", "tauqir", "touqeer", "touqir", "shafiq", "shafique"
 }
+
+LEET_REPLACEMENTS = [
+    ("33", "ee"),
+    ("00", "oo"),
+    ("3", "e"),
+    ("0", "o"),
+    ("1", "i"),
+    ("4", "a"),
+    ("5", "s"),
+    ("7", "t"),
+]
+
+
+def normalize_handle_leetspeak(text: str) -> List[str]:
+    """Generates candidate normalized strings by substituting leetspeak digits with letters."""
+    if not text:
+        return []
+    variants = [text.lower()]
+    curr = text.lower()
+    for num, char in LEET_REPLACEMENTS:
+        if num in curr:
+            curr = curr.replace(num, char)
+            variants.append(curr)
+    return list(dict.fromkeys(variants))
 
 
 ROLE_SUFFIXES = {
@@ -238,44 +263,77 @@ ROLE_SUFFIXES = {
 
 def split_compound_name(local_part: str) -> Tuple[str, str]:
     """
-    Splits compound local-part (e.g. ch.fahadahmad11 -> Ch Fahad Ahmad, sarah.jenkins.hr -> Sarah Jenkins, nomanghaffar074 -> Noman Ghaffar).
+    Splits compound local-part (e.g. tauq33raslam -> Tauqeer Aslam, ch.fahadahmad11 -> Ch Fahad Ahmad, sarah.jenkins.hr -> Sarah Jenkins, nomanghaffar074 -> Noman Ghaffar).
     Returns (first_name, last_name) or (full_inferred_name, "").
     """
     if not local_part:
         return "", ""
 
-    # Check for delimited local parts e.g. sarah.jenkins.hr, john_doe
+    # 1. Check for explicit delimiters (., _, -) e.g. sarah.jenkins.hr, ch.fahadahmad11, john_doe
     if any(sep in local_part for sep in (".", "_", "-")):
-        chunks = [re.sub(r'[\d._+-]+', '', c).strip().lower() for c in re.split(r'[._+-]', local_part)]
+        chunks = [re.sub(r"[\d._+-]+", "", c).strip().lower() for c in re.split(r"[._+-]", local_part)]
         chunks = [c for c in chunks if len(c) >= 2]
         if chunks and chunks[-1] in ROLE_SUFFIXES and len(chunks) >= 3:
             chunks = chunks[:-1]
+
+        # Strip title prefix if present in first chunk (e.g. ['ch', 'fahadahmad'])
+        title = ""
+        if chunks and chunks[0] in TITLE_PREFIXES and len(chunks) >= 2:
+            title = chunks[0].capitalize()
+            chunks = chunks[1:]
+
         if len(chunks) >= 2:
-            return chunks[0].capitalize(), chunks[1].capitalize()
+            fn = f"{title} {chunks[0].capitalize()}".strip() if title else chunks[0].capitalize()
+            return fn, chunks[1].capitalize()
+        elif len(chunks) == 1:
+            s = chunks[0]
+            for fn in sorted(COMMON_FIRST_NAMES, key=len, reverse=True):
+                if s.startswith(fn) and len(s) > len(fn):
+                    rem = s[len(fn):]
+                    if len(rem) >= 2 and rem.isalpha():
+                        fn_cap = f"{title} {fn.capitalize()}".strip() if title else fn.capitalize()
+                        return fn_cap, rem.capitalize()
+            fn_cap = f"{title} {s.capitalize()}".strip() if title else s.capitalize()
+            return fn_cap, ""
 
-    clean = re.sub(r'[\d._+-]+', '', local_part).lower().strip()
-    if not clean or len(clean) < 3:
-        return "", ""
+    # 2. Check if internal digits act as a separator between two name tokens (e.g. saad0asif, john2doe)
+    digit_chunks = [c.strip().lower() for c in re.split(r"\d+", local_part) if c.strip()]
+    if len(digit_chunks) >= 2:
+        c0, c1 = digit_chunks[0], digit_chunks[1]
+        if c0 in COMMON_FIRST_NAMES and len(c1) >= 2 and c1.isalpha():
+            return c0.capitalize(), c1.capitalize()
 
-    title = ""
-    s = clean
-    for t in sorted(TITLE_PREFIXES, key=len, reverse=True):
-        if s.startswith(t) and len(s) >= len(t) + 4:
-            title = t.capitalize()
-            s = s[len(t):]
-            break
+    # 3. Direct clean stripped check (e.g. saad00 -> Saad, nomanghaffar074 -> Noman Ghaffar)
+    clean_stripped = re.sub(r"\d+$", "", local_part).lower().strip()
+    clean_alpha = re.sub(r"[\d._+-]+", "", clean_stripped)
 
-    if len(s) >= 5 and s[0] == 'r' and s[1:] in COMMON_FIRST_NAMES:
-        return s[1:].capitalize(), ""
+    if clean_alpha in COMMON_FIRST_NAMES:
+        return clean_alpha.capitalize(), ""
 
     for fn in sorted(COMMON_FIRST_NAMES, key=len, reverse=True):
-        if s.startswith(fn) and len(s) > len(fn):
-            rem = s[len(fn):]
-            if len(rem) >= 2:
-                fn_cap = f"{title} {fn.capitalize()}".strip() if title else fn.capitalize()
-                return fn_cap, rem.capitalize()
+        if clean_alpha.startswith(fn) and len(clean_alpha) > len(fn):
+            rem = clean_alpha[len(fn):]
+            if len(rem) >= 2 and rem.isalpha() and rem not in ("oo", "ee", "o", "e", "a", "i", "s", "t"):
+                return fn.capitalize(), rem.capitalize()
 
-    return clean.capitalize(), ""
+    # 4. Leetspeak substitution ONLY for internal digits (e.g. tauq33raslam -> Tauqeer Aslam, n0manghaffar -> Noman Ghaffar)
+    if any(c.isdigit() for c in clean_stripped):
+        curr = clean_stripped
+        for num, char in LEET_REPLACEMENTS:
+            if num in curr:
+                curr = curr.replace(num, char)
+        curr_clean = re.sub(r"[\d._+-]+", "", curr).strip()
+
+        if curr_clean in COMMON_FIRST_NAMES:
+            return curr_clean.capitalize(), ""
+
+        for fn in sorted(COMMON_FIRST_NAMES, key=len, reverse=True):
+            if curr_clean.startswith(fn) and len(curr_clean) > len(fn):
+                rem = curr_clean[len(fn):]
+                if len(rem) >= 2 and rem.isalpha() and rem not in ("oo", "ee", "o", "e", "a", "i", "s", "t"):
+                    return fn.capitalize(), rem.capitalize()
+
+    return clean_alpha.capitalize() if clean_alpha else "", ""
 
 
 def generate_handle_variations(
@@ -505,8 +563,10 @@ def parse_social_url(url: str) -> Optional[Dict[str, str]]:
     if "linkedin.com/in/" in clean:
         li_match = re.search(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/in/([a-zA-Z0-9_/%-]+)", clean, re.IGNORECASE)
         if li_match:
-            slug = li_match.group(1).split("?")[0].rstrip("/")
-            if slug.lower() not in RESERVED_SYSTEM_SLUGS and slug.lower() not in ("dir", "pub", "feed", "jobs", "company", "school", "pulse", "posts", "learning"):
+            raw_slug = li_match.group(1).split("?")[0].split("#")[0].rstrip("/").strip()
+            # Strip trailing localized language tags or subpaths (e.g. /pa, /ar, /es, /fr, /recent-activity)
+            slug = raw_slug.split("/")[0].strip()
+            if slug.lower() not in RESERVED_SYSTEM_SLUGS and slug.lower() not in ("dir", "pub", "feed", "jobs", "company", "school", "pulse", "posts", "learning") and len(slug) >= 3:
                 return {
                     "platform": "linkedin",
                     "platform_label": "LinkedIn",
@@ -1540,12 +1600,12 @@ async def fetch_facebook_candidate_avatar(url: str, client: httpx.AsyncClient) -
 # ==========================================
 # 7. DUCKDUCKGO DISTRIBUTED SEARCH ENGINE
 # ==========================================
-def _query_ddgs_sync(query: str, proxy_url: str, timeout: float = 4.5) -> List[Dict[str, str]]:
-    """Execute DuckDuckGo search via residential proxy using official tokenized API session."""
+def _query_ddgs_sync(query: str, proxy_url: str, timeout: float = 5.0) -> List[Dict[str, str]]:
+    """Execute DuckDuckGo search via residential proxy with backend='auto' and deep pagination (up to 25 items)."""
     if DDGS is None:
         return []
     ddgs = DDGS(proxy=proxy_url, timeout=timeout)
-    results = list(ddgs.text(query, max_results=10))
+    results = list(ddgs.text(query, max_results=25, backend="auto"))
     items = []
     seen = set()
     for r in results:
@@ -1562,15 +1622,15 @@ def _query_ddgs_sync(query: str, proxy_url: str, timeout: float = 4.5) -> List[D
 
 
 def run_ddgs_auto_sync(q_str: str) -> List[Dict[str, str]]:
-    """Fast failover using ddgs multi-engine browser impersonation."""
+    """Fast failover using ddgs multi-engine browser impersonation with deep pagination (up to 20 items)."""
     if DDGS is None:
         return []
     try:
-        ddgs = DDGS(timeout=4)
+        ddgs = DDGS(timeout=4.5)
         results = None
         for b in ["google", "auto"]:
             try:
-                res = list(ddgs.text(q_str, max_results=8, backend=b))
+                res = list(ddgs.text(q_str, max_results=20, backend=b))
                 if res:
                     results = res
                     break
@@ -1751,8 +1811,13 @@ async def search_social_candidates(
             ddg_search_queries.append(("pinterest", f'{clean_target} pinterest'))
         if "linkedin" not in v_plats:
             ddg_search_queries.append(("linkedin", f'{clean_target} linkedin'))
+            if len(clean_target.split()) >= 2:
+                ddg_search_queries.append(("linkedin", f'site:linkedin.com/in/ "{clean_target}"'))
+            handle_slug = re.sub(r'[\d._+-]+', '', local_part).lower().strip()
+            if handle_slug and len(handle_slug) >= 5 and handle_slug != clean_target.lower().replace(' ', ''):
+                ddg_search_queries.append(("linkedin", f'{handle_slug} linkedin'))
 
-        if first_tok and len(first_tok) >= 3 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
+        if first_tok and len(first_tok) >= 5 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
             if "instagram" not in v_plats:
                 ddg_search_queries.append(("instagram", f'{first_tok} instagram'))
             if "twitter" not in v_plats:
@@ -1763,7 +1828,7 @@ async def search_social_candidates(
         if "spotify" not in v_plats:
             if clean_target:
                 spotify_search_tasks.append(search_spotify_users_pathfinder(clean_target, probe_client))
-            if first_tok and len(first_tok) >= 3 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
+            if first_tok and len(first_tok) >= 5 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
                 spotify_search_tasks.append(search_spotify_users_pathfinder(first_tok, probe_client))
 
         # Assign each query its own distinct clean residential IP
@@ -1792,9 +1857,12 @@ async def search_social_candidates(
 
     def make_candidate_dedup_key(p_plat: str, p_handle: str) -> str:
         h = p_handle.lstrip("@").strip().lower()
+        if p_plat == "linkedin":
+            h = h.split("/")[0].strip()
+            return f"linkedin:{h}"
         if p_plat == "facebook":
             return f"facebook:{h.replace('.', '')}"
-        return f"{p_plat}:{h}"
+        return f"{p_plat}:{h.split('/')[0].strip()}"
 
     # Ingest Direct Spotify User Search Hits (with CDN avatars & authentic display names)
     for sp_batch in spotify_results_raw:
@@ -2024,8 +2092,9 @@ async def search_social_candidates(
                 if canon_url and "linkedin.com/in/" in canon_url:
                     m_slug = re.search(r"linkedin\.com/in/([a-zA-Z0-9_/%-]+)", canon_url, re.IGNORECASE)
                     if m_slug:
-                        canon_slug = m_slug.group(1).split("?")[0].rstrip("/")
-                        if canon_slug and canon_slug.lower() not in ("dir", "pub", "feed"):
+                        raw_slug = m_slug.group(1).split("?")[0].split("#")[0].rstrip("/").strip()
+                        canon_slug = raw_slug.split("/")[0].strip()
+                        if canon_slug and canon_slug.lower() not in ("dir", "pub", "feed") and len(canon_slug) >= 3:
                             c["handle"] = f"@{canon_slug}"
                             c["url"] = f"https://www.linkedin.com/in/{canon_slug}"
             elif plat == "instagram":
@@ -2096,6 +2165,10 @@ async def search_social_candidates(
     for c in candidates_map.values():
         plat = c["platform"]
         h_clean = c["handle"].lstrip("@").strip().lower()
+        if plat == "linkedin":
+            h_clean = h_clean.split("/")[0].strip()
+            c["handle"] = f"@{h_clean}"
+            c["url"] = f"https://www.linkedin.com/in/{h_clean}"
         p_key = f"{plat}:{h_clean}"
         av_key = f"{plat}:av:{c['avatar_url']}" if c.get("avatar_url") else None
 
