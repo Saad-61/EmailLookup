@@ -37,7 +37,10 @@ try:
         probe_twitter_profile,
         probe_instagram_profile,
         probe_spotify_profile,
+        search_spotify_users_pathfinder,
         probe_facebook_profile,
+        probe_tiktok_profile,
+        probe_pinterest_profile,
         fetch_facebook_candidate_avatar,
         get_random_proxy_url,
     )
@@ -48,7 +51,10 @@ except ImportError:
         probe_twitter_profile,
         probe_instagram_profile,
         probe_spotify_profile,
+        search_spotify_users_pathfinder,
         probe_facebook_profile,
+        probe_tiktok_profile,
+        probe_pinterest_profile,
         fetch_facebook_candidate_avatar,
         get_random_proxy_url,
     )
@@ -1856,17 +1862,19 @@ async def run_lookup(email: str) -> dict:
     dir_instagram = (github.get("instagram_url") if isinstance(github, dict) else None) or (gravatar.get("instagram_url") if isinstance(gravatar, dict) else None)
     dir_facebook = (github.get("facebook_url") if isinstance(github, dict) else None)
     dir_spotify = gravatar.get("spotify_url") if isinstance(gravatar, dict) else None
+    dir_tiktok = gravatar.get("tiktok_url") if isinstance(gravatar, dict) else None
+    dir_pinterest = gravatar.get("pinterest_url") if isinstance(gravatar, dict) else None
     dir_youtube = gravatar.get("youtube_url") if isinstance(gravatar, dict) else None
 
     # Probe direct verified profile links concurrently for authentic avatars & display names
-    # Instagram needs a proxy client (same reason candidates use one — bot detection is aggressive)
-    async def probe_direct_profile(plat, url):
+    # Uses the same probe engines and Pathfinder GraphQL queries as candidate discovery
+    async def probe_direct_profile(plat, url, dir_client):
         if not url:
             return None
         try:
             handle = url.rstrip("/").split("/")[-1].replace("@", "")
             if plat == "twitter" and handle:
-                return await probe_twitter_profile(handle, client)
+                return await probe_twitter_profile(handle, dir_client)
             elif plat == "instagram" and handle:
                 # Use a dedicated proxy client for Instagram — direct IPs get bot-blocked
                 proxy_url = get_random_proxy_url()
@@ -1876,27 +1884,44 @@ async def run_lookup(email: str) -> dict:
                             return await probe_instagram_profile(handle, px)
                     except Exception:
                         pass
-                # Fallback to shared client if no proxy available
-                return await probe_instagram_profile(handle, client)
+                # Fallback to direct client if no proxy available
+                return await probe_instagram_profile(handle, dir_client)
             elif plat == "spotify" and handle:
-                return await probe_spotify_profile(handle, client)
+                # Primary: Use Spotify Pathfinder GraphQL search (identical to candidate pipeline)
+                try:
+                    pf_results = await search_spotify_users_pathfinder(handle, dir_client, limit=5)
+                    if pf_results:
+                        for u in pf_results:
+                            if u.get("handle") == handle or u.get("avatar_url"):
+                                return u
+                except Exception:
+                    pass
+                # Secondary fallback: scrape open.spotify.com profile
+                return await probe_spotify_profile(handle, dir_client)
             elif plat == "facebook" and handle:
-                d = await probe_facebook_profile(handle, client)
+                d = await probe_facebook_profile(handle, dir_client)
                 if d:
                     return d
-                fb_av = await fetch_facebook_candidate_avatar(url, client)
+                fb_av = await fetch_facebook_candidate_avatar(url, dir_client)
                 return {"avatar_url": fb_av} if fb_av else None
+            elif plat == "tiktok" and handle:
+                return await probe_tiktok_profile(handle, dir_client)
+            elif plat == "pinterest" and handle:
+                return await probe_pinterest_profile(handle, dir_client)
         except Exception:
             pass
         return None
 
-    tw_res, ig_res, fb_res, sp_res = await asyncio.gather(
-        probe_direct_profile("twitter", dir_twitter),
-        probe_direct_profile("instagram", dir_instagram),
-        probe_direct_profile("facebook", dir_facebook),
-        probe_direct_profile("spotify", dir_spotify),
-        return_exceptions=True,
-    )
+    async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as dir_client:
+        tw_res, ig_res, fb_res, sp_res, tt_res, pin_res = await asyncio.gather(
+            probe_direct_profile("twitter", dir_twitter, dir_client),
+            probe_direct_profile("instagram", dir_instagram, dir_client),
+            probe_direct_profile("facebook", dir_facebook, dir_client),
+            probe_direct_profile("spotify", dir_spotify, dir_client),
+            probe_direct_profile("tiktok", dir_tiktok, dir_client),
+            probe_direct_profile("pinterest", dir_pinterest, dir_client),
+            return_exceptions=True,
+        )
 
     if dir_twitter:
         tw_d = tw_res if isinstance(tw_res, dict) else {}
@@ -1957,7 +1982,7 @@ async def run_lookup(email: str) -> dict:
         sp_av = sp_d.get("avatar_url")
         sp_name = sp_d.get("name")
         sp_handle = sp_d.get("handle") or dir_spotify.rstrip("/").split("/")[-1].replace("@", "")
-        # Spotify Pathfinder may not return avatar — use gravatar avatar as fallback
+        # Spotify fallback to gravatar avatar only if probe/pathfinder returned nothing
         if not sp_av and gravatar and isinstance(gravatar, dict) and gravatar.get("avatar"):
             sp_av = gravatar["avatar"]
         profiles["spotify"] = {
@@ -1969,6 +1994,38 @@ async def run_lookup(email: str) -> dict:
             "verified": True,
             "avatar_url": sp_av if isinstance(sp_av, str) else None,
             "avatar": sp_av if isinstance(sp_av, str) else None,
+        }
+
+    if dir_tiktok:
+        tt_d = tt_res if isinstance(tt_res, dict) else {}
+        tt_av = tt_d.get("avatar_url")
+        tt_name = tt_d.get("name")
+        tt_handle = tt_d.get("handle") or dir_tiktok.rstrip("/").split("/")[-1].replace("@", "")
+        profiles["tiktok"] = {
+            "url": dir_tiktok,
+            "handle": f"@{tt_handle}" if tt_handle else "@tiktok",
+            "name": tt_name,
+            "source": "gravatar",
+            "confidence": 100,
+            "verified": True,
+            "avatar_url": tt_av if isinstance(tt_av, str) else None,
+            "avatar": tt_av if isinstance(tt_av, str) else None,
+        }
+
+    if dir_pinterest:
+        pin_d = pin_res if isinstance(pin_res, dict) else {}
+        pin_av = pin_d.get("avatar_url")
+        pin_name = pin_d.get("name")
+        pin_handle = pin_d.get("handle") or dir_pinterest.rstrip("/").split("/")[-1].replace("@", "")
+        profiles["pinterest"] = {
+            "url": dir_pinterest,
+            "handle": f"@{pin_handle}" if pin_handle else "@pinterest",
+            "name": pin_name,
+            "source": "gravatar",
+            "confidence": 100,
+            "verified": True,
+            "avatar_url": pin_av if isinstance(pin_av, str) else None,
+            "avatar": pin_av if isinstance(pin_av, str) else None,
         }
 
     if dir_youtube:
