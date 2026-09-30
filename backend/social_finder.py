@@ -1264,8 +1264,8 @@ async def probe_twitter_profile(handle: str, client: httpx.AsyncClient) -> Optio
                         img_u = img_data.get("url") if isinstance(img_data, dict) else img_data
                         if img_u and "pbs.twimg.com" in str(img_u):
                             avatar_url = str(img_u)
-                        confirmed = True
-                        display_name = clean_display_name(d_title, clean, "twitter")
+                            confirmed = True
+                            display_name = clean_display_name(d_title, clean, "twitter")
         except Exception:
             pass
 

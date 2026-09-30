@@ -454,11 +454,15 @@ function renderLookupResults(data) {
     const ghUrl = typeof gh === "string" ? gh : (gh.url || "");
     const ghUser = typeof gh === "string" ? ghUrl.split("/").pop() : (gh.username || "");
     const ghAvatar = typeof gh === "object" ? (gh.avatar || gh.avatar_url) : null;
+    // Subtext: handle · repos · followers
+    const ghSub = typeof gh === "object"
+      ? `@${ghUser} · ${gh.repos ?? "?"} repos · ${gh.followers ?? "?"} followers`
+      : `@${ghUser}`;
     chips.push(buildProfileChip({
       href: ghUrl,
       platform: "github",
-      name: `@${ghUser} <span class="verified-pill">✓ Verified</span>`,
-      sub: typeof gh === "object" ? `${gh.repos ?? "?"} repos · ${gh.followers ?? "?"} followers` : "Verified Developer Profile",
+      name: `GitHub <span class="verified-pill">✓ Verified</span>`,
+      sub: ghSub,
       avatar_url: ghAvatar || resolveVerifiedAvatar("github", { handle: ghUser, url: ghUrl }),
     }));
   }
@@ -468,11 +472,10 @@ function renderLookupResults(data) {
     if (p && p.url) {
       const isDirect = p.verified || ["github", "gravatar"].includes(p.source);
       if (isDirect) {
-        let subText = "View Profile";
+        // Show name + handle, or just handle — no 'View Profile' trailing text
+        let subText = p.handle || "";
         if (p.name && p.handle && p.name !== "X / Twitter") {
-          subText = `${p.name} (${p.handle}) · View Profile`;
-        } else if (p.handle) {
-          subText = `${p.handle} · View Profile`;
+          subText = `${p.name} · ${p.handle}`;
         }
         chips.push(buildProfileChip({
           href: p.url,
@@ -490,11 +493,10 @@ function renderLookupResults(data) {
     if (p && p.url) {
       const isDirect = p.verified || ["github", "gravatar"].includes(p.source);
       if (isDirect) {
-        let subText = "View Profile";
+        // Show display name + handle, or just handle — no trailing 'View Profile'
+        let subText = p.handle || "";
         if (p.name && p.handle && p.name !== "Instagram") {
-          subText = `${p.name} (${p.handle}) · View Profile`;
-        } else if (p.handle) {
-          subText = `${p.handle} · View Profile`;
+          subText = `${p.name} · ${p.handle}`;
         }
         chips.push(buildProfileChip({
           href: p.url,
@@ -512,11 +514,9 @@ function renderLookupResults(data) {
     if (p && p.url) {
       const isDirect = p.verified || ["github", "gravatar"].includes(p.source);
       if (isDirect) {
-        let subText = "View Profile";
+        let subText = p.handle || "";
         if (p.name && p.handle && p.name !== "Facebook") {
-          subText = `${p.name} (${p.handle}) · View Profile`;
-        } else if (p.handle) {
-          subText = `${p.handle} · View Profile`;
+          subText = `${p.name} · ${p.handle}`;
         }
         chips.push(buildProfileChip({
           href: p.url,
@@ -548,11 +548,10 @@ function renderLookupResults(data) {
   if (profiles.spotify) {
     const p = parseProfileVal(profiles.spotify, "Spotify");
     if (p && p.url) {
-      let subText = "Listen & View";
+      // Show display name + handle, or just handle
+      let subText = p.handle || "";
       if (p.name && p.name !== "Spotify") {
-        subText = `${p.name} · Listen & View`;
-      } else if (p.handle) {
-        subText = `${p.handle} · Listen & View`;
+        subText = p.handle ? `${p.name} · ${p.handle}` : p.name;
       }
       chips.push(buildProfileChip({
         href: p.url,
