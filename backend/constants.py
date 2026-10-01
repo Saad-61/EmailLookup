@@ -57,11 +57,51 @@ LI_CRAWLER_HEADERS: Dict[str, str] = {
 # ==============================================================================
 
 PERSONAL_DOMAINS: Set[str] = {
-    "gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "rocketmail.com",
-    "hotmail.com", "outlook.com", "live.com", "msn.com", "icloud.com", "me.com",
-    "mac.com", "protonmail.com", "proton.me", "aol.com", "zoho.com", "mail.com",
-    "gmx.com", "gmx.net", "yandex.com", "yandex.ru", "tutanota.com", "tutamail.com",
-    "fastmail.com", "hushmail.com"
+    # Major Global Consumer Webmails
+    "gmail.com", "googlemail.com", "google.com",
+    "yahoo.com", "ymail.com", "rocketmail.com", "yahoo.co.uk", "yahoo.fr", "yahoo.de", "yahoo.es", "yahoo.it", "yahoo.ca", "yahoo.com.au", "yahoo.co.in", "yahoo.co.jp", "yahoo.ne.jp", "ybb.ne.jp",
+    "hotmail.com", "hotmail.co.uk", "hotmail.fr", "hotmail.es", "hotmail.it", "hotmail.de", "hotmail.ca", "hotmail.com.au",
+    "outlook.com", "outlook.co.uk", "outlook.fr", "outlook.de", "outlook.es", "outlook.it", "outlook.ca", "outlook.com.au",
+    "live.com", "live.co.uk", "live.fr", "live.de", "live.es", "live.it", "live.ca", "msn.com", "passport.com", "windowslive.com",
+    "icloud.com", "me.com", "mac.com",
+    "aol.com", "aim.com", "zoho.com", "zohomail.com",
+    "mail.com", "email.com", "usa.com", "post.com", "dr.com", "consultant.com", "myself.com",
+    "gmx.com", "gmx.net", "gmx.de", "gmx.at", "gmx.ch",
+    "yandex.com", "yandex.ru", "yandex.by", "yandex.kz", "yandex.ua", "ya.ru", "mail.ru", "bk.ru", "inbox.ru", "list.ru", "rambler.ru",
+
+    # Privacy, Developer & Indie Email Providers
+    "hey.com", "protonmail.com", "proton.me", "pm.me", "protonmail.ch",
+    "tuta.com", "tutanota.com", "tutanota.de", "tutamail.com", "tuta.io", "keemail.me",
+    "fastmail.com", "fastmail.fm", "fastmail.net", "fastmail.org", "fastmail.to", "fastmail.co.uk",
+    "hushmail.com", "hush.com", "duck.com", "simplelogin.com", "simplelogin.io", "simplelogin.co",
+    "anonaddy.me", "addy.io", "mozmail.com", "firefox.com", "relay.firefox.com",
+    "skiff.com", "skiff.me", "mailfence.com", "disroot.org", "cock.li", "riseup.net", "autistici.org",
+    "runbox.com", "posteo.de", "posteo.net", "mailbox.org", "ctemplar.com", "startmail.com", "infomaniak.com",
+
+    # European & Regional Providers
+    "web.de", "t-online.de", "freenet.de", "arcor.de", "1und1.de",
+    "orange.fr", "wanadoo.fr", "free.fr", "sfr.fr", "laposte.net", "numericable.fr", "neuf.fr",
+    "libero.it", "virgilio.it", "alice.it", "tin.it", "fastwebnet.it", "tiscali.it", "tiscali.co.uk",
+    "terra.es", "telefónica.es", "ono.com", "ya.com",
+    "uol.com.br", "bol.com.br", "terra.com.br", "ig.com.br", "globo.com", "globomail.com", "sapo.pt",
+    "onet.pl", "wp.pl", "interia.pl", "o2.pl", "poczta.fm",
+    "seznam.cz", "centrum.cz", "volny.cz", "atlas.cz", "post.cz", "email.cz",
+    "freemail.hu", "citromail.hu", "indamail.hu", "vipmail.hu",
+    "abv.bg", "mail.bg", "ukr.net", "i.ua", "meta.ua",
+    "inbox.lv", "inbox.lt", "inbox.ee", "mail.ee",
+
+    # Asian Regional & Consumer Webmails
+    "163.com", "126.com", "yeah.net", "qq.com", "foxmail.com", "sina.com", "sina.cn", "sohu.com", "tom.com", "aliyun.com", "139.com", "189.cn", "wo.cn",
+    "naver.com", "daum.net", "hanmail.net", "nate.com",
+    "rediffmail.com", "indiatimes.com", "sify.com", "vsnl.net",
+
+    # Major ISP & Telecom Consumer Webmails
+    "comcast.net", "xfinity.com", "sbcglobal.net", "att.net", "bellsouth.net", "swbell.net", "pacbell.net", "prodigy.net", "nvbell.net", "flash.net", "ameritech.net",
+    "verizon.net", "cox.net", "charter.net", "spectrum.net", "roadrunner.com", "rr.com", "twc.com", "earthlink.net", "mindspring.com", "juno.com", "netzero.net",
+    "frontier.com", "windstream.net", "centurylink.net", "embarqmail.com", "q.com",
+    "btinternet.com", "btopenworld.com", "virginmedia.com", "blueyonder.co.uk", "ntlworld.com", "sky.com", "talktalk.net", "plus.net",
+    "bigpond.com", "bigpond.net.au", "optusnet.com.au", "telstra.com", "tpg.com.au", "iinet.net.au", "ozemail.com.au",
+    "shaw.ca", "rogers.com", "telus.net", "sympatico.ca", "bell.net", "videotron.ca", "cogeco.ca"
 }
 
 INVALID_TYPO_DOMAINS: Set[str] = {

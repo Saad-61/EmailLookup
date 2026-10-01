@@ -687,9 +687,8 @@ async def lookup_github(
                 is_email_match = bool(h_email == email)
                 is_distinctive_handle = len(local_part) >= 8 and is_clean_human_name(h_name)
 
-                personal_domains = {"gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com", "protonmail.com"}
                 domain = email.split("@")[-1].lower() if "@" in email else ""
-                is_personal = domain in personal_domains
+                is_personal = domain in PERSONAL_DOMAINS
 
                 if is_email_match or is_name_match:
                     # Upgrade to current primary account
@@ -1131,13 +1130,8 @@ async def lookup_company(
     or fallback to Clearbit live autocomplete API with corporate domain synthesis guarantee.
     Works for corporate domains AND personal emails with company hints.
     """
-    personal_domains = {
-        "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
-        "icloud.com", "protonmail.com", "aol.com", "zoho.com",
-        "mail.com", "yandex.com", "gmx.com", "live.com",
-    }
     clean_dom = domain.lower().strip() if domain else ""
-    is_personal = clean_dom in personal_domains or not clean_dom
+    is_personal = clean_dom in PERSONAL_DOMAINS or not clean_dom
 
     # Filter out personal portfolio domains from being treated as companies
     if company_hint:
@@ -1356,10 +1350,7 @@ async def save_harvested_profile(
         gh = profiles.get("github") if isinstance(profiles.get("github"), dict) else {}
         has_socials = bool(profiles.get("linkedin") or profiles.get("github"))
         dom = email.split("@")[-1].lower() if "@" in email else ""
-        is_corp = bool(dom and dom not in (
-            "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com",
-            "protonmail.com", "aol.com", "zoho.com", "mail.com", "yandex.com", "gmx.com", "live.com"
-        ))
+        is_corp = bool(dom and dom not in PERSONAL_DOMAINS)
         comp_name = (company or {}).get("name") if (isinstance(company, dict) and (has_socials or is_corp)) else None
 
         for attempt in range(5):
@@ -1459,12 +1450,7 @@ async def run_lookup(email: str) -> dict:
     domain = email.split("@")[-1] if "@" in email else ""
     local_part = email.split("@")[0].lower().strip() if "@" in email else ""
 
-    personal_domains = {
-        "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
-        "icloud.com", "protonmail.com", "aol.com", "zoho.com",
-        "mail.com", "yandex.com", "gmx.com", "live.com",
-    }
-    email_type = "personal" if domain in personal_domains else "corporate"
+    email_type = "personal" if domain in PERSONAL_DOMAINS else "corporate"
 
     print(f"\n[Lookup Engine] >>> Starting reverse lookup for: {email} ({email_type.upper()})", flush=True)
 
@@ -2099,7 +2085,7 @@ async def run_lookup(email: str) -> dict:
                 raw_candidates.insert(0, cand_li)
 
         # ── Zero Duplicate Platform Rule ──
-        for p in ["linkedin", "github", "stackoverflow", "instagram", "twitter", "facebook", "tiktok", "pinterest", "spotify"]:
+        for p in ["linkedin", "github", "stackoverflow", "medium", "instagram", "twitter", "facebook", "tiktok", "pinterest", "spotify"]:
             prof = profiles.get(p)
             is_direct_verified = False
             if p == "github":
@@ -2141,7 +2127,7 @@ async def run_lookup(email: str) -> dict:
     except Exception as e:
         print(f"[Social Discovery] Candidate search error: {e}", flush=True)
         social_candidates = []
-        candidates_by_platform = {"linkedin": [], "github": [], "stackoverflow": [], "instagram": [], "twitter": [], "facebook": [], "tiktok": [], "pinterest": [], "spotify": []}
+        candidates_by_platform = {"linkedin": [], "github": [], "stackoverflow": [], "medium": [], "instagram": [], "twitter": [], "facebook": [], "tiktok": [], "pinterest": [], "spotify": []}
 
     # ── Fallback Person Display Name from Clean Email Username ──
     # Note: Speculative social candidates are never promoted to the person card to prevent unverified data pollution
@@ -2152,16 +2138,14 @@ async def run_lookup(email: str) -> dict:
             print(f"[Lookup Engine] Inferred name from email username: '{concatenated_name}'", flush=True)
 
     # ── Strict Company Visibility Policy ──
-    # If this is a personal email (gmail, hotmail, yahoo, etc.) and no verified social links exist,
-    # NEVER show company data (it cannot be from a verified corporate domain DB).
-    has_social_links = bool(
-        profiles.get("linkedin")
-        or profiles.get("github")
-        or profiles.get("twitter")
-        or profiles.get("instagram")
-        or profiles.get("facebook")
+    # If this is a personal email (gmail, hey, proton, etc.), ONLY show company/workplace data if verified by
+    # a confirmed LinkedIn employment/education record or verified GitHub company record.
+    has_verified_employment = bool(
+        has_verified_li
+        or (github and isinstance(github, dict) and github.get("company"))
+        or (company and isinstance(company, dict) and company.get("type") in ("education", "academic_workplace"))
     )
-    if email_type == "personal" and not has_social_links:
+    if email_type == "personal" and not has_verified_employment:
         company = None
 
     # ── Phone from GitHub bio ──
