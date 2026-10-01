@@ -43,6 +43,10 @@ const SVG_ICONS = {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
       <path d="M18.986 21.865v-6.408h2.134V24H1.87v-8.543h2.134v6.408h14.982zM6.14 17.596l10.669 2.228.45-2.09-10.67-2.228-.45 2.09zm1.704-5.32l9.504 5.248.974-1.92-9.504-5.248-.974 1.92zm3.324-4.856l7.467 7.824 1.488-1.572-7.467-7.824-1.488 1.572zm6.27-5.025l-2.004 1.054 5.048 9.58 2.004-1.054-5.048-9.58zM6.14 20.083h10.9v-2.134H6.14v2.134z"/>
     </svg>`,
+  medium: `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M2.846 6.887c.03-.295-.083-.586-.303-.784l-2.24-2.7v-.403H7.26l5.378 11.795 4.728-11.795H24v.403l-1.917 1.837c-.165.126-.247.333-.213.538v13.498c-.034.204.048.411.213.537l1.87 1.811v.403h-9.41v-.403l1.939-1.885c.19-.19.19-.246.19-.537V8.432l-5.38 13.68H8.618L2.518 8.432v9.336c-.053.385.081.77.355 1.042l2.876 3.486v.403H0v-.403l2.846-3.486c.27-.272.4-.657.347-1.042V6.887z"/>
+    </svg>`,
   youtube: `
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
       <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
@@ -255,6 +259,7 @@ const CANDIDATE_PLATFORMS = [
   { id: "linkedin", label: "LinkedIn", icon: SVG_ICONS.linkedin },
   { id: "github", label: "GitHub", icon: SVG_ICONS.github },
   { id: "stackoverflow", label: "Stack Overflow", icon: SVG_ICONS.stackoverflow },
+  { id: "medium", label: "Medium", icon: SVG_ICONS.medium },
   { id: "instagram", label: "Instagram", icon: SVG_ICONS.instagram },
   { id: "facebook", label: "Facebook", icon: SVG_ICONS.facebook },
   { id: "twitter", label: "X", icon: SVG_ICONS.twitter },
@@ -617,6 +622,23 @@ function renderLookupResults(data) {
     }
   }
 
+  if (profiles.medium) {
+    const p = parseProfileVal(profiles.medium, "Medium");
+    if (p && p.url) {
+      let subText = p.handle || "";
+      if (p.name && p.name !== "Medium") {
+        subText = p.handle ? `${p.name} · ${p.handle}` : p.name;
+      }
+      chips.push(buildProfileChip({
+        href: p.url,
+        platform: "medium",
+        name: `Medium <span class="verified-pill">✓ Verified</span>`,
+        sub: subText,
+        avatar_url: resolveVerifiedAvatar("medium", p),
+      }));
+    }
+  }
+
   // ── Render Verified Profiles Card ──
   const verifiedBadgeEl = document.getElementById("verified-count-badge");
   if (verifiedBadgeEl) verifiedBadgeEl.textContent = chips.length;
@@ -639,7 +661,7 @@ function renderLookupResults(data) {
 
   currentLookupCandidates = byPlat;
 
-  const orderedPlats = ["linkedin", "github", "stackoverflow", "instagram", "facebook", "twitter", "pinterest", "tiktok", "spotify"];
+  const orderedPlats = ["linkedin", "github", "stackoverflow", "medium", "instagram", "facebook", "twitter", "pinterest", "tiktok", "spotify"];
   let totalCandidatesFound = 0;
   orderedPlats.forEach(p => {
     totalCandidatesFound += (byPlat[p] || []).length;
@@ -670,13 +692,15 @@ function renderLookupResults(data) {
     }
   }
 
-  // Activate LinkedIn by default if it has candidates, then GitHub, then Stack Overflow, then Instagram, otherwise first available
+  // Activate LinkedIn by default if it has candidates, then GitHub, then Stack Overflow, then Medium, then Instagram, otherwise first available
   if ((byPlat.linkedin || []).length > 0) {
     switchCandidateTab("linkedin");
   } else if ((byPlat.github || []).length > 0) {
     switchCandidateTab("github");
   } else if ((byPlat.stackoverflow || []).length > 0) {
     switchCandidateTab("stackoverflow");
+  } else if ((byPlat.medium || []).length > 0) {
+    switchCandidateTab("medium");
   } else if ((byPlat.instagram || []).length > 0) {
     switchCandidateTab("instagram");
   } else if (visiblePlats.length > 0) {
@@ -705,7 +729,7 @@ function buildProfileChip({ href, platform, name, sub, avatar_url }) {
   `;
 
   return `
-    <a href="${href}" target="_blank" rel="noopener noreferrer" class="profile-chip">
+    <a href="${href}" target="_blank" rel="noopener noreferrer" class="profile-chip" data-platform="${platform}">
       ${iconHtml}
       <div class="profile-chip-info">
         <div class="profile-chip-name">${name}</div>
@@ -732,14 +756,14 @@ function renderCandidateCard(c) {
   const avatarImgHtml = c.avatar_url ? `
     <div class="profile-chip-avatar-wrap" style="width: 44px; height: 44px;">
       <img src="${escapeHtml(c.avatar_url)}" class="candidate-avatar" referrerpolicy="no-referrer" alt="${escapeHtml(c.handle)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-      <div class="platform-glyph-badge ${glyphClass}" style="display: none; width: 44px; height: 44px; border-radius: var(--radius-sm);">${glyphSvg}</div>
+      <div class="platform-glyph-badge ${glyphClass}" style="display: none; width: 44px; height: 44px;">${glyphSvg}</div>
     </div>
   ` : `
-    <div class="platform-glyph-badge ${glyphClass}" style="width: 44px; height: 44px; border-radius: var(--radius-sm);">${glyphSvg}</div>
+    <div class="platform-glyph-badge ${glyphClass}" style="width: 44px; height: 44px;">${glyphSvg}</div>
   `;
 
   return `
-    <div class="candidate-card">
+    <div class="candidate-card" data-platform="${c.platform}">
       <div class="candidate-main">
         <div class="candidate-header">
           <div class="candidate-avatar-wrapper">

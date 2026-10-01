@@ -75,6 +75,7 @@
   --brand-spotify: #1db954;
   --brand-github: #0f172a;
   --brand-stackoverflow: #f48024;
+  --brand-medium: #000000;
 
   /* ── Radii & Elevation ── */
   --radius-xl: 10px;
@@ -885,6 +886,24 @@ body {
   border: 1px solid var(--border-subtle);
 }
 
+/* Native Round Avatars for Social Networks */
+.profile-chip[data-platform="instagram"] .profile-chip-avatar,
+.profile-chip[data-platform="twitter"] .profile-chip-avatar,
+.profile-chip[data-platform="facebook"] .profile-chip-avatar,
+.profile-chip[data-platform="tiktok"] .profile-chip-avatar,
+.profile-chip[data-platform="pinterest"] .profile-chip-avatar,
+.profile-chip[data-platform="spotify"] .profile-chip-avatar,
+.profile-chip[data-platform="medium"] .profile-chip-avatar,
+.profile-chip[data-platform="instagram"] .platform-glyph-badge,
+.profile-chip[data-platform="twitter"] .platform-glyph-badge,
+.profile-chip[data-platform="facebook"] .platform-glyph-badge,
+.profile-chip[data-platform="tiktok"] .platform-glyph-badge,
+.profile-chip[data-platform="pinterest"] .platform-glyph-badge,
+.profile-chip[data-platform="spotify"] .platform-glyph-badge,
+.profile-chip[data-platform="medium"] .platform-glyph-badge {
+  border-radius: 50% !important;
+}
+
 .profile-chip .platform-glyph-badge {
   width: 54px;
   height: 54px;
@@ -1021,6 +1040,7 @@ body {
 .cand-tab-btn[data-plat="tiktok"] .cand-tab-icon { color: #0f172a !important; }
 .cand-tab-btn[data-plat="spotify"] .cand-tab-icon { color: #1db954 !important; }
 .cand-tab-btn[data-plat="github"] .cand-tab-icon { color: #0f172a !important; }
+.cand-tab-btn[data-plat="medium"] .cand-tab-icon { color: #000000 !important; }
 .cand-tab-btn[data-plat="stackoverflow"] .cand-tab-icon { color: #f48024 !important; }
 
 .cand-tab-badge {
@@ -1094,6 +1114,7 @@ body {
 .spotify-glyph { background: var(--brand-spotify); }
 .github-glyph { background: #0f172a; }
 .stackoverflow-glyph { background: #f48024; }
+.medium-glyph { background: #000000; }
 
 .cand-count-badge {
   font-family: var(--font-mono);
@@ -1152,6 +1173,24 @@ body {
   border: 1px solid var(--border-subtle);
 }
 
+/* Native Round Avatars for Social Candidates */
+.candidate-card[data-platform="instagram"] .candidate-avatar,
+.candidate-card[data-platform="twitter"] .candidate-avatar,
+.candidate-card[data-platform="facebook"] .candidate-avatar,
+.candidate-card[data-platform="tiktok"] .candidate-avatar,
+.candidate-card[data-platform="pinterest"] .candidate-avatar,
+.candidate-card[data-platform="spotify"] .candidate-avatar,
+.candidate-card[data-platform="medium"] .candidate-avatar,
+.candidate-card[data-platform="instagram"] .platform-glyph-badge,
+.candidate-card[data-platform="twitter"] .platform-glyph-badge,
+.candidate-card[data-platform="facebook"] .platform-glyph-badge,
+.candidate-card[data-platform="tiktok"] .platform-glyph-badge,
+.candidate-card[data-platform="pinterest"] .platform-glyph-badge,
+.candidate-card[data-platform="spotify"] .platform-glyph-badge,
+.candidate-card[data-platform="medium"] .platform-glyph-badge {
+  border-radius: 50% !important;
+}
+
 .candidate-info {
   flex: 1;
   min-width: 0;
@@ -1200,6 +1239,12 @@ body {
   margin-top: 6px;
   line-height: 1.45;
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 2.9em;
 }
 
 .candidate-action-btn {
