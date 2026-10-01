@@ -140,8 +140,8 @@ PROXY_IPS = ALL_PROXY_IPS
 
 class DynamicProxyPool:
     """
-    Manages residential proxy IPs with automatic rate-limit cooldown and latency-based ranking.
-    - Tracks temporary 202 blocks with an expiration timestamp (e.g. 10 minutes).
+    Manages residential proxy IPs with automatic rate-limit cooldown, progressive backoff, and latency-based ranking.
+    - Tracks temporary 202 blocks with an adaptive expiration timestamp (e.g. 10m -> 30m for repeat offenders).
     - Automatically measures roundtrip response time on every query to route requests to the fastest nodes.
     - When cooldown expires, the proxy automatically re-joins the active pool.
     """
@@ -149,6 +149,7 @@ class DynamicProxyPool:
         self.all_ips = list(ip_list)
         self.cooldown_seconds = cooldown_seconds
         self.cooldowns: Dict[str, float] = {}
+        self.failures: Dict[str, int] = {ip: 0 for ip in self.all_ips}
         # ip -> estimated latency in ms (pre-seeded with default 1500ms)
         self.latencies: Dict[str, float] = {ip: 1500.0 for ip in self.all_ips}
 
@@ -162,17 +163,21 @@ class DynamicProxyPool:
         return sorted(clean, key=lambda ip: self.latencies.get(ip, 2000.0) + random.uniform(0, 150))
 
     def mark_challenged(self, ip: str, duration: Optional[int] = None):
-        """Temporarily flag an IP that encountered a 202 challenge or block."""
-        cd = duration or self.cooldown_seconds
+        """Flag an IP that encountered a 202 challenge or block with progressive backoff."""
+        self.failures[ip] = self.failures.get(ip, 0) + 1
+        # Progressive backoff: 10m -> 20m -> 30m for chronic failures
+        multiplier = min(3, self.failures[ip])
+        cd = duration or (self.cooldown_seconds * multiplier)
         self.cooldowns[ip] = time.time() + cd
         self.latencies[ip] = 9999.0
         remaining = len(self.get_clean_ips())
-        print(f"  [ProxyPool] [COOLDOWN] IP {ip} flagged with {cd}s cooldown ({remaining} clean IPs remaining in pool)", flush=True)
+        print(f"  [ProxyPool] [COOLDOWN] IP {ip} flagged ({self.failures[ip]} fails) with {cd}s cooldown ({remaining} clean IPs remaining in pool)", flush=True)
 
     def mark_healthy(self, ip: str, elapsed_ms: Optional[int] = None):
-        """Confirm an IP is clean and update its moving-average latency score."""
+        """Confirm an IP is clean, reset failure counters, and update its moving-average latency score."""
         if ip in self.cooldowns:
             del self.cooldowns[ip]
+        self.failures[ip] = 0
         if elapsed_ms is not None:
             prev = self.latencies.get(ip, float(elapsed_ms))
             self.latencies[ip] = prev * 0.35 + float(elapsed_ms) * 0.65
@@ -199,57 +204,16 @@ def get_random_proxy_url() -> Optional[str]:
     return f"http://{ip}"
 
 
-# ==========================================
-# 3. COMPOUND NAME PARSER & HANDLE GENERATION
-# ==========================================
-TITLE_PREFIXES = {
-    "ch", "chaudhry", "chaudhary", "dr", "engr", "eng", "mr", "ms", "mrs", 
-    "prof", "syed", "sh", "sk", "sheikh", "md", "muhd", "malik", "adv", "al", "el", "haj", "haji"
-}
-
-COMMON_FIRST_NAMES = {
-    "fahad", "ahmad", "ahmed", "saad", "noman", "nouman", "nauman", "ali", "hamza", "usman", "osman",
-    "bilal", "hassan", "hasan", "hussain", "zain", "omer", "umar", "faisal", "farhan", 
-    "kashif", "tariq", "asif", "dameesha", "ahtisham", "atisam", "dilawar", "hameed", "mohid", "faraz",
-    "ghaffar", "rashid", "tahir", "nasir", "amir", "aamir", "sami", "haris", "junaid", "shayan", "daniyal",
-    "waseem", "wasim", "naveed", "navid", "arshad", "akram", "aslam", "iqbal", "anwar", "mustafa", "faizan",
-    "akhtar", "latif", "mahmood", "mehmood", "butt", "dar", "bhatti", "rana", "khan", "arslan", "ahsan",
-    "chaudhry", "malik", "sheikh", "syed", "shah", "javed", "javaid", "siddiqui", "sohaib", "suhaib",
-    "qureshi", "ansari", "farooqi", "abbasi", "mirza", "baig", "mughal", "rehman", "danish", "talha",
-    "rahman", "aziz", "khalid", "sultan", "alam", "raza", "ashraf", "munir", "zafar", "hamad", "hammad",
-    "nawaz", "sarwar", "liaquat", "abid", "sajid", "majid", "zahid", "shahzad", "shahzaib", "shehryar",
-    "khurram", "shahbaz", "tanveer", "tanvir", "waheed", "wahid", "yousaf", "yusuf", "burhan", "basit",
-    "yaqoob", "ayub", "arouba", "ayesha", "fatima", "zainab", "maryam", "mariam", "sameer", "samir",
-    "hira", "sana", "iqra", "amna", "sadia", "mahnoor", "anmol", "noor", "rabia", "affan", "huzaifa",
-    "sidra", "kinza", "alishba", "hafsa", "laiba", "bisma", "aiman", "nimra", "shahmeer", "rayyan",
-    "bushra", "sumaira", "shazia", "rubina", "farzana", "tahira", "samina", "yasmeen", "ayaan", "zayan",
-    "shabnam", "nasreen", "parveen", "uzma", "fauzia", "fozia", "saima", "asifa",
-    "nida", "fariha", "hina", "madiha", "kiran", "mehwish", "komal", "natasha", "sonia",
-    "erik", "john", "david", "michael", "james", "robert", "william", "richard",
-    "thomas", "charles", "daniel", "matthew", "anthony", "mark", "donald", "steven",
-    "paul", "andrew", "joshua", "kenneth", "kevin", "brian", "george", "timothy",
-    "ronald", "jason", "jeffrey", "ryan", "jacob", "gary", "nicholas", "eric",
-    "jonathan", "stephen", "larry", "justin", "scott", "brandon", "benjamin", "samuel",
-    "gregory", "alexander", "frank", "patrick", "raymond", "jack", "dennis", "jerry",
-    "tyler", "aaron", "jose", "adam", "nathan", "henry", "douglas", "zachary", "peter",
-    "kyle", "walter", "ethan", "jeremy", "harold", "keith", "christian", "roger", "noah",
-    "gerald", "carl", "terry", "sean", "austin", "arthur", "lawrence", "jesse", "dylan",
-    "bryan", "joe", "jordan", "billy", "albert", "bruce", "willie", "gabriel", "logan",
-    "alan", "juan", "wayne", "roy", "ralph", "randy", "eugene", "vincent", "russell",
-    "louis", "philip", "bobby", "johnny", "bradley", "haseeb", "rauf", "collison",
-    "tauqeer", "tauqir", "touqeer", "touqir", "shafiq", "shafique"
-}
-
-LEET_REPLACEMENTS = [
-    ("33", "ee"),
-    ("00", "oo"),
-    ("3", "e"),
-    ("0", "o"),
-    ("1", "i"),
-    ("4", "a"),
-    ("5", "s"),
-    ("7", "t"),
-]
+try:
+    from constants import (
+        TITLE_PREFIXES, ROLE_SUFFIXES, COMMON_FIRST_NAMES, LEET_REPLACEMENTS,
+        RESERVED_SYSTEM_SLUGS, GENERIC_WORDS, CRAWLER_HEADERS, TWITTER_HEADERS, LI_CRAWLER_HEADERS
+    )
+except ImportError:
+    from backend.constants import (
+        TITLE_PREFIXES, ROLE_SUFFIXES, COMMON_FIRST_NAMES, LEET_REPLACEMENTS,
+        RESERVED_SYSTEM_SLUGS, GENERIC_WORDS, CRAWLER_HEADERS, TWITTER_HEADERS, LI_CRAWLER_HEADERS
+    )
 
 
 def normalize_handle_leetspeak(text: str) -> List[str]:
@@ -263,12 +227,6 @@ def normalize_handle_leetspeak(text: str) -> List[str]:
             curr = curr.replace(num, char)
             variants.append(curr)
     return list(dict.fromkeys(variants))
-
-
-ROLE_SUFFIXES = {
-    "hr", "dev", "qa", "ceo", "cto", "cfo", "coo", "cmo", "admin", "recruiter", 
-    "sales", "support", "help", "jobs", "hiring", "team", "legal", "ops", "design", "tech", "official"
-}
 
 
 def split_compound_name(local_part: str) -> Tuple[str, str]:

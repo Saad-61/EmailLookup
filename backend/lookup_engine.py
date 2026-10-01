@@ -59,6 +59,21 @@ except ImportError:
         get_random_proxy_url,
     )
 
+try:
+    from constants import (
+        BROWSER_HEADERS, PERSONAL_DOMAINS, INVALID_TYPO_DOMAINS, KNOWN_DOMAIN_TYPOS,
+        TITLE_PREFIXES, ROLE_SUFFIXES, COMMON_FIRST_NAMES, LEET_REPLACEMENTS,
+        RESERVED_SYSTEM_SLUGS, US_STATES, KNOWN_CITIES, COUNTRY_CANONICAL,
+        ALL_COUNTRIES, TZ_REGIONS
+    )
+except ImportError:
+    from backend.constants import (
+        BROWSER_HEADERS, PERSONAL_DOMAINS, INVALID_TYPO_DOMAINS, KNOWN_DOMAIN_TYPOS,
+        TITLE_PREFIXES, ROLE_SUFFIXES, COMMON_FIRST_NAMES, LEET_REPLACEMENTS,
+        RESERVED_SYSTEM_SLUGS, US_STATES, KNOWN_CITIES, COUNTRY_CANONICAL,
+        ALL_COUNTRIES, TZ_REGIONS
+    )
+
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
@@ -170,74 +185,6 @@ def detect_email_typo(email: str) -> Optional[str]:
     return None
 
 
-TITLE_PREFIXES = {
-    "ch", "chaudhry", "chaudhary", "dr", "engr", "eng", "mr", "ms", "mrs", 
-    "prof", "syed", "sh", "sk", "sheikh", "md", "muhd", "malik", "adv", "al", "el", "haj", "haji"
-}
-
-ROLE_SUFFIXES = {
-    "hr", "dev", "qa", "ceo", "cto", "cfo", "coo", "cmo", "admin", "recruiter", 
-    "sales", "support", "help", "jobs", "hiring", "team", "legal", "ops", "design", "tech", "official"
-}
-
-COMMON_FIRST_NAMES = {
-    "fahad", "ahmad", "ahmed", "saad", "noman", "nouman", "nauman", "ali", "hamza", "usman", "osman",
-    "bilal", "hassan", "hasan", "hussain", "zain", "omer", "umar", "faisal", "farhan", 
-    "kashif", "tariq", "asif", "dameesha", "ahtisham", "atisam", "dilawar", "hameed",
-    "ghaffar", "rashid", "tahir", "nasir", "amir", "aamir", "sami", "haris", "junaid",
-    "waseem", "wasim", "naveed", "navid", "arshad", "akram", "aslam", "iqbal", "anwar",
-    "akhtar", "latif", "mahmood", "mehmood", "butt", "dar", "bhatti", "rana", "khan",
-    "chaudhry", "malik", "sheikh", "syed", "shah", "javed", "javaid", "siddiqui",
-    "qureshi", "ansari", "farooqi", "abbasi", "mirza", "baig", "mughal", "rehman",
-    "rahman", "aziz", "khalid", "sultan", "alam", "raza", "ashraf", "munir", "zafar",
-    "nawaz", "sarwar", "liaquat", "abid", "sajid", "majid", "zahid", "shahzad",
-    "khurram", "shahbaz", "tanveer", "tanvir", "waheed", "wahid", "yousaf", "yusuf",
-    "yaqoob", "ayub", "arouba", "ayesha", "fatima", "zainab", "maryam", "mariam",
-    "hira", "sana", "iqra", "amna", "sadia", "mahnoor", "anmol", "noor", "rabia",
-    "sidra", "kinza", "alishba", "hafsa", "laiba", "bisma", "aiman", "nimra",
-    "bushra", "sumaira", "shazia", "rubina", "farzana", "tahira", "samina", "yasmeen",
-    "shabnam", "nasreen", "parveen", "uzma", "fauzia", "fozia", "saima", "asifa",
-    "nida", "fariha", "hina", "madiha", "kiran", "mehwish", "komal", "natasha", "sonia",
-    "erik", "john", "david", "michael", "james", "robert", "william", "richard",
-    "thomas", "charles", "daniel", "matthew", "anthony", "mark", "donald", "steven",
-    "paul", "andrew", "joshua", "kenneth", "kevin", "brian", "george", "timothy",
-    "ronald", "jason", "jeffrey", "ryan", "jacob", "gary", "nicholas", "eric",
-    "jonathan", "stephen", "larry", "justin", "scott", "brandon", "benjamin", "samuel",
-    "gregory", "alexander", "frank", "patrick", "raymond", "jack", "dennis", "jerry",
-    "tyler", "aaron", "jose", "adam", "nathan", "henry", "douglas", "zachary", "peter",
-    "kyle", "walter", "ethan", "jeremy", "harold", "keith", "christian", "roger", "noah",
-    "gerald", "carl", "terry", "sean", "austin", "arthur", "lawrence", "jesse", "dylan",
-    "bryan", "joe", "jordan", "billy", "albert", "bruce", "willie", "gabriel", "logan",
-    "alan", "juan", "wayne", "roy", "ralph", "randy", "eugene", "vincent", "russell",
-    "louis", "philip", "bobby", "johnny", "bradley", "haseeb", "rauf", "collison",
-    "tauqeer", "tauqir", "touqeer", "touqir", "shafiq", "shafique"
-}
-
-LEET_REPLACEMENTS = [
-    ("33", "ee"),
-    ("00", "oo"),
-    ("3", "e"),
-    ("0", "o"),
-    ("1", "i"),
-    ("4", "a"),
-    ("5", "s"),
-    ("7", "t"),
-]
-
-
-def normalize_handle_leetspeak(text: str) -> List[str]:
-    """Generates candidate normalized strings by substituting leetspeak digits with letters."""
-    if not text:
-        return []
-    variants = [text.lower()]
-    curr = text.lower()
-    for num, char in LEET_REPLACEMENTS:
-        if num in curr:
-            curr = curr.replace(num, char)
-            variants.append(curr)
-    return list(dict.fromkeys(variants))
-
-
 def split_concatenated_name(local_part: str) -> Optional[str]:
     """
     Parses concatenated names from personal email usernames with or without delimiters, titles, and leetspeak numbers.
@@ -316,111 +263,6 @@ def split_concatenated_name(local_part: str) -> Optional[str]:
                     return f"{fn.capitalize()} {rem.capitalize()}"
 
     return clean_alpha.capitalize() if len(clean_alpha) >= 3 else None
-
-
-US_STATES = {
-    "al": "Alabama", "ak": "Alaska", "az": "Arizona", "ar": "Arkansas", "ca": "California",
-    "co": "Colorado", "ct": "Connecticut", "de": "Delaware", "fl": "Florida", "ga": "Georgia",
-    "hi": "Hawaii", "id": "Idaho", "il": "Illinois", "in": "Indiana", "ia": "Iowa",
-    "ks": "Kansas", "ky": "Kentucky", "la": "Louisiana", "me": "Maine", "md": "Maryland",
-    "ma": "Massachusetts", "mi": "Michigan", "mn": "Minnesota", "ms": "Mississippi", "mo": "Missouri",
-    "mt": "Montana", "ne": "Nebraska", "nv": "Nevada", "nh": "New Hampshire", "nj": "New Jersey",
-    "nm": "New Mexico", "ny": "New York", "nc": "North Carolina", "nd": "North Dakota", "oh": "Ohio",
-    "ok": "Oklahoma", "or": "Oregon", "pa": "Pennsylvania", "ri": "Rhode Island", "sc": "South Carolina",
-    "sd": "South Dakota", "tn": "Tennessee", "tx": "Texas", "ut": "Utah", "vt": "Vermont",
-    "va": "Virginia", "wa": "Washington", "wv": "West Virginia", "wi": "Wisconsin", "wy": "Wyoming",
-    "dc": "District of Columbia",
-}
-
-KNOWN_CITIES = {
-    "faisalabad": "Faisalabad, Punjab, Pakistan",
-    "lahore": "Lahore, Punjab, Pakistan",
-    "karachi": "Karachi, Sindh, Pakistan",
-    "islamabad": "Islamabad, Pakistan",
-    "rawalpindi": "Rawalpindi, Punjab, Pakistan",
-    "peshawar": "Peshawar, Khyber Pakhtunkhwa, Pakistan",
-    "multan": "Multan, Punjab, Pakistan",
-    "mountain view": "Mountain View, California, United States",
-    "san francisco bay area": "San Francisco Bay Area, California, United States",
-    "bay area": "San Francisco Bay Area, California, United States",
-    "san francisco": "San Francisco, California, United States",
-    "sf": "San Francisco, California, United States",
-    "palo alto": "Palo Alto, California, United States",
-    "san jose": "San Jose, California, United States",
-    "cupertino": "Cupertino, California, United States",
-    "sunnyvale": "Sunnyvale, California, United States",
-    "menlo park": "Menlo Park, California, United States",
-    "seattle": "Seattle, Washington, United States",
-    "redmond": "Redmond, Washington, United States",
-    "new york": "New York, United States",
-    "nyc": "New York, United States",
-    "brooklyn": "Brooklyn, New York, United States",
-    "manhattan": "Manhattan, New York, United States",
-    "austin": "Austin, Texas, United States",
-    "boston": "Boston, Massachusetts, United States",
-    "cambridge": "Cambridge, Massachusetts, United States",
-    "los angeles": "Los Angeles, California, United States",
-    "chicago": "Chicago, Illinois, United States",
-    "london": "London, England, United Kingdom",
-    "berlin": "Berlin, Germany",
-    "munich": "Munich, Bavaria, Germany",
-    "paris": "Paris, France",
-    "amsterdam": "Amsterdam, Netherlands",
-    "dublin": "Dublin, Ireland",
-    "zurich": "Zurich, Switzerland",
-    "toronto": "Toronto, Ontario, Canada",
-    "vancouver": "Vancouver, British Columbia, Canada",
-    "montreal": "Montreal, Quebec, Canada",
-    "bengaluru": "Bengaluru, Karnataka, India",
-    "bangalore": "Bengaluru, Karnataka, India",
-    "hyderabad": "Hyderabad, Telangana, India",
-    "mumbai": "Mumbai, Maharashtra, India",
-    "delhi": "New Delhi, India",
-    "new delhi": "New Delhi, India",
-    "pune": "Pune, Maharashtra, India",
-    "chennai": "Chennai, Tamil Nadu, India",
-    "gurugram": "Gurugram, Haryana, India",
-    "gurgaon": "Gurugram, Haryana, India",
-    "noida": "Noida, Uttar Pradesh, India",
-    "singapore": "Singapore",
-    "tokyo": "Tokyo, Japan",
-    "sydney": "Sydney, New South Wales, Australia",
-    "melbourne": "Melbourne, Victoria, Australia",
-    "tel aviv": "Tel Aviv, Israel",
-}
-
-COUNTRY_CANONICAL = {
-    "usa": "United States",
-    "us": "United States",
-    "u.s.a.": "United States",
-    "u.s.": "United States",
-    "united states of america": "United States",
-    "uk": "United Kingdom",
-    "u.k.": "United Kingdom",
-    "great britain": "United Kingdom",
-    "uae": "United Arab Emirates",
-    "u.a.e.": "United Arab Emirates",
-    "pk": "Pakistan",
-    "in": "India",
-    "de": "Germany",
-    "deutschland": "Germany",
-    "fr": "France",
-    "au": "Australia",
-    "jp": "Japan",
-    "ch": "Switzerland",
-    "nl": "Netherlands",
-    "ie": "Ireland",
-}
-
-ALL_COUNTRIES = {
-    "pakistan", "united states", "india", "united kingdom", "germany", "france",
-    "canada", "australia", "japan", "china", "brazil", "russia", "netherlands",
-    "switzerland", "sweden", "norway", "finland", "denmark", "spain", "italy",
-    "singapore", "new zealand", "ireland", "south korea", "israel", "united arab emirates",
-    "saudi arabia", "turkey", "mexico", "indonesia", "malaysia", "vietnam", "thailand",
-    "poland", "ukraine", "austria", "belgium", "portugal", "greece", "egypt", "south africa",
-    "nigeria", "kenya", "argentina", "chile", "colombia", "bangladesh", "nepal", "sri lanka"
-}
 
 
 def normalize_location(raw_loc: Optional[str], fallback_country: Optional[str] = None) -> Optional[str]:
