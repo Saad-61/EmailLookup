@@ -59,11 +59,6 @@ except ImportError:
         get_random_proxy_url,
     )
 
-try:
-    from gaie_finder import lookup_google_account
-except ImportError:
-    from backend.gaie_finder import lookup_google_account
-
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
@@ -1633,14 +1628,13 @@ async def run_lookup(email: str) -> dict:
 
     limits = httpx.Limits(max_connections=80, max_keepalive_connections=35)
     async with httpx.AsyncClient(timeout=8.0, limits=limits) as client:
-        print("[Lookup Engine] Querying base sources (Gravatar, GitHub, Company DB, GAIE)...", flush=True)
+        print("[Lookup Engine] Querying base sources (Gravatar, GitHub, Company DB)...", flush=True)
         # Phase 1: Run all base enrichment sources concurrently
-        gravatar, github, company, harvested, gaie = await asyncio.gather(
+        gravatar, github, company, harvested = await asyncio.gather(
             lookup_gravatar(email, client),
             lookup_github(email, client),
             lookup_company(domain, client),
             lookup_harvested_db(email),
-            lookup_google_account(email, client),
             return_exceptions=True,
         )
 
@@ -1649,7 +1643,6 @@ async def run_lookup(email: str) -> dict:
         if isinstance(github, Exception): github = None
         if isinstance(company, Exception): company = None
         if isinstance(harvested, Exception): harvested = {}
-        if isinstance(gaie, Exception): gaie = {}
 
         # Fallback cross-reference: if GitHub was not found by direct email search,
         # but Gravatar revealed a handle or username slug, check GitHub for that candidate
@@ -1661,15 +1654,12 @@ async def run_lookup(email: str) -> dict:
             except Exception:
                 pass
 
-        # ── Resolve name from best source: Google Account (GAIE) > GitHub > Gravatar > Harvested DB ──
-        gaie_name = gaie.get("name") if isinstance(gaie, dict) else None
+        # ── Resolve name from best source: GitHub > Gravatar > Harvested DB ──
         gh_name = github.get("name") if github else None
         grav_name = gravatar.get("name")
 
-        if gaie_name and is_clean_human_name(gaie_name):
-            resolved_name = gaie_name
-            print(f"[Lookup Engine] Using verified Google Account Name: '{gaie_name}' (100% confidence)", flush=True)
-        elif gh_name and is_clean_human_name(gh_name) and " " in gh_name.strip():
+        # If GitHub has a proper multi-word human name, prefer it over a single-word Gravatar handle
+        if gh_name and is_clean_human_name(gh_name) and " " in gh_name.strip():
             resolved_name = gh_name
         elif grav_name and is_clean_human_name(grav_name):
             resolved_name = grav_name
@@ -1951,20 +1941,16 @@ async def run_lookup(email: str) -> dict:
         fb_country = github.get("commit_timezone") if github else None
         resolved_location = normalize_location(raw_location, fallback_country=fb_country)
 
-        # ── Profile picture hierarchy (Highest Priority: Verified LinkedIn > GAIE > GitHub > Gravatar) ──
+        # ── Profile picture hierarchy (Highest Priority: Verified LinkedIn) ──
         gh_avatar = github.get("avatar") if (github and isinstance(github, dict)) else None
         is_gh_default = await is_github_default_avatar(gh_avatar, client) if gh_avatar else False
         harvested_li_avatar = harvested.get("avatar_url") if (harvested and "licdn.com" in (harvested.get("avatar_url") or "")) else None
-        gaie_avatar = gaie.get("avatar_url") if isinstance(gaie, dict) else None
 
         if li_avatar and has_verified_li:
             resolved_avatar = li_avatar
         elif harvested_li_avatar:
             resolved_avatar = harvested_li_avatar
             print(f"[Lookup Engine] Using verified LinkedIn headshot from database: {harvested_li_avatar[:60]}...", flush=True)
-        elif gaie_avatar:
-            resolved_avatar = gaie_avatar
-            print(f"[Lookup Engine] Using verified Google Account avatar: {gaie_avatar[:60]}...", flush=True)
         elif gh_avatar and not is_gh_default:
             resolved_avatar = gh_avatar
         elif harvested and harvested.get("avatar_url") and not ("gravatar.com" in (harvested.get("avatar_url") or "")):
@@ -2001,8 +1987,6 @@ async def run_lookup(email: str) -> dict:
     # ── Build person card ──
     person = {
         "name": resolved_name,
-        "google_name": gaie.get("name") if isinstance(gaie, dict) else None,
-        "gaia_id": gaie.get("gaia_id") if isinstance(gaie, dict) else None,
         "avatar": resolved_avatar,
         "bio": (gravatar.get("bio") or (github.get("bio") if github else None) or (harvested.get("bio") if harvested else None)),
         "location": resolved_location,

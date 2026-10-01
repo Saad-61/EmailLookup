@@ -210,8 +210,6 @@ async def email_lookup(request: LookupRequest):
 
     person = PersonInfo(
         name=person_data.get("name"),
-        google_name=person_data.get("google_name"),
-        gaia_id=person_data.get("gaia_id"),
         avatar=person_data.get("avatar"),
         bio=person_data.get("bio"),
         location=person_data.get("location"),

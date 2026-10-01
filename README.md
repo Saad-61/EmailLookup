@@ -12,10 +12,6 @@ A high-performance reverse email lookup and SMTP verifier application built with
   - Detects account existence across 30+ platforms (Holehe method).
   - Searches and ranks candidate social media profiles (LinkedIn, Instagram, Twitter/X, TikTok, Pinterest, Facebook, Spotify, GitHub).
   - Multi-anchor scoring algorithm with Jaro-Winkler similarity and surname disambiguation.
-- **Google Account Information Extractor (GAIE)**:
-  - Discovers verified full names, GAIA IDs, and profile avatars for `@gmail.com` and Google Workspace accounts.
-  - Queries Google's internal People APIs concurrently in Phase 1 with 0ms added latency.
-  - Routes single requests through residential proxy pool to eliminate rate-limiting.
 - **Automated Spotify Pathfinder GraphQL User Search**:
   - Automatically solves Spotify's dynamic TOTP challenge via background headless Playwright browser.
   - Auto-refreshes Bearer access tokens 5 minutes before expiration with in-memory caching (0ms lookup latency).
@@ -35,7 +31,7 @@ A high-performance reverse email lookup and SMTP verifier application built with
 
 ## Technical Stack
 
-- **Backend**: Python 3.11+, FastAPI, `httpx`, `aiosqlite`, `dnspython`, `beautifulsoup4`, `playwright`, `ghunt`.
+- **Backend**: Python 3.11+, FastAPI, `httpx`, `aiosqlite`, `dnspython`, `beautifulsoup4`, `playwright`.
 - **Frontend**: Vanilla HTML5, CSS3, JavaScript (Fetch API).
 - **Database**: SQLite3 (`data/cache.db`).
 
