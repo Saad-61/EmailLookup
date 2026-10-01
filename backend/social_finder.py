@@ -19,6 +19,7 @@ import urllib.parse
 import sys
 import time
 import unicodedata
+import xml.etree.ElementTree as ET
 from typing import List, Optional, Dict, Any, Tuple, Set
 import httpx
 from bs4 import BeautifulSoup
@@ -602,6 +603,24 @@ def parse_social_url(url: str) -> Optional[Dict[str, str]]:
             "url": f"https://stackoverflow.com/users/{uid}/{slug}" if slug != uid else f"https://stackoverflow.com/users/{uid}",
         }
 
+    # Medium
+    med_match = re.search(r"https?://(?:[a-z0-9-]+\.)?medium\.com/@([a-zA-Z0-9._-]{2,50})/?", clean, re.IGNORECASE)
+    if not med_match:
+        # Match subdomain style: https://addyosmani.medium.com/...
+        med_sub_match = re.search(r"https?://([a-zA-Z0-9._-]{2,50})\.medium\.com(?:/.*)?", clean, re.IGNORECASE)
+        if med_sub_match and med_sub_match.group(1).lower() not in ("www", "api", "cdn-images-1", "blog", "status", "help", "policy"):
+            med_match = med_sub_match
+
+    if med_match:
+        handle = med_match.group(1)
+        if handle.lower() not in RESERVED_SYSTEM_SLUGS and handle.lower() not in ("about", "membership", "creators", "feed", "search", "topics", "tag", "explore", "me", "settings", "m", "policy", "www", "blog"):
+            return {
+                "platform": "medium",
+                "platform_label": "Medium",
+                "handle": handle,
+                "url": f"https://medium.com/@{handle}",
+            }
+
     return None
 
 
@@ -652,15 +671,22 @@ def clean_display_name(raw_title: str, handle: str, platform: str, resolved_name
         t = re.sub(r"\s*[-–—:|•·]\s*Stack\s*Overflow.*$", "", t, flags=re.IGNORECASE)
         t = re.sub(r"\s+on\s+Stack\s*Overflow.*$", "", t, flags=re.IGNORECASE)
 
+    # Medium Profile Titles:
+    # "Stories by Saad Asif on Medium", "Saad Asif – Medium", "Saad Asif on Medium"
+    if platform == "medium" or "medium" in t.lower():
+        t = re.sub(r"^Stories\s+by\s+", "", t, flags=re.IGNORECASE)
+        t = re.sub(r"\s*[-–—:|•·]\s*Medium.*$", "", t, flags=re.IGNORECASE)
+        t = re.sub(r"\s+on\s+Medium.*$", "", t, flags=re.IGNORECASE)
+
     # Extract playlist creator if present e.g. "backseat - playlist by Mohid Faraz | Spotify"
     if "playlist by" in t.lower():
         m_pl = re.search(r"playlist by\s+([^|•–-]+)", t, re.IGNORECASE)
         if m_pl and len(m_pl.group(1).strip()) >= 2:
             return m_pl.group(1).strip()
 
-    # Strip platform trailers & generic TikTok/Instagram/Pinterest/X titles
-    t = re.sub(r"\s*[-–—|•·]\s*(?:Instagram|X|Twitter|Facebook|TikTok|Pinterest|Spotify|Stack\s*Overflow|Photos and videos|Profile).*$", "", t, flags=re.IGNORECASE)
-    t = re.sub(r"\s+on\s+(?:Instagram|Twitter|X|Facebook|TikTok|Pinterest|Spotify|Stack\s*Overflow)\s*:?.*$", "", t, flags=re.IGNORECASE)
+    # Strip platform trailers & generic TikTok/Instagram/Pinterest/X/Medium titles
+    t = re.sub(r"\s*[-–—|•·]\s*(?:Instagram|X|Twitter|Facebook|TikTok|Pinterest|Spotify|Stack\s*Overflow|Medium|Photos and videos|Profile).*$", "", t, flags=re.IGNORECASE)
+    t = re.sub(r"\s+on\s+(?:Instagram|Twitter|X|Facebook|TikTok|Pinterest|Spotify|Stack\s*Overflow|Medium)\s*:?.*$", "", t, flags=re.IGNORECASE)
     t = re.sub(r"^(?:Photos?|Reels?|Videos?|Posts?)\s+by\s+", "", t, flags=re.IGNORECASE)
 
     # Strip handle in parentheses e.g. "Babar Dilawar (@dilawar)" -> "Babar Dilawar"
@@ -711,6 +737,22 @@ def clean_bio_snippet(raw_snippet: str, platform: str, handle: str) -> str:
 
     elif platform in ("twitter", "x"):
         s = re.sub(r"\s*See the latest conversations with\s+@?[a-zA-Z0-9._-]+.*$", "", s, flags=re.IGNORECASE).strip()
+        s = s.strip(" .,-–—|•·:/")
+
+    elif platform == "facebook":
+        # Strip date prefixes e.g. "Jul 20, 2026 ·", "Dec 24, 2023 ·"
+        s = re.sub(r"^[A-Za-z]{3}\s+\d{1,2},\s+\d{4}\s*·\s*", "", s).strip()
+        # Strip follower/like counts if followed by directory boilerplate
+        s = re.sub(r"[\d,]+\s+likes\s*·\s*[\d,]+\s+talking\s+about\s+this\.?", "", s, flags=re.IGNORECASE).strip()
+        # Strip directory boilerplate
+        s = re.sub(r"View the profiles of people named\s+[^.]+\.", "", s, flags=re.IGNORECASE).strip()
+        s = re.sub(r"Join Facebook to connect with\s+[^.]+\.", "", s, flags=re.IGNORECASE).strip()
+        s = re.sub(r"Facebook gives people the power to\s*(?:share\s+and\s+makes?|share\s*\.\.\.|\.\.\.)?", "", s, flags=re.IGNORECASE).strip()
+        # Strip internal tracking tokens e.g. tSeordsopn7ca0omgN8vhrhm...
+        s = re.sub(r"\b[tT][A-Za-z0-9]{20,}\b.*$", "", s).strip()
+        # Cut off secondary post spillovers
+        s = re.sub(r"\s*·\s*Shared with Public.*$", "", s, flags=re.IGNORECASE).strip()
+        s = re.sub(r"\s*·\s*Excited to share.*$", "", s, flags=re.IGNORECASE).strip()
         s = s.strip(" .,-–—|•·:/")
 
     elif platform == "linkedin" or "linkedin" in s.lower():
@@ -1103,6 +1145,59 @@ async def probe_pinterest_profile(handle: str, client: httpx.AsyncClient) -> Opt
                 "url": url,
                 "avatar_url": avatar_url,
                 "snippet": bio,
+                "title": raw_title,
+                "discovery_method": "probing"
+            }
+    except Exception:
+        pass
+    return None
+
+
+async def probe_medium_profile(handle: str, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
+    clean = re.sub(r'[^a-zA-Z0-9._-]', '', handle).lstrip("@").strip()
+    if not clean or len(clean) < 2 or clean.lower() in RESERVED_SYSTEM_SLUGS or clean.lower() in ("about", "membership", "creators", "feed", "search", "topics", "tag", "explore", "me", "settings", "policy", "plans"):
+        return None
+    url = f"https://medium.com/feed/@{clean}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.8",
+    }
+    try:
+        resp = await client.get(url, headers=headers, timeout=4.0, follow_redirects=True)
+        if resp.status_code == 200:
+            root = ET.fromstring(resp.text)
+            channel = root.find("channel")
+            if channel is None:
+                return None
+            raw_title = channel.find("title").text if channel.find("title") is not None else ""
+            raw_image = channel.find("image/url").text if channel.find("image/url") is not None else None
+            
+            clean_name = raw_title.replace("Stories by ", "").replace(" on Medium", "").strip() if raw_title else clean
+            display_name = clean_display_name(clean_name, clean, "medium")
+            
+            snippet = f"Medium profile for {display_name}"
+            items = channel.findall("item")
+            if items:
+                first_item = items[0]
+                post_title = first_item.find("title").text if first_item.find("title") is not None else ""
+                content_encoded = first_item.find("{http://purl.org/rss/1.0/modules/content/}encoded")
+                if content_encoded is not None and content_encoded.text:
+                    p_soup = BeautifulSoup(content_encoded.text, "html.parser")
+                    p_text = p_soup.get_text().strip()
+                    snippet = f"Latest story: '{post_title}' — {p_text[:120]}..." if post_title else p_text[:140]
+            
+            avatar_url = html.unescape(raw_image) if raw_image else None
+            profile_url = f"https://medium.com/@{clean}"
+            
+            print(f"[Prober] [MEDIUM] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'}, Posts: {len(items)})", flush=True)
+            return {
+                "platform": "medium",
+                "platform_label": "Medium",
+                "handle": clean,
+                "name": display_name,
+                "url": profile_url,
+                "avatar_url": avatar_url,
+                "snippet": snippet,
                 "title": raw_title,
                 "discovery_method": "probing"
             }
@@ -1776,34 +1871,39 @@ async def fetch_linkedin_candidate_avatar(url: str, client: httpx.AsyncClient) -
 
 
 async def fetch_facebook_candidate_avatar(url: str, client: httpx.AsyncClient) -> Optional[str]:
-    """Extract authentic Facebook profile photo from public OpenGraph tags via residential proxy routing."""
+    """Extract authentic Facebook profile photo from public OpenGraph tags via crawler headers with proxy fallback."""
     if not url or "facebook.com/" not in url:
         return None
-    resp = None
-    p_url = get_random_proxy_url()
-    if p_url:
-        try:
-            async with httpx.AsyncClient(proxy=p_url, timeout=5.0, follow_redirects=True, verify=False) as px_client:
-                resp = await px_client.get(url, headers=TWITTER_HEADERS)
-        except Exception:
-            resp = None
 
-    if not resp or resp.status_code != 200:
-        try:
-            resp = await client.get(url, headers=TWITTER_HEADERS, timeout=3.5, follow_redirects=True)
-        except Exception:
-            return None
-
+    # 1. Primary: Direct crawler request with Twitterbot headers (Facebook serves rich OpenGraph tags directly)
     try:
-        if resp and resp.status_code == 200:
+        resp = await client.get(url, headers=TWITTER_HEADERS, timeout=4.0, follow_redirects=True)
+        if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
-            og_img = soup.find("meta", property="og:image")
+            og_img = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "twitter:image"})
             if og_img and og_img.get("content"):
                 img_src = og_img.get("content").strip()
-                if "static.xx" not in img_src and "fb_icon" not in img_src:
+                if any(cdn in img_src for cdn in ("fbcdn.net", "fbsbx.com", "facebook.com")) and "static.xx" not in img_src and "fb_icon" not in img_src:
                     return html.unescape(img_src)
     except Exception:
         pass
+
+    # 2. Secondary: Fallback via residential proxy
+    p_url = get_random_proxy_url()
+    if p_url:
+        try:
+            async with httpx.AsyncClient(proxy=p_url, timeout=4.0, follow_redirects=True, verify=False) as px_client:
+                resp = await px_client.get(url, headers=TWITTER_HEADERS)
+                if resp.status_code == 200:
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    og_img = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "twitter:image"})
+                    if og_img and og_img.get("content"):
+                        img_src = og_img.get("content").strip()
+                        if any(cdn in img_src for cdn in ("fbcdn.net", "fbsbx.com", "facebook.com")) and "static.xx" not in img_src and "fb_icon" not in img_src:
+                            return html.unescape(img_src)
+        except Exception:
+            pass
+
     return None
 
 
@@ -1822,7 +1922,7 @@ def _query_ddgs_sync(query: str, proxy_url: str, timeout: float = 5.0) -> List[D
     for r in results:
         link = r.get("href", "")
         if link and link not in seen:
-            if any(dom in link.lower() for dom in ("linkedin.com", "instagram.com", "facebook.com", "tiktok.com", "pinterest.com", "github.com", "x.com", "twitter.com", "spotify.com")):
+            if any(dom in link.lower() for dom in ("linkedin.com", "instagram.com", "facebook.com", "tiktok.com", "pinterest.com", "github.com", "x.com", "twitter.com", "spotify.com", "medium.com", "stackoverflow.com")):
                 seen.add(link)
                 items.append({
                     "link": link,
@@ -1972,16 +2072,21 @@ async def search_social_candidates(
         print(f"[DDG Engine] Skipping redundant probes for already verified platforms: {sorted(list(v_plats))}", flush=True)
 
     # 1. Build Direct Probe Tasks (Skip if platform is already verified)
-    ig_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
-    tt_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 2 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 24))
-    pin_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in probe_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
-    tw_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_") for s in probe_seeds if 4 <= len(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_")) <= 15))
-    fb_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".") for s in probe_seeds if 5 <= len(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".")) <= 50))
-    gh_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-") for s in probe_seeds if 1 <= len(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-")) <= 39))
+    combined_seeds = list(dict.fromkeys(specific_handles + probe_seeds))
+    ig_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in combined_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
+    med_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._-]', '', s).lstrip("@").strip("._-") for s in combined_seeds if 2 <= len(re.sub(r'[^a-zA-Z0-9._-]', '', s).lstrip("@").strip("._-")) <= 40))
+    tt_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in combined_seeds if 2 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 24))
+    pin_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".") for s in combined_seeds if 3 <= len(re.sub(r'[^a-zA-Z0-9._]', '', s).lstrip("@").strip(".")) <= 30))
+    tw_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_") for s in combined_seeds if 4 <= len(re.sub(r'[^a-zA-Z0-9_]', '_', s).lstrip("@").strip("_")) <= 15))
+    fb_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".") for s in combined_seeds if 5 <= len(re.sub(r'[^a-zA-Z0-9.]', '', s).lstrip("@").strip(".")) <= 50))
+    gh_seeds = list(dict.fromkeys(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-") for s in combined_seeds if 1 <= len(re.sub(r'[^a-zA-Z0-9_-]', '', s).lstrip("@").strip("_-")) <= 39))
 
     limits = httpx.Limits(max_connections=60, max_keepalive_connections=25)
-    async with httpx.AsyncClient(timeout=2.5, limits=limits, verify=False) as probe_client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(connect=3.0, read=5.0, write=3.0, pool=3.0), limits=limits, verify=False) as probe_client:
         probe_tasks = []
+        if "medium" not in v_plats:
+            for s in med_seeds:
+                probe_tasks.append(probe_medium_profile(s, probe_client))
         if "instagram" not in v_plats:
             for s in ig_seeds:
                 probe_tasks.append(probe_instagram_profile(s, probe_client))
@@ -2006,6 +2111,8 @@ async def search_social_candidates(
         first_tok = tokens[0] if tokens else ""
         ddg_search_queries = []
 
+        if "medium" not in v_plats:
+            ddg_search_queries.append(("medium", f'{clean_target} medium'))
         if "instagram" not in v_plats:
             ddg_search_queries.append(("instagram", f'{clean_target} instagram'))
         if "twitter" not in v_plats:
@@ -2360,21 +2467,25 @@ async def search_social_candidates(
                         "avatar_url": existing_avatar,
                     }
 
-    # Concurrent Avatar Enrichment (LinkedIn + Instagram + Facebook + Spotify candidates via crawler headers)
+    # Concurrent Avatar Enrichment (LinkedIn + Instagram + Facebook + Spotify + Medium candidates via crawler headers)
     enrich_tasks = []
     li_count = 0
+    med_count = 0
     ig_count = 0
     fb_count = 0
     sp_count = 0
     for c in candidates_map.values():
         if not c.get("avatar_url"):
-            if c["platform"] == "linkedin" and li_count < 15:
+            if c["platform"] == "linkedin" and "linkedin" not in v_plats and li_count < 15:
                 enrich_tasks.append(("linkedin", c))
                 li_count += 1
-            elif c["platform"] == "instagram" and ig_count < 15:
+            elif c["platform"] == "medium" and med_count < 15:
+                enrich_tasks.append(("medium", c))
+                med_count += 1
+            elif c["platform"] == "instagram" and "instagram" not in v_plats and ig_count < 15:
                 enrich_tasks.append(("instagram", c))
                 ig_count += 1
-            elif c["platform"] == "facebook" and fb_count < 8:
+            elif c["platform"] == "facebook" and "facebook" not in v_plats and fb_count < 8:
                 enrich_tasks.append(("facebook", c))
                 fb_count += 1
             elif c["platform"] == "spotify" and sp_count < 15:
@@ -2395,6 +2506,16 @@ async def search_social_candidates(
                         if canon_slug and canon_slug.lower() not in ("dir", "pub", "feed") and len(canon_slug) >= 3:
                             c["handle"] = f"@{canon_slug}"
                             c["url"] = f"https://www.linkedin.com/in/{canon_slug}"
+            elif plat == "medium":
+                h_slug = c["handle"].lstrip("@").strip()
+                med_data = await probe_medium_profile(h_slug, http_client)
+                if med_data:
+                    if med_data.get("avatar_url"):
+                        c["avatar_url"] = med_data["avatar_url"]
+                    if med_data.get("name") and (not c.get("name") or c["name"] == c["handle"].lstrip("@")):
+                        c["name"] = med_data["name"]
+                    if med_data.get("snippet") and not c.get("snippet"):
+                        c["snippet"] = med_data["snippet"]
             elif plat == "instagram":
                 h_slug = c["handle"].lstrip("@").strip()
                 ig_data = await probe_instagram_profile(h_slug, http_client)
@@ -2501,11 +2622,12 @@ async def search_social_candidates(
     unique_candidates = list({id(v): v for v in merged_candidates.values()}.values())
     all_candidates = sorted(unique_candidates, key=lambda x: -x["score"])
 
-    # Group by platform in priority order: LinkedIn -> GitHub -> Stack Overflow -> Instagram -> Facebook -> X -> Pinterest -> TikTok -> Spotify
+    # Group by platform in priority order: LinkedIn -> GitHub -> Stack Overflow -> Medium -> Instagram -> Facebook -> X -> Pinterest -> TikTok -> Spotify
     by_platform = {
         "linkedin": [c for c in all_candidates if c["platform"] == "linkedin"],
         "github": [c for c in all_candidates if c["platform"] == "github"],
         "stackoverflow": [c for c in all_candidates if c["platform"] == "stackoverflow"],
+        "medium": [c for c in all_candidates if c["platform"] == "medium"],
         "instagram": [c for c in all_candidates if c["platform"] == "instagram"],
         "facebook": [c for c in all_candidates if c["platform"] == "facebook"],
         "twitter": [c for c in all_candidates if c["platform"] == "twitter"],
