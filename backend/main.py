@@ -183,6 +183,7 @@ async def email_lookup(request: LookupRequest):
             cached["query_time_ms"] = max(1, int((time.time() - start_time) * 1000))
             if "social_candidates_by_platform" in cached and isinstance(cached["social_candidates_by_platform"], dict):
                 cached["social_candidates_by_platform"].setdefault("spotify", [])
+                cached["social_candidates_by_platform"].setdefault("stackoverflow", [])
             return LookupResponse(**cached)
 
     # Run lookup directly (platform check skipped to maximize speed since card is hidden)

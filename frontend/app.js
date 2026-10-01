@@ -39,6 +39,10 @@ const SVG_ICONS = {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0 0 22 12.017C22 6.484 17.522 2 12 2z"/>
     </svg>`,
+  stackoverflow: `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18.986 21.865v-6.408h2.134V24H1.87v-8.543h2.134v6.408h14.982zM6.14 17.596l10.669 2.228.45-2.09-10.67-2.228-.45 2.09zm1.704-5.32l9.504 5.248.974-1.92-9.504-5.248-.974 1.92zm3.324-4.856l7.467 7.824 1.488-1.572-7.467-7.824-1.488 1.572zm6.27-5.025l-2.004 1.054 5.048 9.58 2.004-1.054-5.048-9.58zM6.14 20.083h10.9v-2.134H6.14v2.134z"/>
+    </svg>`,
   youtube: `
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
       <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
@@ -250,6 +254,7 @@ let currentCandidatePlatform = "linkedin";
 const CANDIDATE_PLATFORMS = [
   { id: "linkedin", label: "LinkedIn", icon: SVG_ICONS.linkedin },
   { id: "github", label: "GitHub", icon: SVG_ICONS.github },
+  { id: "stackoverflow", label: "Stack Overflow", icon: SVG_ICONS.stackoverflow },
   { id: "instagram", label: "Instagram", icon: SVG_ICONS.instagram },
   { id: "facebook", label: "Facebook", icon: SVG_ICONS.facebook },
   { id: "twitter", label: "X", icon: SVG_ICONS.twitter },
@@ -595,6 +600,23 @@ function renderLookupResults(data) {
     }
   }
 
+  if (profiles.stackoverflow) {
+    const p = parseProfileVal(profiles.stackoverflow, "Stack Overflow");
+    if (p && p.url) {
+      let subText = p.handle || "";
+      if (p.name && p.name !== "Stack Overflow") {
+        subText = p.handle ? `${p.name} · ${p.handle}` : p.name;
+      }
+      chips.push(buildProfileChip({
+        href: p.url,
+        platform: "stackoverflow",
+        name: `Stack Overflow <span class="verified-pill">✓ Verified</span>`,
+        sub: subText,
+        avatar_url: resolveVerifiedAvatar("stackoverflow", p),
+      }));
+    }
+  }
+
   // ── Render Verified Profiles Card ──
   const verifiedBadgeEl = document.getElementById("verified-count-badge");
   if (verifiedBadgeEl) verifiedBadgeEl.textContent = chips.length;
@@ -617,7 +639,7 @@ function renderLookupResults(data) {
 
   currentLookupCandidates = byPlat;
 
-  const orderedPlats = ["linkedin", "github", "instagram", "facebook", "twitter", "pinterest", "tiktok", "spotify"];
+  const orderedPlats = ["linkedin", "github", "stackoverflow", "instagram", "facebook", "twitter", "pinterest", "tiktok", "spotify"];
   let totalCandidatesFound = 0;
   orderedPlats.forEach(p => {
     totalCandidatesFound += (byPlat[p] || []).length;
@@ -648,11 +670,13 @@ function renderLookupResults(data) {
     }
   }
 
-  // Activate LinkedIn by default if it has candidates, then GitHub, then Instagram, otherwise the first available platform
+  // Activate LinkedIn by default if it has candidates, then GitHub, then Stack Overflow, then Instagram, otherwise first available
   if ((byPlat.linkedin || []).length > 0) {
     switchCandidateTab("linkedin");
   } else if ((byPlat.github || []).length > 0) {
     switchCandidateTab("github");
+  } else if ((byPlat.stackoverflow || []).length > 0) {
+    switchCandidateTab("stackoverflow");
   } else if ((byPlat.instagram || []).length > 0) {
     switchCandidateTab("instagram");
   } else if (visiblePlats.length > 0) {

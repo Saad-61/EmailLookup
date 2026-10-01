@@ -2099,7 +2099,7 @@ async def run_lookup(email: str) -> dict:
                 raw_candidates.insert(0, cand_li)
 
         # ── Zero Duplicate Platform Rule ──
-        for p in ["linkedin", "github", "instagram", "twitter", "facebook", "tiktok", "pinterest", "spotify"]:
+        for p in ["linkedin", "github", "stackoverflow", "instagram", "twitter", "facebook", "tiktok", "pinterest", "spotify"]:
             prof = profiles.get(p)
             is_direct_verified = False
             if p == "github":
@@ -2141,7 +2141,7 @@ async def run_lookup(email: str) -> dict:
     except Exception as e:
         print(f"[Social Discovery] Candidate search error: {e}", flush=True)
         social_candidates = []
-        candidates_by_platform = {"linkedin": [], "instagram": [], "twitter": [], "facebook": [], "tiktok": [], "pinterest": [], "spotify": []}
+        candidates_by_platform = {"linkedin": [], "github": [], "stackoverflow": [], "instagram": [], "twitter": [], "facebook": [], "tiktok": [], "pinterest": [], "spotify": []}
 
     # ── Fallback Person Display Name from Clean Email Username ──
     # Note: Speculative social candidates are never promoted to the person card to prevent unverified data pollution

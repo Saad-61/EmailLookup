@@ -590,6 +590,18 @@ def parse_social_url(url: str) -> Optional[Dict[str, str]]:
                 "url": f"https://open.spotify.com/user/{handle}",
             }
 
+    # Stack Overflow
+    so_match = re.search(r"https?://(?:www\.)?stackoverflow\.com/users/(\d+)(?:/([a-zA-Z0-9_-]+))?", clean, re.IGNORECASE)
+    if so_match:
+        uid = so_match.group(1)
+        slug = so_match.group(2) or uid
+        return {
+            "platform": "stackoverflow",
+            "platform_label": "Stack Overflow",
+            "handle": slug,
+            "url": f"https://stackoverflow.com/users/{uid}/{slug}" if slug != uid else f"https://stackoverflow.com/users/{uid}",
+        }
+
     return None
 
 
@@ -633,6 +645,13 @@ def clean_display_name(raw_title: str, handle: str, platform: str, resolved_name
         t = re.sub(r"\s+on\s+Spotify.*$", "", t, flags=re.IGNORECASE)
         t = re.sub(r"^Listen\s+to\s+", "", t, flags=re.IGNORECASE)
 
+    # Stack Overflow Profile Titles:
+    # "User Guido van Rossum - Stack Overflow", "Guido van Rossum - Stack Overflow"
+    if platform == "stackoverflow" or "stack overflow" in t.lower():
+        t = re.sub(r"^User\s+", "", t, flags=re.IGNORECASE)
+        t = re.sub(r"\s*[-–—:|•·]\s*Stack\s*Overflow.*$", "", t, flags=re.IGNORECASE)
+        t = re.sub(r"\s+on\s+Stack\s*Overflow.*$", "", t, flags=re.IGNORECASE)
+
     # Extract playlist creator if present e.g. "backseat - playlist by Mohid Faraz | Spotify"
     if "playlist by" in t.lower():
         m_pl = re.search(r"playlist by\s+([^|•–-]+)", t, re.IGNORECASE)
@@ -640,8 +659,8 @@ def clean_display_name(raw_title: str, handle: str, platform: str, resolved_name
             return m_pl.group(1).strip()
 
     # Strip platform trailers & generic TikTok/Instagram/Pinterest/X titles
-    t = re.sub(r"\s*[-–—|•·]\s*(?:Instagram|X|Twitter|Facebook|TikTok|Pinterest|Spotify|Photos and videos|Profile).*$", "", t, flags=re.IGNORECASE)
-    t = re.sub(r"\s+on\s+(?:Instagram|Twitter|X|Facebook|TikTok|Pinterest|Spotify)\s*:?.*$", "", t, flags=re.IGNORECASE)
+    t = re.sub(r"\s*[-–—|•·]\s*(?:Instagram|X|Twitter|Facebook|TikTok|Pinterest|Spotify|Stack\s*Overflow|Photos and videos|Profile).*$", "", t, flags=re.IGNORECASE)
+    t = re.sub(r"\s+on\s+(?:Instagram|Twitter|X|Facebook|TikTok|Pinterest|Spotify|Stack\s*Overflow)\s*:?.*$", "", t, flags=re.IGNORECASE)
     t = re.sub(r"^(?:Photos?|Reels?|Videos?|Posts?)\s+by\s+", "", t, flags=re.IGNORECASE)
 
     # Strip handle in parentheses e.g. "Babar Dilawar (@dilawar)" -> "Babar Dilawar"
@@ -662,9 +681,9 @@ def clean_display_name(raw_title: str, handle: str, platform: str, resolved_name
     reject_patterns = (
         "link to", "page not found", "welcome back", "log in", "sign up",
         "visit tiktok to discover profiles", "discover profiles", "watch trending",
-        "web player", "see what", "profile", "music for everyone", "unsupported browser"
+        "web player", "see what", "profile", "music for everyone", "unsupported browser", "stack overflow"
     )
-    if not t or tl in ("spotify", "instagram", "facebook", "tiktok", "pinterest", "linkedin", "twitter", "x") or any(rej in tl for rej in reject_patterns) or len(t) < 2:
+    if not t or tl in ("spotify", "instagram", "facebook", "tiktok", "pinterest", "linkedin", "twitter", "x", "stackoverflow") or any(rej in tl for rej in reject_patterns) or len(t) < 2:
         return format_handle_to_name(handle, resolved_name)
 
     return t
@@ -1423,6 +1442,94 @@ async def search_spotify_users_pathfinder(
         print(f"[Spotify Pathfinder] Error for '{clean_query}': {e}", flush=True)
     return []
 
+
+async def search_stackoverflow_users(
+    query: str,
+    client: httpx.AsyncClient,
+    limit: int = 10,
+) -> List[Dict[str, Any]]:
+    """
+    Searches Stack Overflow for user profiles using the official Stack Exchange API v2.3.
+    Retrieves real developer display names, profile avatars, reputation, location, and website URLs.
+    No API key required (300 requests/day per IP; supports optional STACKEXCHANGE_API_KEY for 10,000/day).
+    """
+    clean_query = query.strip()
+    if not clean_query or len(clean_query) < 2:
+        return []
+
+    api_key = os.getenv("STACKEXCHANGE_API_KEY", "").strip()
+    url = "https://api.stackexchange.com/2.3/users"
+    params = {
+        "site": "stackoverflow",
+        "inname": clean_query,
+        "pagesize": min(limit, 20),
+        "order": "desc",
+        "sort": "reputation",
+        "filter": "default",
+    }
+    if api_key:
+        params["key"] = api_key
+
+    headers = {
+        "User-Agent": "EmailLookup/1.0 (contact: admin@emaillookup.internal)",
+        "Accept-Encoding": "gzip, deflate",
+        "Accept": "application/json",
+    }
+
+    try:
+        r = await client.get(url, params=params, headers=headers, timeout=6.0)
+        if r.status_code == 200:
+            data = r.json()
+            items = data.get("items", []) or []
+            print(f"[Stack Overflow API] Query '{clean_query}' → Found {len(items)} user profiles", flush=True)
+            results = []
+            for it in items:
+                uid = it.get("user_id")
+                if not uid:
+                    continue
+                raw_name = it.get("display_name", "").strip()
+                display_name = html.unescape(raw_name) if raw_name else f"user{uid}"
+                link = it.get("link", f"https://stackoverflow.com/users/{uid}")
+                avatar_url = it.get("profile_image")
+                location = it.get("location") or ""
+                website_url = it.get("website_url") or ""
+                reputation = it.get("reputation", 0)
+
+                slug = link.rstrip("/").split("/")[-1] if "/" in link else str(uid)
+                handle_str = slug if (slug and not slug.isdigit() and slug != "users") else str(uid)
+
+                snippet_parts = []
+                if reputation:
+                    snippet_parts.append(f"Reputation: {reputation:,}")
+                if location:
+                    snippet_parts.append(f"Location: {location}")
+                if website_url:
+                    snippet_parts.append(f"Website: {website_url}")
+                snippet = " | ".join(snippet_parts) if snippet_parts else f"Stack Overflow profile for {display_name}"
+
+                results.append({
+                    "platform": "stackoverflow",
+                    "platform_label": "Stack Overflow",
+                    "handle": handle_str,
+                    "name": display_name,
+                    "url": link,
+                    "avatar_url": avatar_url,
+                    "snippet": snippet,
+                    "title": f"{display_name} on Stack Overflow",
+                    "location": location,
+                    "website_url": website_url,
+                    "reputation": reputation,
+                    "discovery_method": "stackoverflow_api",
+                })
+            return results
+        else:
+            print(f"[Stack Overflow API] HTTP {r.status_code} for query '{clean_query}'", flush=True)
+            return []
+    except Exception as e:
+        print(f"[Stack Overflow API] Query error for '{clean_query}': {e}", flush=True)
+        return []
+
+
 async def probe_twitter_profile(handle: str, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
     clean = re.sub(r'[^a-zA-Z0-9_]', '', handle).lstrip("@").strip()
     if not clean or len(clean) < 3 or clean in ("home", "explore", "search", "notifications", "settings", "i", "tos"):
@@ -1977,6 +2084,15 @@ async def search_social_candidates(
             if first_tok and len(first_tok) >= 5 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
                 spotify_search_tasks.append(search_spotify_users_pathfinder(first_tok, probe_client))
 
+        # Stack Overflow API Searches
+        stackoverflow_search_tasks = []
+        if "stackoverflow" not in v_plats:
+            if clean_target and len(clean_target) >= 3:
+                stackoverflow_search_tasks.append(search_stackoverflow_users(clean_target, probe_client))
+            clean_local = re.sub(r'[\d._+-]+', '', local_part).strip()
+            if clean_local and len(clean_local) >= 4 and clean_local.lower() != clean_target.lower().replace(' ', ''):
+                stackoverflow_search_tasks.append(search_stackoverflow_users(clean_local, probe_client))
+
         # Assign each query its own distinct clean residential IP
         sampled_ips = proxy_pool.sample_distinct(len(ddg_search_queries))
         query_configs = [(plat, q, sampled_ips[i]) for i, (plat, q) in enumerate(ddg_search_queries)]
@@ -1989,11 +2105,12 @@ async def search_social_candidates(
 
         query_tasks = [run_single_ddg(p, q, ip) for p, q, ip in query_configs]
 
-        # 3. Concurrently execute all Probes and DDG Queries
+        # 3. Concurrently execute all Probes, Spotify, Stack Overflow, and DDG Queries
         t_start = time.time()
-        probe_results_raw, spotify_results_raw, *query_results_raw = await asyncio.gather(
+        probe_results_raw, spotify_results_raw, so_results_raw, *query_results_raw = await asyncio.gather(
             asyncio.gather(*probe_tasks, return_exceptions=True),
             asyncio.gather(*spotify_search_tasks, return_exceptions=True),
+            asyncio.gather(*stackoverflow_search_tasks, return_exceptions=True),
             *query_tasks
         )
         discovery_elapsed_ms = int((time.time() - t_start) * 1000)
@@ -2009,6 +2126,83 @@ async def search_social_candidates(
         if p_plat == "facebook":
             return f"facebook:{h.replace('.', '')}"
         return f"{p_plat}:{h.split('/')[0].strip()}"
+
+    # Ingest Direct Stack Overflow User Search Hits
+    for so_batch in so_results_raw:
+        if not isinstance(so_batch, list):
+            continue
+        for so_cand in so_batch:
+            if not isinstance(so_cand, dict) or not so_cand.get("url"):
+                continue
+            h_clean = so_cand["handle"].lstrip("@")
+            dedup_key = make_candidate_dedup_key("stackoverflow", h_clean)
+            cand_name = so_cand.get("name") or h_clean
+            reputation = so_cand.get("reputation", 0)
+
+            score, reasons, sub_scores, evidence = score_candidate(
+                {"platform": "stackoverflow", "platform_label": "Stack Overflow", "handle": h_clean, "url": so_cand["url"], "reputation": reputation},
+                so_cand.get("title") or f"{cand_name} on Stack Overflow",
+                so_cand.get("snippet", ""),
+                all_variations,
+                effective_name or resolved_name,
+                resolved_location,
+                gh_username,
+                company_name,
+            )
+
+            is_direct_exact = (cand_name.lower() == clean_target.lower())
+            if not is_direct_exact and effective_name:
+                is_direct_exact = (cand_name.lower() == effective_name.lower())
+
+            if is_direct_exact:
+                score = max(score, 85)
+                reasons.append(f"Direct Stack Overflow exact display name match ('{cand_name}')")
+                sub_scores["name_score"] = max(sub_scores.get("name_score", 0), 45)
+                sub_scores["final_score"] = score
+            elif score >= 35:
+                score = max(score, 50)
+                sub_scores["final_score"] = score
+            elif score < 15:
+                if first_tok and first_tok.lower() in cand_name.lower():
+                    score = 45
+                    reasons.append(f"Stack Overflow user match ('{cand_name}')")
+                    sub_scores = {"handle_score": 0, "name_score": 40, "company_score": 0, "location_score": 0, "final_score": 45}
+                else:
+                    continue
+
+            # Extra reputation boost for active reputable accounts
+            if reputation >= 1000:
+                score = min(score + 10, 95)
+                sub_scores["final_score"] = score
+            elif reputation >= 100:
+                score = min(score + 5, 95)
+                sub_scores["final_score"] = score
+
+            cand_obj = {
+                "platform": "stackoverflow",
+                "platform_label": "Stack Overflow",
+                "handle": f"@{h_clean}",
+                "name": cand_name,
+                "url": so_cand["url"],
+                "snippet": so_cand.get("snippet", f"Stack Overflow profile for {cand_name}"),
+                "score": score,
+                "confidence_badge": "",
+                "confidence_level": "strong" if score >= 70 else "potential",
+                "reasons": reasons,
+                "sub_scores": sub_scores,
+                "evidence": evidence,
+                "avatar_url": so_cand.get("avatar_url"),
+                "discovery_method": "stackoverflow_api"
+            }
+            if dedup_key not in candidates_map:
+                candidates_map[dedup_key] = cand_obj
+            else:
+                existing = candidates_map[dedup_key]
+                has_better_avatar = not existing.get("avatar_url") and cand_obj.get("avatar_url")
+                if score > existing.get("score", 0) or has_better_avatar:
+                    if not cand_obj.get("avatar_url") and existing.get("avatar_url"):
+                        cand_obj["avatar_url"] = existing["avatar_url"]
+                    candidates_map[dedup_key] = cand_obj
 
     # Ingest Direct Spotify User Search Hits (with CDN avatars & authentic display names)
     for sp_batch in spotify_results_raw:
@@ -2345,10 +2539,11 @@ async def search_social_candidates(
     unique_candidates = list({id(v): v for v in merged_candidates.values()}.values())
     all_candidates = sorted(unique_candidates, key=lambda x: -x["score"])
 
-    # Group by platform in priority order: LinkedIn -> GitHub -> Instagram -> Facebook -> X -> Pinterest -> TikTok -> Spotify
+    # Group by platform in priority order: LinkedIn -> GitHub -> Stack Overflow -> Instagram -> Facebook -> X -> Pinterest -> TikTok -> Spotify
     by_platform = {
         "linkedin": [c for c in all_candidates if c["platform"] == "linkedin"],
         "github": [c for c in all_candidates if c["platform"] == "github"],
+        "stackoverflow": [c for c in all_candidates if c["platform"] == "stackoverflow"],
         "instagram": [c for c in all_candidates if c["platform"] == "instagram"],
         "facebook": [c for c in all_candidates if c["platform"] == "facebook"],
         "twitter": [c for c in all_candidates if c["platform"] == "twitter"],

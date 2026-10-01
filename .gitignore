@@ -31,6 +31,7 @@ searxng/settings.local.yml
 # ========================
 # Project-specific
 # ========================
+test_emails.md
 implementation.md
 data/
 *.db

@@ -74,6 +74,7 @@
   --brand-pinterest: #e60023;
   --brand-spotify: #1db954;
   --brand-github: #0f172a;
+  --brand-stackoverflow: #f48024;
 
   /* ── Radii & Elevation ── */
   --radius-xl: 10px;
@@ -1020,6 +1021,7 @@ body {
 .cand-tab-btn[data-plat="tiktok"] .cand-tab-icon { color: #0f172a !important; }
 .cand-tab-btn[data-plat="spotify"] .cand-tab-icon { color: #1db954 !important; }
 .cand-tab-btn[data-plat="github"] .cand-tab-icon { color: #0f172a !important; }
+.cand-tab-btn[data-plat="stackoverflow"] .cand-tab-icon { color: #f48024 !important; }
 
 .cand-tab-badge {
   font-family: var(--font-mono);
@@ -1091,6 +1093,7 @@ body {
 .pinterest-glyph { background: var(--brand-pinterest); }
 .spotify-glyph { background: var(--brand-spotify); }
 .github-glyph { background: #0f172a; }
+.stackoverflow-glyph { background: #f48024; }
 
 .cand-count-badge {
   font-family: var(--font-mono);
