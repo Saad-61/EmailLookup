@@ -80,10 +80,12 @@ When a request arrives at `POST /api/lookup`:
    - Strips bare single-token surnames to prevent search noise.
    - Distributes focused search queries across a pool of 20+ residential proxy IPs with automatic failover.
    - Probes public OpenGraph tags directly on supported platforms (Instagram, TikTok, Pinterest, Facebook, GitHub).
+   - **Stack Overflow User Search**: Queries Stack Exchange API v2.3 (`/users?inname=...&site=stackoverflow`) to find developer profiles by name/stem. Preserves distinct accounts using integer user IDs (`f"stackoverflow:{uid}"`). Extracts reputation badges, top tags, profile URLs, and website corroboration.
    - **Spotify Pathfinder GraphQL Auto-Refresher**: Uses a background Playwright worker to solve Spotify's dynamic client-side TOTP challenge against `open.spotify.com/api/token`. Automatically warms up the Bearer token on boot, proactive renewal 5 minutes before expiry, and stores in memory cache for 0ms lookup latency.
 5. **Score & Penalty Filtering**:
    - Scores candidates based on stem matches, full-name overlap, and location consistency.
    - **Conflicting Given Name Penalty**: If a candidate shares a surname (e.g. `Rauf`) but has a completely different given name (e.g., `Haris` vs `Dameesha`), its score is capped at 15% with a reason note (`Conflicting given name`), suppressing false positives.
+   - **Candidate UID Deduplication**: Ensures platforms where users share identical display names (e.g. Stack Overflow) deduplicate on `/users/{uid}` instead of handle slugs.
    - **LinkedIn Full-Name Upgrade**: Upgrades candidate display names when verified via LinkedIn profile corroboration.
 
 ---

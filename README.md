@@ -10,8 +10,13 @@ A high-performance reverse email lookup and SMTP verifier application built with
   - Discovers full name, avatar, bio, location, and website.
   - Extracts GitHub profiles, repositories, and commit history.
   - Detects account existence across 30+ platforms (Holehe method).
-  - Searches and ranks candidate social media profiles (LinkedIn, Instagram, Twitter/X, TikTok, Pinterest, Facebook, Spotify, GitHub).
+  - Searches and ranks candidate social media profiles (LinkedIn, Instagram, Twitter/X, TikTok, Pinterest, Facebook, Spotify, GitHub, Stack Overflow).
   - Multi-anchor scoring algorithm with Jaro-Winkler similarity and surname disambiguation.
+- **Direct Stack Overflow API Integration**:
+  - Real-time user discovery via Stack Exchange REST API v2.3 (`inname` search).
+  - Preserves distinct user accounts by unique User ID (`/users/{uid}`).
+  - Extracts reputation scores, tags, profile links, and website corroboration.
+  - Works with 0 authentication out-of-the-box (300 req/day) with optional `STACKEXCHANGE_API_KEY` for 10,000 req/day.
 - **Automated Spotify Pathfinder GraphQL User Search**:
   - Automatically solves Spotify's dynamic TOTP challenge via background headless Playwright browser.
   - Auto-refreshes Bearer access tokens 5 minutes before expiration with in-memory caching (0ms lookup latency).
@@ -69,10 +74,14 @@ copy example.env .env
 cp example.env .env
 ```
 
-Fill in your configuration in `.env`:
-- `SPOTIFY_SP_DC`: Your Spotify `sp_dc` cookie from browser DevTools (Application > Cookies > open.spotify.com).
-- `PROXY_USERNAME`, `PROXY_PASSWORD`, `PROXY_IPS`: Your residential proxy pool.
-- `GITHUB_TOKEN`: (Optional) Increases GitHub API rate limit.
+#### Environment Variables Overview:
+| Variable | Status | Default / Behavior |
+| :--- | :--- | :--- |
+| `GITHUB_TOKEN` | Optional | Works unauthenticated (60 req/hr); token increases limit to 5,000 req/hr. |
+| `STACKEXCHANGE_API_KEY` | Optional | Works unauthenticated (300 req/day); key increases limit to 10,000 req/day. |
+| `SPOTIFY_SP_DC` | Optional | If set, launches Playwright worker to auto-refresh Spotify GraphQL tokens; if blank, skipped gracefully. |
+| `PROXY_IPS`, `PROXY_USERNAME`, `PROXY_PASSWORD` | Optional | If blank, searches run from local host; if set, enables proxy rotation with failover. |
+| `SMTP_SENDER_EMAIL`, `SMTP_HELO_HOST` | Optional | Fallbacks provided for Port 25 SMTP handshake checks. |
 
 ### 3. Run the Application
 

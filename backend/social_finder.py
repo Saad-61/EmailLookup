@@ -1671,54 +1671,8 @@ async def probe_facebook_profile(handle: str, client: httpx.AsyncClient, proxy_u
     except Exception:
         pass
     return None
-    url = f"https://www.facebook.com/{clean}"
-    try:
-        resp = await client.get(url, headers=LI_CRAWLER_HEADERS, timeout=3.5, follow_redirects=True)
-        if resp.status_code == 200:
-            text = resp.text
-            if any(bad in text for bad in ("This content isn't available right now", "Page Not Found", "You must log in")):
-                return None
-            soup = BeautifulSoup(text, "html.parser")
-            og_title = soup.find("meta", property="og:title")
-            raw_title = og_title.get("content").strip() if (og_title and og_title.get("content")) else ""
-            
-            # If no og:title or generic "Facebook" title, account is not publicly confirmed
-            if not raw_title or raw_title.lower() in ("facebook", "log in to facebook", "log into facebook", "welcome to facebook"):
-                return None
 
-            # Extract authentic canonical URL & handle from og:url or final redirected resp.url
-            og_url = soup.find("meta", property="og:url")
-            canonical_url = og_url.get("content").strip() if (og_url and og_url.get("content")) else str(resp.url)
-            m_handle = re.search(r"facebook\.com/([a-zA-Z0-9._-]+)/?$", canonical_url, re.IGNORECASE)
-            if m_handle:
-                c_cand = m_handle.group(1).rstrip("/")
-                if c_cand.lower() not in ("profile.php", "pages", "people", "sharer", "share", "login"):
-                    clean = c_cand
-                    url = f"https://www.facebook.com/{clean}"
-            
-            og_img = soup.find("meta", property="og:image")
-            raw_img = og_img.get("content") if og_img else None
-            avatar_url = html.unescape(raw_img) if (raw_img and "fb_icon" not in raw_img and "static.xx" not in raw_img) else None
 
-            og_desc = soup.find("meta", property="og:description")
-            raw_desc = og_desc.get("content") if og_desc else ""
-            bio = clean_bio_snippet(raw_desc, "facebook", clean)
-            display_name = clean_display_name(raw_title, clean, "facebook")
-
-            print(f"[Prober] [FACEBOOK] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'})", flush=True)
-            return {
-                "platform": "facebook",
-                "platform_label": "Facebook",
-                "handle": clean,
-                "name": display_name,
-                "url": url,
-                "avatar_url": avatar_url,
-                "snippet": bio,
-                "title": raw_title,
-                "discovery_method": "probing"
-            }
-    except Exception:
-        pass
 async def probe_github_profile(handle: str, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
     clean = re.sub(r'[^a-zA-Z0-9_-]', '', handle).lstrip("@").strip("_-")
     if not clean or len(clean) < 1 or clean.lower() in ("features", "business", "explore", "marketplace", "pricing", "topics", "collections", "events"):
@@ -2118,13 +2072,17 @@ async def search_social_candidates(
 
     candidates_map: Dict[str, Dict[str, Any]] = {}
 
-    def make_candidate_dedup_key(p_plat: str, p_handle: str) -> str:
+    def make_candidate_dedup_key(p_plat: str, p_handle: str, p_url: str = "") -> str:
         h = p_handle.lstrip("@").strip().lower()
         if p_plat == "linkedin":
             h = h.split("/")[0].strip()
             return f"linkedin:{h}"
         if p_plat == "facebook":
             return f"facebook:{h.replace('.', '')}"
+        if p_plat == "stackoverflow" and p_url:
+            m = re.search(r"/users/(\d+)", p_url)
+            if m:
+                return f"stackoverflow:{m.group(1)}"
         return f"{p_plat}:{h.split('/')[0].strip()}"
 
     # Ingest Direct Stack Overflow User Search Hits
@@ -2135,7 +2093,7 @@ async def search_social_candidates(
             if not isinstance(so_cand, dict) or not so_cand.get("url"):
                 continue
             h_clean = so_cand["handle"].lstrip("@")
-            dedup_key = make_candidate_dedup_key("stackoverflow", h_clean)
+            dedup_key = make_candidate_dedup_key("stackoverflow", h_clean, so_cand["url"])
             cand_name = so_cand.get("name") or h_clean
             reputation = so_cand.get("reputation", 0)
 
@@ -2486,7 +2444,7 @@ async def search_social_candidates(
                     if c.get("score", 0) <= 30:
                         c["_remove"] = True
 
-        async with httpx.AsyncClient(timeout=4.0, verify=False) as av_client:
+        async with httpx.AsyncClient(timeout=6.0, verify=False) as av_client:
             await asyncio.gather(*[enrich_candidate(plat, c, av_client) for plat, c in enrich_tasks], return_exceptions=True)
 
     # Purge Spotify candidates that failed post-probe validation (irrelevant DDG noise).
@@ -2510,6 +2468,10 @@ async def search_social_candidates(
             c["handle"] = f"@{h_clean}"
             c["url"] = f"https://www.linkedin.com/in/{h_clean}"
         p_key = f"{plat}:{h_clean}"
+        if plat == "stackoverflow":
+            m_uid = re.search(r"/users/(\d+)", c.get("url", ""))
+            if m_uid:
+                p_key = f"stackoverflow:{m_uid.group(1)}"
         av_key = f"{plat}:av:{c['avatar_url']}" if c.get("avatar_url") else None
 
         existing_key = None
