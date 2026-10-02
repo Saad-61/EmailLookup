@@ -20,10 +20,12 @@ import sys
 import time
 import unicodedata
 import xml.etree.ElementTree as ET
+import io
 from typing import List, Optional, Dict, Any, Tuple, Set
 import httpx
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from PIL import Image
 
 try:
     from ddgs import DDGS
@@ -42,6 +44,17 @@ except Exception:
     pass
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"), override=True)
+
+try:
+    from constants import (
+        TITLE_PREFIXES, ROLE_SUFFIXES, COMMON_FIRST_NAMES, COMMON_SURNAMES,
+        LEET_REPLACEMENTS, RESERVED_SYSTEM_SLUGS
+    )
+except ImportError:
+    from backend.constants import (
+        TITLE_PREFIXES, ROLE_SUFFIXES, COMMON_FIRST_NAMES, COMMON_SURNAMES,
+        LEET_REPLACEMENTS, RESERVED_SYSTEM_SLUGS
+    )
 
 # ==========================================
 # Spotify Token Cache (sp_dc auto-refresh)
@@ -242,7 +255,7 @@ def split_compound_name(local_part: str) -> Tuple[str, str]:
     if any(sep in local_part for sep in (".", "_", "-")):
         chunks = [re.sub(r"[\d._+-]+", "", c).strip().lower() for c in re.split(r"[._+-]", local_part)]
         chunks = [c for c in chunks if len(c) >= 2]
-        if chunks and chunks[-1] in ROLE_SUFFIXES and len(chunks) >= 3:
+        if chunks and chunks[-1] in ROLE_SUFFIXES and len(chunks) >= 2:
             chunks = chunks[:-1]
 
         # Strip title prefix if present in first chunk (e.g. ['ch', 'fahadahmad'])
@@ -262,6 +275,12 @@ def split_compound_name(local_part: str) -> Tuple[str, str]:
                     if len(rem) >= 2 and rem.isalpha():
                         fn_cap = f"{title} {fn.capitalize()}".strip() if title else fn.capitalize()
                         return fn_cap, rem.capitalize()
+            for sn in sorted(COMMON_SURNAMES, key=len, reverse=True):
+                if s.endswith(sn) and len(s) > len(sn):
+                    prefix = s[:-len(sn)]
+                    if len(prefix) >= 3 and prefix.isalpha():
+                        fn_cap = f"{title} {prefix.capitalize()}".strip() if title else prefix.capitalize()
+                        return fn_cap, sn.capitalize()
             fn_cap = f"{title} {s.capitalize()}".strip() if title else s.capitalize()
             return fn_cap, ""
 
@@ -269,10 +288,10 @@ def split_compound_name(local_part: str) -> Tuple[str, str]:
     digit_chunks = [c.strip().lower() for c in re.split(r"\d+", local_part) if c.strip()]
     if len(digit_chunks) >= 2:
         c0, c1 = digit_chunks[0], digit_chunks[1]
-        if c0 in COMMON_FIRST_NAMES and len(c1) >= 2 and c1.isalpha():
+        if (c0 in COMMON_FIRST_NAMES or c1 in COMMON_SURNAMES) and len(c0) >= 2 and len(c1) >= 2 and c0.isalpha() and c1.isalpha():
             return c0.capitalize(), c1.capitalize()
 
-    # 3. Direct clean stripped check (e.g. saad00 -> Saad, nomanghaffar074 -> Noman Ghaffar)
+    # 3. Direct clean stripped check (e.g. saad00 -> Saad, nomanghaffar074 -> Noman Ghaffar, rohaanashraf -> Rohaan Ashraf)
     clean_stripped = re.sub(r"\d+$", "", local_part).lower().strip()
     clean_alpha = re.sub(r"[\d._+-]+", "", clean_stripped)
 
@@ -284,6 +303,12 @@ def split_compound_name(local_part: str) -> Tuple[str, str]:
             rem = clean_alpha[len(fn):]
             if len(rem) >= 2 and rem.isalpha() and rem not in ("oo", "ee", "o", "e", "a", "i", "s", "t"):
                 return fn.capitalize(), rem.capitalize()
+
+    for sn in sorted(COMMON_SURNAMES, key=len, reverse=True):
+        if clean_alpha.endswith(sn) and len(clean_alpha) > len(sn):
+            prefix = clean_alpha[:-len(sn)]
+            if len(prefix) >= 3 and prefix.isalpha():
+                return prefix.capitalize(), sn.capitalize()
 
     # 4. Leetspeak substitution ONLY for internal digits (e.g. tauq33raslam -> Tauqeer Aslam, n0manghaffar -> Noman Ghaffar)
     if any(c.isdigit() for c in clean_stripped):
@@ -301,6 +326,12 @@ def split_compound_name(local_part: str) -> Tuple[str, str]:
                 rem = curr_clean[len(fn):]
                 if len(rem) >= 2 and rem.isalpha() and rem not in ("oo", "ee", "o", "e", "a", "i", "s", "t"):
                     return fn.capitalize(), rem.capitalize()
+
+        for sn in sorted(COMMON_SURNAMES, key=len, reverse=True):
+            if curr_clean.endswith(sn) and len(curr_clean) > len(sn):
+                prefix = curr_clean[:-len(sn)]
+                if len(prefix) >= 3 and prefix.isalpha():
+                    return prefix.capitalize(), sn.capitalize()
 
     return clean_alpha.capitalize() if clean_alpha else "", ""
 
@@ -858,7 +889,7 @@ def score_candidate(
                     reasons.append(f"Direct LinkedIn vanity URL match (in/{handle})")
                     evidence.append({"type": "handle_match", "source": "linkedin_vanity", "value": f"in/{handle}", "signal_strength": "strong"})
 
-    # 4. Name Matching (Exact, Inverted, and Jaro-Winkler >= 88%)
+    # 4. Name Matching (Exact, Word-Boundary Title, Inverted, and Jaro-Winkler >= 88%)
     target_name = resolved_name
     cand_extracted_name = clean_display_name(title, handle, plat, resolved_name)
     
@@ -868,15 +899,20 @@ def score_candidate(
             first, last = name_parts[0], name_parts[-1]
             rev_name = f"{last} {first}".lower()
 
-            if target_name.lower() in title_l or rev_name in title_l:
-                name_score = max(name_score, 40)
+            # A. Exact extracted display name match (decisive primary match)
+            if cand_extracted_name and (cand_extracted_name.lower() == target_name.lower() or cand_extracted_name.lower() == rev_name):
+                name_score = max(name_score, 85)
+                reasons.append(f"Exact full name match ({target_name})")
+                evidence.append({"type": "name_match", "source": "exact_display_name", "value": target_name, "signal_strength": "strong"})
+            elif bool(re.search(r'\b' + re.escape(target_name.lower()) + r'\b', title_l)) or bool(re.search(r'\b' + re.escape(rev_name) + r'\b', title_l)):
+                name_score = max(name_score, 50)
                 reasons.append(f"Full name match in title ({target_name})")
                 evidence.append({"type": "name_match", "source": "profile_title", "value": target_name, "signal_strength": "strong"})
-            elif first in title_l and last in title_l:
+            elif bool(re.search(r'\b' + re.escape(first) + r'\b', title_l)) and bool(re.search(r'\b' + re.escape(last) + r'\b', title_l)):
                 name_score = max(name_score, 35)
                 reasons.append(f"First and last name in title ({first.title()} {last.title()})")
                 evidence.append({"type": "name_match", "source": "profile_title", "value": f"{first.title()} {last.title()}", "signal_strength": "medium"})
-            elif rev_name in combined_text or target_name.lower() in combined_text:
+            elif bool(re.search(r'\b' + re.escape(target_name.lower()) + r'\b', combined_text)) or bool(re.search(r'\b' + re.escape(rev_name) + r'\b', combined_text)):
                 name_score = max(name_score, 30)
                 reasons.append(f"Full name match in bio ({target_name})")
                 evidence.append({"type": "name_match", "source": "profile_bio", "value": target_name, "signal_strength": "weak"})
@@ -931,29 +967,30 @@ def score_candidate(
             first, last = name_parts[0], name_parts[-1]
             c_first, c_last = cand_parts[0], cand_parts[-1]
 
-            surname_match = (c_last == last or jaro_winkler_similarity(c_last, last) >= 0.90)
-            first_match = (c_first == first or jaro_winkler_similarity(c_first, first) >= 0.90)
-            given_conflict = (c_first != first and jaro_winkler_similarity(c_first, first) < 0.65 and len(c_first) >= 3 and len(first) >= 3)
-            surname_conflict = (c_last != last and jaro_winkler_similarity(c_last, last) < 0.65 and len(c_last) >= 3 and len(last) >= 3)
+            exact_full = (cand_extracted_name.lower() == target_name.lower() or cand_extracted_name.lower() == f"{last} {first}")
+            if not exact_full:
+                surname_match = (c_last == last or (abs(len(c_last) - len(last)) <= 1 and jaro_winkler_similarity(c_last, last) >= 0.90))
+                first_match = (c_first == first or (abs(len(c_first) - len(first)) <= 1 and jaro_winkler_similarity(c_first, first) >= 0.90))
+                given_conflict = (not first_match and jaro_winkler_similarity(c_first, first) < 0.70 and len(c_first) >= 3 and len(first) >= 3)
+                surname_conflict = (not surname_match and len(c_last) >= 3 and len(last) >= 3)
 
-            # Rule A: Conflicting given name (Haseeb Hameed vs Atisam Hameed) -> cap at 15
-            if surname_match and given_conflict:
-                final_score = min(final_score, 15)
-                reasons.append(f"Conflicting given name penalty ({c_first.title()} vs {first.title()})")
+                # Rule A: Conflicting given name (Haseeb Hameed vs Atisam Hameed) -> cap at 15
+                if surname_match and given_conflict:
+                    final_score = min(final_score, 15)
+                    reasons.append(f"Conflicting given name penalty ({c_first.title()} vs {first.title()})")
 
-            # Rule B: Contradictory Surname penalty (Ahtisham Khan vs Ahtisham Dilawar) -> cap at 35
-            elif first_match and surname_conflict:
-                final_score = min(final_score, 35)
-                reasons.append(f"Contradictory surname penalty ({c_last.title()} vs {last.title()})")
+                # Rule B: Contradictory Surname penalty (Ahtisham Khan vs Ahtisham Dilawar / Shayan Aminmadani vs Shayan Amin) -> cap at 35
+                elif first_match and surname_conflict:
+                    final_score = min(final_score, 35)
+                    reasons.append(f"Contradictory surname penalty ({c_last.title()} vs {last.title()})")
 
-            # Rule C: Complete Name Mismatch (Veronica Torralba Lozano vs Danielle Monaghan)
-            # If neither first nor last name matches and handle doesn't match, this is a completely unrelated third-party profile!
-            else:
-                is_handle_exact = (handle in [v.lower() for v in all_variations])
-                inv_first_match = (c_first == last or jaro_winkler_similarity(c_first, last) >= 0.90)
-                inv_last_match = (c_last == first or jaro_winkler_similarity(c_last, first) >= 0.90)
-                if not (surname_match or first_match or inv_first_match or inv_last_match) and not is_handle_exact:
-                    return 0, [f"Unrelated profile: display name ('{cand_extracted_name}') does not match target name ('{target_name}')"], {}, []
+                # Rule C: Complete Name Mismatch (Veronica Torralba Lozano vs Danielle Monaghan)
+                else:
+                    is_handle_exact = (handle in [v.lower() for v in all_variations])
+                    inv_first_match = (c_first == last or jaro_winkler_similarity(c_first, last) >= 0.90)
+                    inv_last_match = (c_last == first or jaro_winkler_similarity(c_last, first) >= 0.90)
+                    if not (surname_match or first_match or inv_first_match or inv_last_match) and not is_handle_exact:
+                        return 0, [f"Unrelated profile: display name ('{cand_extracted_name}') does not match target name ('{target_name}')"], {}, []
         elif len(name_parts) >= 2 and len(cand_parts) == 1:
             first, last = name_parts[0], name_parts[-1]
             c_single = cand_parts[0]
@@ -989,28 +1026,30 @@ TWITTER_HEADERS = {
 }
 
 
-async def probe_instagram_profile(handle: str, client: httpx.AsyncClient, proxy_url: Optional[str] = None) -> Optional[Dict[str, Any]]:
+async def probe_instagram_profile(handle: str, client: Optional[httpx.AsyncClient] = None, proxy_url: Optional[str] = None) -> Optional[Dict[str, Any]]:
     clean = re.sub(r'[^a-zA-Z0-9._]', '', handle).lstrip("@").strip()
     if not clean or len(clean) < 3 or clean in ("p", "reel", "reels", "explore", "direct", "accounts", "about", "developer"):
         return None
     url = f"https://www.instagram.com/{clean}/"
+    headers = CRAWLER_HEADERS
     
     resp = None
-    # 1. High-speed direct probe with Twitterbot headers (most reliable for Instagram OpenGraph & avatar CDN)
-    try:
-        resp = await client.get(url, headers=TWITTER_HEADERS, timeout=4.0, follow_redirects=True)
-    except Exception:
-        resp = None
+    # 1. Primary: Route through residential proxy (Instagram challenges direct data-center/local IPs)
+    p_url = proxy_url or get_random_proxy_url()
+    if p_url:
+        try:
+            async with httpx.AsyncClient(proxy=p_url, timeout=5.0, follow_redirects=True, verify=False) as px_client:
+                resp = await px_client.get(url, headers=headers)
+        except Exception:
+            resp = None
 
-    # 2. Fallback to proxy if direct request failed
+    # 2. Fallback to direct client if proxy was unavailable or timed out
     if not resp or resp.status_code != 200:
-        p_url = proxy_url or get_random_proxy_url()
-        if p_url:
+        if client:
             try:
-                async with httpx.AsyncClient(proxy=p_url, timeout=5.0, follow_redirects=True, verify=False) as px_client:
-                    resp = await px_client.get(url, headers=TWITTER_HEADERS)
+                resp = await client.get(url, headers=headers, timeout=3.5, follow_redirects=True)
             except Exception:
-                pass
+                resp = None
 
     try:
         if resp and resp.status_code == 200:
@@ -1187,6 +1226,8 @@ async def probe_medium_profile(handle: str, client: httpx.AsyncClient) -> Option
                     snippet = f"Latest story: '{post_title}' — {p_text[:120]}..." if post_title else p_text[:140]
             
             avatar_url = html.unescape(raw_image) if raw_image else None
+            if avatar_url and "/fit/c/" in avatar_url:
+                avatar_url = re.sub(r'/fit/c/\d+/\d+/', '/v2/resize:fill:150:150/', avatar_url)
             profile_url = f"https://medium.com/@{clean}"
             
             print(f"[Prober] [MEDIUM] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'}, Posts: {len(items)})", flush=True)
@@ -1987,7 +2028,7 @@ async def execute_ddg_html_query(
         proxy_url = f"http://{PROXY_USER}:{PROXY_PASS}@{ip}" if (PROXY_USER and PROXY_PASS) else f"http://{ip}"
         t0 = time.time()
         try:
-            items = await asyncio.to_thread(_query_ddgs_sync, query, proxy_url, 4.5)
+            items = await asyncio.to_thread(_query_ddgs_sync, query, proxy_url, 6.5)
             elapsed_ms = int((time.time() - t0) * 1000)
 
             if items:
@@ -2020,6 +2061,83 @@ async def execute_ddg_html_query(
     return items, used_ip, attempts
 
 
+def extract_domains_and_handles(text: str) -> Tuple[Set[str], Set[str]]:
+    """Extract domain links and handle mentions from bio/snippet."""
+    if not text:
+        return set(), set()
+    domains = set(re.findall(r'(?:https?://)?(?:www\.)?([a-zA-Z0-9-]+\.[a-zA-Z]{2,})', text.lower()))
+    common_ignore = {
+        'github.com', 'twitter.com', 'x.com', 'linkedin.com', 'instagram.com',
+        'facebook.com', 'medium.com', 'tiktok.com', 'pinterest.com', 'spotify.com',
+        't.co', 'bit.ly', 'youtu.be', 'youtube.com', 'gravatar.com', 'google.com',
+        'apple.com', 'microsoft.com', 'amazon.com', 'wikipedia.org', 'schema.org'
+    }
+    filtered_domains = {d for d in domains if d not in common_ignore and not d.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'))}
+    handles = set(re.findall(r'@([a-zA-Z0-9_.-]{3,30})', text.lower()))
+    return filtered_domains, handles
+
+
+async def corroborate_candidate_profiles(
+    candidates: List[Dict[str, Any]],
+    anchor_avatar_url: Optional[str] = None,
+    anchor_website: Optional[str] = None,
+    anchor_profiles: Optional[Dict[str, Any]] = None,
+    gh_username: Optional[str] = None,
+    http_client: Optional[httpx.AsyncClient] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Performs fast post-discovery candidate score boosting based on anchor website and verified handle graph.
+    Promotes authentic candidates to the top of candidate lists without claiming false visual certainty.
+    """
+    if not candidates:
+        return candidates
+
+    anchor_domains: Set[str] = set()
+    anchor_handles: Set[str] = set()
+    if gh_username:
+        anchor_handles.add(gh_username.lower().lstrip("@"))
+
+    if anchor_website:
+        d, _ = extract_domains_and_handles(anchor_website)
+        anchor_domains.update(d)
+
+    if anchor_profiles and isinstance(anchor_profiles, dict):
+        for p_name, p_data in anchor_profiles.items():
+            if isinstance(p_data, dict):
+                if p_data.get("username"):
+                    anchor_handles.add(str(p_data["username"]).lower().lstrip("@"))
+                if p_data.get("blog"):
+                    d, _ = extract_domains_and_handles(str(p_data["blog"]))
+                    anchor_domains.update(d)
+                if p_data.get("bio"):
+                    d, h = extract_domains_and_handles(str(p_data["bio"]))
+                    anchor_domains.update(d)
+                    anchor_handles.update(h)
+
+    for c in candidates:
+        c_text = f"{c.get('name', '')} {c.get('snippet', '')} {c.get('url', '')}"
+        c_domains, c_handles = extract_domains_and_handles(c_text)
+        c_handle_clean = c.get("handle", "").lstrip("@").lower().strip()
+        if c_handle_clean:
+            c_handles.add(c_handle_clean)
+
+        shared_domains = anchor_domains.intersection(c_domains)
+        shared_handles = anchor_handles.intersection(c_handles)
+
+        if shared_domains:
+            domain_val = list(shared_domains)[0]
+            c["score"] = max(c.get("score", 0), 95)
+            if "reasons" in c and not any("website link" in r for r in c["reasons"]):
+                c["reasons"].insert(0, f"Reciprocal personal website match ({domain_val})")
+        elif shared_handles and len(list(shared_handles)[0]) >= 3:
+            handle_val = list(shared_handles)[0]
+            c["score"] = max(c.get("score", 0), 95)
+            if "reasons" in c and not any("verified handle" in r for r in c["reasons"]):
+                c["reasons"].insert(0, f"Cross-platform verified handle match (@{handle_val})")
+
+    return candidates
+
+
 # ==========================================
 # 8. MASTER HYBRID DISCOVERY ENGINE
 # ==========================================
@@ -2032,6 +2150,9 @@ async def search_social_candidates(
     client: Optional[httpx.AsyncClient] = None,
     has_verified_linkedin: bool = False,
     verified_platforms: Optional[Set[str]] = None,
+    anchor_avatar: Optional[str] = None,
+    anchor_website: Optional[str] = None,
+    anchor_profiles: Optional[Dict[str, Any]] = None,
     **kwargs,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
     """
@@ -2109,6 +2230,12 @@ async def search_social_candidates(
         # 2. Build Focused DDG Search Queries (Skip if platform is already verified)
         clean_target = query_target.replace('"', '').strip()
         first_tok = tokens[0] if tokens else ""
+        
+        # Extract candidate nickname/handle stems from local_part (e.g. roaan.dev -> ['roaan'])
+        role_words = {"dev", "tech", "official", "real", "io", "me", "hq", "app", "pro", "code", "design"}
+        raw_tokens = [re.sub(r'[\d._+-]+', '', p).strip().lower() for p in re.split(r'[._+-]', local_part) if p]
+        handle_stems = [p for p in raw_tokens if p and p not in role_words and len(p) >= 3 and p.lower() not in TITLE_PREFIXES]
+
         ddg_search_queries = []
 
         if "medium" not in v_plats:
@@ -2123,36 +2250,61 @@ async def search_social_candidates(
             ddg_search_queries.append(("tiktok", f'{clean_target} tiktok'))
         if "pinterest" not in v_plats:
             ddg_search_queries.append(("pinterest", f'{clean_target} pinterest'))
+        if "spotify" not in v_plats:
+            if len(clean_target.split()) >= 2:
+                ddg_search_queries.append(("spotify", f'site:open.spotify.com/user/ "{clean_target}"'))
+            elif clean_target:
+                ddg_search_queries.append(("spotify", f'site:open.spotify.com/user/ {clean_target}'))
+            for stem in handle_stems:
+                if stem.lower() != clean_target.lower():
+                    ddg_search_queries.append(("spotify", f'site:open.spotify.com/user/ {stem}'))
         if "linkedin" not in v_plats:
             ddg_search_queries.append(("linkedin", f'{clean_target} linkedin'))
             if len(clean_target.split()) >= 2:
                 ddg_search_queries.append(("linkedin", f'site:linkedin.com/in/ "{clean_target}"'))
             handle_slug = re.sub(r'[\d._+-]+', '', local_part).lower().strip()
-            if handle_slug and len(handle_slug) >= 5 and handle_slug != clean_target.lower().replace(' ', ''):
+            if handle_slug and len(handle_slug) >= 4 and handle_slug != clean_target.lower().replace(' ', ''):
                 ddg_search_queries.append(("linkedin", f'{handle_slug} linkedin'))
 
-        if first_tok and len(first_tok) >= 5 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
-            if "instagram" not in v_plats:
-                ddg_search_queries.append(("instagram", f'{first_tok} instagram'))
-            if "twitter" not in v_plats:
-                ddg_search_queries.append(("twitter", f'{first_tok} twitter'))
+        for stem in ([first_tok] if first_tok else []) + handle_stems:
+            if stem and len(stem) >= 3 and stem.lower() not in TITLE_PREFIXES and stem.lower() != clean_target.lower():
+                if "instagram" not in v_plats:
+                    ddg_search_queries.append(("instagram", f'{stem} instagram'))
+                if "twitter" not in v_plats:
+                    ddg_search_queries.append(("twitter", f'{stem} twitter'))
 
-        # Re-enable direct Spotify Pathfinder GraphQL searches
+        # Direct Spotify Pathfinder GraphQL searches
         spotify_search_tasks = []
         if "spotify" not in v_plats:
-            if clean_target:
+            seen_sp_q = set()
+            if clean_target and clean_target.lower() not in seen_sp_q:
                 spotify_search_tasks.append(search_spotify_users_pathfinder(clean_target, probe_client))
-            if first_tok and len(first_tok) >= 5 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() != clean_target.lower():
+                seen_sp_q.add(clean_target.lower())
+            for stem in handle_stems:
+                if stem.lower() not in seen_sp_q and len(stem) >= 3:
+                    spotify_search_tasks.append(search_spotify_users_pathfinder(stem, probe_client))
+                    seen_sp_q.add(stem.lower())
+            if first_tok and len(first_tok) >= 3 and first_tok.lower() not in TITLE_PREFIXES and first_tok.lower() not in seen_sp_q:
                 spotify_search_tasks.append(search_spotify_users_pathfinder(first_tok, probe_client))
+                seen_sp_q.add(first_tok.lower())
 
         # Stack Overflow API Searches
         stackoverflow_search_tasks = []
         if "stackoverflow" not in v_plats:
-            if clean_target and len(clean_target) >= 3:
+            seen_so_q = set()
+            if clean_target and len(clean_target) >= 3 and clean_target.lower() not in seen_so_q:
                 stackoverflow_search_tasks.append(search_stackoverflow_users(clean_target, probe_client))
-            clean_local = re.sub(r'[\d._+-]+', '', local_part).strip()
-            if clean_local and len(clean_local) >= 4 and clean_local.lower() != clean_target.lower().replace(' ', ''):
-                stackoverflow_search_tasks.append(search_stackoverflow_users(clean_local, probe_client))
+                seen_so_q.add(clean_target.lower())
+            if resolved_name and len(resolved_name) >= 3 and resolved_name.lower() not in seen_so_q:
+                stackoverflow_search_tasks.append(search_stackoverflow_users(resolved_name, probe_client))
+                seen_so_q.add(resolved_name.lower())
+            for stem in handle_stems:
+                if stem.lower() not in seen_so_q and len(stem) >= 3:
+                    stackoverflow_search_tasks.append(search_stackoverflow_users(stem, probe_client))
+                    seen_so_q.add(stem.lower())
+            if gh_username and len(gh_username) >= 3 and gh_username.lower() not in seen_so_q:
+                stackoverflow_search_tasks.append(search_stackoverflow_users(gh_username, probe_client))
+                seen_so_q.add(gh_username.lower())
 
         # Assign each query its own distinct clean residential IP
         sampled_ips = proxy_pool.sample_distinct(len(ddg_search_queries))
@@ -2218,8 +2370,9 @@ async def search_social_candidates(
             is_direct_exact = (cand_name.lower() == clean_target.lower())
             if not is_direct_exact and effective_name:
                 is_direct_exact = (cand_name.lower() == effective_name.lower())
+            is_stem_exact = any(stem.lower() == cand_name.lower() for stem in handle_stems)
 
-            if is_direct_exact:
+            if is_direct_exact or is_stem_exact:
                 score = max(score, 85)
                 reasons.append(f"Direct Stack Overflow exact display name match ('{cand_name}')")
                 sub_scores["name_score"] = max(sub_scores.get("name_score", 0), 45)
@@ -2228,7 +2381,7 @@ async def search_social_candidates(
                 score = max(score, 50)
                 sub_scores["final_score"] = score
             elif score < 15:
-                if first_tok and first_tok.lower() in cand_name.lower():
+                if (first_tok and first_tok.lower() in cand_name.lower()) or any(stem.lower() in cand_name.lower() for stem in handle_stems):
                     score = 45
                     reasons.append(f"Stack Overflow user match ('{cand_name}')")
                     sub_scores = {"handle_score": 0, "name_score": 40, "company_score": 0, "location_score": 0, "final_score": 45}
@@ -2294,8 +2447,9 @@ async def search_social_candidates(
             is_direct_exact = (cand_name.lower() == clean_target.lower())
             if not is_direct_exact and effective_name:
                 is_direct_exact = (cand_name.lower() == effective_name.lower())
+            is_stem_exact = any(stem.lower() == cand_name.lower() for stem in handle_stems)
 
-            if is_direct_exact:
+            if is_direct_exact or is_stem_exact:
                 score = max(score, 80)
                 reasons.append(f"Direct Spotify search exact display name match ('{cand_name}')")
                 sub_scores["name_score"] = max(sub_scores.get("name_score", 0), 45)
@@ -2304,7 +2458,7 @@ async def search_social_candidates(
                 score = max(score, 50)
                 sub_scores["final_score"] = score
             elif score < 15:
-                if first_tok and first_tok.lower() in cand_name.lower():
+                if (first_tok and first_tok.lower() in cand_name.lower()) or any(stem.lower() in cand_name.lower() for stem in handle_stems):
                     score = 45
                     reasons.append(f"Direct Spotify search user match ('{cand_name}')")
                     sub_scores = {"handle_score": 0, "name_score": 40, "company_score": 0, "location_score": 0, "final_score": 45}
@@ -2620,6 +2774,17 @@ async def search_social_candidates(
                     merged_candidates[existing_key] = c
 
     unique_candidates = list({id(v): v for v in merged_candidates.values()}.values())
+    
+    # Run fast post-discovery corroboration (perceptual avatar dHash + reciprocal bio/link-graph)
+    unique_candidates = await corroborate_candidate_profiles(
+        unique_candidates,
+        anchor_avatar_url=anchor_avatar,
+        anchor_website=anchor_website,
+        anchor_profiles=anchor_profiles,
+        gh_username=gh_username,
+        http_client=client,
+    )
+
     all_candidates = sorted(unique_candidates, key=lambda x: -x["score"])
 
     # Group by platform in priority order: LinkedIn -> GitHub -> Stack Overflow -> Medium -> Instagram -> Facebook -> X -> Pinterest -> TikTok -> Spotify
