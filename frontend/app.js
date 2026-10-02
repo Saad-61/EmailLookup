@@ -748,9 +748,7 @@ function renderCandidateCard(c) {
   const glyphSvg = SVG_ICONS[c.platform] || SVG_ICONS.github;
   const glyphClass = `${c.platform}-glyph`;
 
-  // Note: percentage badges are omitted. Only 100% verified profiles receive a badge.
   const verifiedBadge = c.verified === true ? `<span class="verified-pill">✓ Verified</span>` : "";
-
   const snippetHtml = c.snippet ? `<div class="candidate-snippet">${escapeHtml(c.snippet)}</div>` : "";
 
   const avatarImgHtml = c.avatar_url ? `
