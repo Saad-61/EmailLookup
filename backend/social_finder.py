@@ -708,6 +708,13 @@ def clean_display_name(raw_title: str, handle: str, platform: str, resolved_name
         t = re.sub(r"^Stories\s+by\s+", "", t, flags=re.IGNORECASE)
         t = re.sub(r"\s*[-–—:|•·]\s*Medium.*$", "", t, flags=re.IGNORECASE)
         t = re.sub(r"\s+on\s+Medium.*$", "", t, flags=re.IGNORECASE)
+        # Check if the title is an article / story title rather than author name
+        words = t.split()
+        article_indicators = {"why", "how", "what", "when", "guide", "tutorial", "top", "reasons", "best", "the", "an", "a", "into", "using", "with", "for", "vs", "versus"}
+        if len(words) > 4 or any(w.lower() in article_indicators for w in words[:3]):
+            if resolved_name and len(resolved_name.split()) <= 4:
+                return resolved_name
+            return format_handle_to_name(handle, resolved_name)
 
     # Extract playlist creator if present e.g. "backseat - playlist by Mohid Faraz | Spotify"
     if "playlist by" in t.lower():
@@ -1192,7 +1199,7 @@ async def probe_pinterest_profile(handle: str, client: httpx.AsyncClient) -> Opt
     return None
 
 
-async def probe_medium_profile(handle: str, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
+async def probe_medium_profile(handle: str, client: Optional[httpx.AsyncClient] = None, proxy_url: Optional[str] = None) -> Optional[Dict[str, Any]]:
     clean = re.sub(r'[^a-zA-Z0-9._-]', '', handle).lstrip("@").strip()
     if not clean or len(clean) < 2 or clean.lower() in RESERVED_SYSTEM_SLUGS or clean.lower() in ("about", "membership", "creators", "feed", "search", "topics", "tag", "explore", "me", "settings", "policy", "plans"):
         return None
@@ -1201,9 +1208,24 @@ async def probe_medium_profile(handle: str, client: httpx.AsyncClient) -> Option
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "Accept": "application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.8",
     }
-    try:
-        resp = await client.get(url, headers=headers, timeout=4.0, follow_redirects=True)
-        if resp.status_code == 200:
+    resp = None
+    p_url = proxy_url or get_random_proxy_url()
+    if p_url:
+        try:
+            async with httpx.AsyncClient(proxy=p_url, timeout=5.0, follow_redirects=True, verify=False) as px_client:
+                resp = await px_client.get(url, headers=headers)
+        except Exception:
+            resp = None
+
+    if not resp or resp.status_code != 200:
+        if client:
+            try:
+                resp = await client.get(url, headers=headers, timeout=3.5, follow_redirects=True)
+            except Exception:
+                resp = None
+
+    if resp and resp.status_code == 200:
+        try:
             root = ET.fromstring(resp.text)
             channel = root.find("channel")
             if channel is None:
@@ -1227,7 +1249,7 @@ async def probe_medium_profile(handle: str, client: httpx.AsyncClient) -> Option
             
             avatar_url = html.unescape(raw_image) if raw_image else None
             if avatar_url and "/fit/c/" in avatar_url:
-                avatar_url = re.sub(r'/fit/c/\d+/\d+/', '/v2/resize:fill:150:150/', avatar_url)
+                avatar_url = re.sub(r'/fit/c/\d+/\d+/', '/v2/resize:fill:200:200/', avatar_url)
             profile_url = f"https://medium.com/@{clean}"
             
             print(f"[Prober] [MEDIUM] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'}, Posts: {len(items)})", flush=True)
@@ -1242,8 +1264,8 @@ async def probe_medium_profile(handle: str, client: httpx.AsyncClient) -> Option
                 "title": raw_title,
                 "discovery_method": "probing"
             }
-    except Exception:
-        pass
+        except Exception:
+            pass
     return None
 
 
@@ -2666,9 +2688,9 @@ async def search_social_candidates(
                 if med_data:
                     if med_data.get("avatar_url"):
                         c["avatar_url"] = med_data["avatar_url"]
-                    if med_data.get("name") and (not c.get("name") or c["name"] == c["handle"].lstrip("@")):
+                    if med_data.get("name"):
                         c["name"] = med_data["name"]
-                    if med_data.get("snippet") and not c.get("snippet"):
+                    if med_data.get("snippet"):
                         c["snippet"] = med_data["snippet"]
             elif plat == "instagram":
                 h_slug = c["handle"].lstrip("@").strip()
@@ -2676,7 +2698,7 @@ async def search_social_candidates(
                 if ig_data:
                     if ig_data.get("avatar_url"):
                         c["avatar_url"] = ig_data["avatar_url"]
-                    if ig_data.get("name") and (not c.get("name") or c["name"] == c["handle"].lstrip("@")):
+                    if ig_data.get("name") and (not c.get("name") or c["name"] == c["handle"].lstrip("@") or len(c.get("name", "")) > 30):
                         c["name"] = ig_data["name"]
                     if ig_data.get("snippet") and not c.get("snippet"):
                         c["snippet"] = ig_data["snippet"]
