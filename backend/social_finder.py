@@ -1247,9 +1247,19 @@ async def probe_medium_profile(handle: str, client: Optional[httpx.AsyncClient] 
                     p_text = p_soup.get_text().strip()
                     snippet = f"Latest story: '{post_title}' — {p_text[:120]}..." if post_title else p_text[:140]
             
-            avatar_url = html.unescape(raw_image) if raw_image else None
-            if avatar_url and "/fit/c/" in avatar_url:
-                avatar_url = re.sub(r'/fit/c/\d+/\d+/', '/v2/resize:fill:200:200/', avatar_url)
+            # Only keep avatar if URL looks like a real user photo (Medium CDN user-avatar paths).
+            # RSS <image> can also return publication logos — those have no '/fit/c/' or 'resize' pattern.
+            raw_avatar = html.unescape(raw_image) if raw_image else None
+            avatar_url = None
+            if raw_avatar:
+                is_user_avatar = (
+                    "/fit/c/" in raw_avatar
+                    or "resize:fill:" in raw_avatar
+                    or "resize%3Afill" in raw_avatar
+                    or "/cdn-cgi/image/" in raw_avatar
+                )
+                if is_user_avatar:
+                    avatar_url = re.sub(r'/fit/c/\d+/\d+/', '/v2/resize:fill:200:200/', raw_avatar)
             profile_url = f"https://medium.com/@{clean}"
             
             print(f"[Prober] [MEDIUM] @{clean} -> [OK] Confirmed (Name: '{display_name}', Avatar: {'YES' if avatar_url else 'NO'}, Posts: {len(items)})", flush=True)
@@ -2187,7 +2197,34 @@ async def search_social_candidates(
     inferred_first, inferred_last = split_compound_name(local_part)
     inferred_name = f"{inferred_first} {inferred_last}".strip() if (inferred_first and inferred_last) else (inferred_first or "")
 
+    # ── Alias detection ───────────────────────────────────────────────────────
+    # If resolved_name is a single token (e.g. "Mikka", "Thor") that does not
+    # appear anywhere in the email local-part, it is almost certainly a nickname
+    # or alias chosen for a different context (e.g. a gaming handle on GitHub).
+    # Using it as the DDG search query floods results with unrelated people who
+    # share that nickname. Instead:
+    #   • Use the email-derived compound name for the DDG text query.
+    #   • Keep resolved_name as a scoring anchor for confirmed handle matches.
+    _is_alias_name = (
+        resolved_name
+        and len(resolved_name.split()) == 1
+        and resolved_name.lower() not in local_part.lower()
+    )
+    if _is_alias_name:
+        print(
+            f"[DDG Engine] Single-token resolved_name '{resolved_name}' is not present in "
+            f"local_part '{local_part}' — treating as alias. "
+            f"DDG query will use email-derived name instead.",
+            flush=True,
+        )
+
     effective_name = resolved_name or (inferred_name if (inferred_name and len(inferred_name.split()) >= 2) else None)
+    # For DDG query purposes, override effective_name with email-derived name when alias detected
+    ddg_name = (
+        (inferred_name if (inferred_name and len(inferred_name.split()) >= 2) else None)
+        if _is_alias_name
+        else effective_name
+    )
 
     # Track platforms that are already verified — bypass redundant probing and DDG searches for them
     v_plats = set(verified_platforms) if verified_platforms else set()
@@ -2196,21 +2233,22 @@ async def search_social_candidates(
     if gh_username:
         v_plats.add("github")
 
-    # Parse clean name tokens
-    tokens = [p for p in re.findall(r"[a-zA-Z]+", effective_name or resolved_name or local_part)]
+    # Parse clean name tokens — use ddg_name (alias-safe) for query building
+    tokens = [p for p in re.findall(r"[a-zA-Z]+", ddg_name or resolved_name or local_part)]
     if tokens and tokens[0].lower() in TITLE_PREFIXES and len(tokens) > 1:
         core_human_name = " ".join(p.capitalize() for p in tokens[1:])
     else:
-        core_human_name = effective_name
+        core_human_name = ddg_name
 
-    query_target = core_human_name if (core_human_name and len(core_human_name.split()) >= 2) else (effective_name or resolved_name or local_part)
+    query_target = core_human_name if (core_human_name and len(core_human_name.split()) >= 2) else (ddg_name or resolved_name or local_part)
 
+    # Handle variations use effective_name so alias handles (e.g. "mikka") are still direct-probed
     specific_handles, stem_handles = generate_handle_variations(email, effective_name or resolved_name, gh_username)
     probe_seeds = expand_social_probe_handles(specific_handles, stem_handles, effective_name or resolved_name)[:25]
     all_variations = specific_handles + stem_handles + probe_seeds
 
     print(f"\n[DDG Engine] ---------------------------------------------------", flush=True)
-    print(f"[DDG Engine] Target: {email} | Inferred Name: '{effective_name or resolved_name}' | Query: '{query_target}'", flush=True)
+    print(f"[DDG Engine] Target: {email} | Inferred Name: '{effective_name or resolved_name}' | DDG Query: '{query_target}'", flush=True)
     if v_plats:
         print(f"[DDG Engine] Skipping redundant probes for already verified platforms: {sorted(list(v_plats))}", flush=True)
 

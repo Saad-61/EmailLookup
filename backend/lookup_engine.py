@@ -1828,7 +1828,10 @@ async def run_lookup(email: str) -> dict:
             resolved_avatar = harvested.get("avatar_url")
         elif gravatar.get("avatar") and not ("gravatar.com/avatar" in gravatar.get("avatar") and "d=mp" in gravatar.get("avatar")):
             resolved_avatar = gravatar.get("avatar")
-        elif gh_avatar:
+        elif gh_avatar and not is_gh_default:
+            # Only use GitHub avatar as absolute last resort when it's NOT the auto-generated identicon.
+            # If it IS a default identicon, leave resolved_avatar = None so the frontend
+            # shows its own unisex placeholder instead of the pixel-art blocky image.
             resolved_avatar = gh_avatar
         else:
             resolved_avatar = None
