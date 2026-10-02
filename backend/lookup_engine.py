@@ -1189,6 +1189,7 @@ async def lookup_company(
                                 "rank": r.get("rank"),
                                 "email_format": r.get("email_format"),
                                 "mx_provider": r.get("mx_provider"),
+                                "source": "database",
                             }
 
                 # Match by company_hint
@@ -1224,6 +1225,7 @@ async def lookup_company(
                                     "rank": r.get("rank"),
                                     "email_format": r.get("email_format"),
                                     "mx_provider": r.get("mx_provider"),
+                                    "source": "database",
                                 }
         except Exception:
             pass
@@ -1260,6 +1262,7 @@ async def lookup_company(
                         "rank": None,
                         "email_format": None,
                         "mx_provider": None,
+                        "source": "clearbit",
                     }
         except Exception:
             pass
@@ -1275,6 +1278,7 @@ async def lookup_company(
             "rank": None,
             "email_format": None,
             "mx_provider": None,
+            "source": "synthesis",
         }
 
     return None
@@ -1692,9 +1696,27 @@ async def run_lookup(email: str) -> dict:
 
         # ── Persona Role and Workplace / Education Card Resolution ──
         has_verified_li = bool(linkedin_url and linkedin_confidence == 100 and linkedin_source in ("github", "gravatar", "wikidata", "harvested"))
-        is_corporate_domain_company = bool(email_type == "corporate" and company and isinstance(company, dict) and (company.get("domain") == domain or company.get("rank") is not None))
 
-        if not is_corporate_domain_company:
+        # Check if the domain is a personal portfolio / vanity domain or synthetic domain
+        is_synthetic_dom = bool(company and isinstance(company, dict) and company.get("source") == "synthesis")
+        is_vanity_domain = bool(
+            is_synthetic_dom
+            or (domain and gh_u and (domain.startswith(gh_u.lower()) or gh_u.lower() in domain))
+            or (domain and resolved_name and "".join(c for c in resolved_name.lower() if c.isalnum()) in domain.replace(".", ""))
+            or (domain and any(domain.lower().endswith(tld) for tld in PERSONAL_PORTFOLIO_TLDS))
+        )
+        is_corporate_domain_company = bool(
+            email_type == "corporate"
+            and company
+            and isinstance(company, dict)
+            and not is_vanity_domain
+            and company.get("source") in ("database", "clearbit")
+            and (company.get("rank") is not None or company.get("industry") is not None)
+        )
+
+        # Priority 1: If verified LinkedIn provides a specific employer/workplace or student status,
+        # prioritize it over synthetic/vanity domain fallbacks.
+        if not is_corporate_domain_company or (has_verified_li and li_comp and li_comp.get("name") and is_vanity_domain):
             if li_role == "student" and li_edu:
                 s_name = li_edu.get("name", "University")
                 s_logo = li_edu.get("logo")
@@ -1710,6 +1732,7 @@ async def run_lookup(email: str) -> dict:
                     "rank": None,
                     "email_format": None,
                     "mx_provider": None,
+                    "source": "linkedin",
                 }
             elif li_role == "faculty" and (li_edu or li_comp):
                 f_target = li_edu or li_comp
@@ -1727,6 +1750,7 @@ async def run_lookup(email: str) -> dict:
                     "rank": None,
                     "email_format": None,
                     "mx_provider": None,
+                    "source": "linkedin",
                 }
             else:
                 # Corporate employee or regular workplace
@@ -1735,7 +1759,7 @@ async def run_lookup(email: str) -> dict:
                     c_logo = li_comp.get("logo")
                     c_slug = li_comp.get("url", "").split("/company/")[-1].strip("/") if li_comp.get("url") else None
                     c_res = await lookup_company(domain="", client=client, company_hint=c_name)
-                    c_dom = (c_res.get("domain") if c_res else None) or c_slug or (company.get("domain") if isinstance(company, dict) else "")
+                    c_dom = (c_res.get("domain") if c_res else None) or c_slug or (company.get("domain") if isinstance(company, dict) and not is_vanity_domain else "")
                     company = {
                         "name": c_name,
                         "domain": c_dom,
@@ -1747,6 +1771,7 @@ async def run_lookup(email: str) -> dict:
                         "alma_mater": li_edu.get("name") if li_edu else None,
                         "email_format": None,
                         "mx_provider": None,
+                        "source": "linkedin",
                     }
                 elif not company and harvested and harvested.get("company"):
                     h_c_name = harvested["company"]
@@ -2159,14 +2184,14 @@ async def run_lookup(email: str) -> dict:
             print(f"[Lookup Engine] Inferred name from email username: '{concatenated_name}'", flush=True)
 
     # ── Strict Company Visibility Policy ──
-    # If this is a personal email (gmail, hey, proton, etc.), ONLY show company/workplace data if verified by
-    # a confirmed LinkedIn employment/education record or verified GitHub company record.
+    # If this is a personal email (gmail, hey, proton, etc.) or vanity domain, ONLY show company/workplace data if verified by
+    # a confirmed LinkedIn employment/education record, verified database company, or verified GitHub company record.
     has_verified_employment = bool(
         has_verified_li
         or (github and isinstance(github, dict) and github.get("company"))
-        or (company and isinstance(company, dict) and company.get("type") in ("education", "academic_workplace"))
+        or (company and isinstance(company, dict) and (company.get("type") in ("education", "academic_workplace") or company.get("source") in ("database", "clearbit", "linkedin")))
     )
-    if email_type == "personal" and not has_verified_employment:
+    if (email_type == "personal" or is_vanity_domain) and not has_verified_employment:
         company = None
 
     # ── Phone from GitHub bio ──
