@@ -62,14 +62,14 @@ except ImportError:
 try:
     from constants import (
         BROWSER_HEADERS, PERSONAL_DOMAINS, INVALID_TYPO_DOMAINS, KNOWN_DOMAIN_TYPOS,
-        TITLE_PREFIXES, ROLE_SUFFIXES, COMMON_FIRST_NAMES, LEET_REPLACEMENTS,
+        TITLE_PREFIXES, ROLE_SUFFIXES, COMMON_FIRST_NAMES, COMMON_SURNAMES, LEET_REPLACEMENTS,
         RESERVED_SYSTEM_SLUGS, US_STATES, KNOWN_CITIES, COUNTRY_CANONICAL,
         ALL_COUNTRIES, TZ_REGIONS
     )
 except ImportError:
     from backend.constants import (
         BROWSER_HEADERS, PERSONAL_DOMAINS, INVALID_TYPO_DOMAINS, KNOWN_DOMAIN_TYPOS,
-        TITLE_PREFIXES, ROLE_SUFFIXES, COMMON_FIRST_NAMES, LEET_REPLACEMENTS,
+        TITLE_PREFIXES, ROLE_SUFFIXES, COMMON_FIRST_NAMES, COMMON_SURNAMES, LEET_REPLACEMENTS,
         RESERVED_SYSTEM_SLUGS, US_STATES, KNOWN_CITIES, COUNTRY_CANONICAL,
         ALL_COUNTRIES, TZ_REGIONS
     )
@@ -203,7 +203,7 @@ def split_concatenated_name(local_part: str) -> Optional[str]:
     if any(sep in local_part for sep in (".", "_", "-")):
         chunks = [re.sub(r"[\d._+-]+", "", c).strip().lower() for c in re.split(r"[._+-]", local_part)]
         chunks = [c for c in chunks if len(c) >= 2]
-        if chunks and chunks[-1] in ROLE_SUFFIXES and len(chunks) >= 3:
+        if chunks and chunks[-1] in ROLE_SUFFIXES and len(chunks) >= 2:
             chunks = chunks[:-1]
 
         title = ""
@@ -222,6 +222,12 @@ def split_concatenated_name(local_part: str) -> Optional[str]:
                     if len(rem) >= 2 and rem.isalpha():
                         fn_cap = f"{title} {fn.capitalize()}".strip() if title else fn.capitalize()
                         return f"{fn_cap} {rem.capitalize()}".strip()
+            for sn in sorted(COMMON_SURNAMES, key=len, reverse=True):
+                if s.endswith(sn) and len(s) > len(sn):
+                    prefix = s[:-len(sn)]
+                    if len(prefix) >= 3 and prefix.isalpha():
+                        fn_cap = f"{title} {prefix.capitalize()}".strip() if title else prefix.capitalize()
+                        return f"{fn_cap} {sn.capitalize()}".strip()
             fn_cap = f"{title} {s.capitalize()}".strip() if title else s.capitalize()
             return fn_cap
 
@@ -229,10 +235,10 @@ def split_concatenated_name(local_part: str) -> Optional[str]:
     digit_chunks = [c.strip().lower() for c in re.split(r"\d+", local_part) if c.strip()]
     if len(digit_chunks) >= 2:
         c0, c1 = digit_chunks[0], digit_chunks[1]
-        if c0 in COMMON_FIRST_NAMES and len(c1) >= 2 and c1.isalpha():
+        if (c0 in COMMON_FIRST_NAMES or c1 in COMMON_SURNAMES) and len(c0) >= 2 and len(c1) >= 2 and c0.isalpha() and c1.isalpha():
             return f"{c0.capitalize()} {c1.capitalize()}"
 
-    # 3. Direct clean stripped check (e.g. saad00 -> Saad, nomanghaffar074 -> Noman Ghaffar)
+    # 3. Direct clean stripped check (e.g. saad00 -> Saad, nomanghaffar074 -> Noman Ghaffar, rohaanashraf -> Rohaan Ashraf)
     clean_stripped = re.sub(r"\d+$", "", local_part).lower().strip()
     clean_alpha = re.sub(r"[\d._+-]+", "", clean_stripped)
 
@@ -244,6 +250,12 @@ def split_concatenated_name(local_part: str) -> Optional[str]:
             rem = clean_alpha[len(fn):]
             if len(rem) >= 2 and rem.isalpha() and rem not in ("oo", "ee", "o", "e", "a", "i", "s", "t"):
                 return f"{fn.capitalize()} {rem.capitalize()}"
+
+    for sn in sorted(COMMON_SURNAMES, key=len, reverse=True):
+        if clean_alpha.endswith(sn) and len(clean_alpha) > len(sn):
+            prefix = clean_alpha[:-len(sn)]
+            if len(prefix) >= 3 and prefix.isalpha():
+                return f"{prefix.capitalize()} {sn.capitalize()}"
 
     # 4. Leetspeak substitution ONLY for internal digits (e.g. tauq33raslam -> Tauqeer Aslam, n0manghaffar -> Noman Ghaffar)
     if any(c.isdigit() for c in clean_stripped):
@@ -261,6 +273,12 @@ def split_concatenated_name(local_part: str) -> Optional[str]:
                 rem = curr_clean[len(fn):]
                 if len(rem) >= 2 and rem.isalpha() and rem not in ("oo", "ee", "o", "e", "a", "i", "s", "t"):
                     return f"{fn.capitalize()} {rem.capitalize()}"
+
+        for sn in sorted(COMMON_SURNAMES, key=len, reverse=True):
+            if curr_clean.endswith(sn) and len(curr_clean) > len(sn):
+                prefix = curr_clean[:-len(sn)]
+                if len(prefix) >= 3 and prefix.isalpha():
+                    return f"{prefix.capitalize()} {sn.capitalize()}"
 
     return clean_alpha.capitalize() if len(clean_alpha) >= 3 else None
 
@@ -1916,8 +1934,8 @@ async def run_lookup(email: str) -> dict:
             return_exceptions=True,
         )
 
-    if dir_twitter:
-        tw_d = tw_res if isinstance(tw_res, dict) else {}
+    if dir_twitter and isinstance(tw_res, dict) and tw_res.get("name"):
+        tw_d = tw_res
         tw_av = tw_d.get("avatar_url")
         tw_name = tw_d.get("name")
         tw_handle = tw_d.get("handle") or dir_twitter.rstrip("/").split("/")[-1].replace("@", "")
@@ -1932,8 +1950,8 @@ async def run_lookup(email: str) -> dict:
             "avatar": tw_av if isinstance(tw_av, str) else None,
         }
 
-    if dir_instagram:
-        ig_d = ig_res if isinstance(ig_res, dict) else {}
+    if dir_instagram and isinstance(ig_res, dict) and ig_res.get("name"):
+        ig_d = ig_res
         ig_av = ig_d.get("avatar_url")
         ig_name = ig_d.get("name")
         ig_handle = ig_d.get("handle") or dir_instagram.rstrip("/").split("/")[-1].replace("@", "")
@@ -1948,8 +1966,8 @@ async def run_lookup(email: str) -> dict:
             "avatar": ig_av if isinstance(ig_av, str) else None,
         }
 
-    if dir_facebook:
-        fb_d = fb_res if isinstance(fb_res, dict) else {}
+    if dir_facebook and isinstance(fb_res, dict) and (fb_res.get("name") or fb_res.get("avatar_url")):
+        fb_d = fb_res
         fb_av = fb_d.get("avatar_url")
         fb_name = fb_d.get("name")
         fb_handle = dir_facebook.rstrip("/").split("/")[-1].replace("@", "")
@@ -1964,8 +1982,8 @@ async def run_lookup(email: str) -> dict:
             "avatar": fb_av if isinstance(fb_av, str) else None,
         }
 
-    if dir_spotify:
-        sp_d = sp_res if isinstance(sp_res, dict) else {}
+    if dir_spotify and isinstance(sp_res, dict) and sp_res.get("name"):
+        sp_d = sp_res
         sp_av = sp_d.get("avatar_url")
         sp_name = sp_d.get("name")
         sp_handle = sp_d.get("handle") or dir_spotify.rstrip("/").split("/")[-1].replace("@", "")
@@ -1980,8 +1998,8 @@ async def run_lookup(email: str) -> dict:
             "avatar": sp_av if isinstance(sp_av, str) else None,
         }
 
-    if dir_tiktok:
-        tt_d = tt_res if isinstance(tt_res, dict) else {}
+    if dir_tiktok and isinstance(tt_res, dict) and tt_res.get("name"):
+        tt_d = tt_res
         tt_av = tt_d.get("avatar_url")
         tt_name = tt_d.get("name")
         tt_handle = tt_d.get("handle") or dir_tiktok.rstrip("/").split("/")[-1].replace("@", "")
@@ -1996,8 +2014,8 @@ async def run_lookup(email: str) -> dict:
             "avatar": tt_av if isinstance(tt_av, str) else None,
         }
 
-    if dir_pinterest:
-        pin_d = pin_res if isinstance(pin_res, dict) else {}
+    if dir_pinterest and isinstance(pin_res, dict) and pin_res.get("name"):
+        pin_d = pin_res
         pin_av = pin_d.get("avatar_url")
         pin_name = pin_d.get("name")
         pin_handle = pin_d.get("handle") or dir_pinterest.rstrip("/").split("/")[-1].replace("@", "")
@@ -2061,6 +2079,9 @@ async def run_lookup(email: str) -> dict:
             client=client,
             has_verified_linkedin=has_verified_li,
             verified_platforms=verified_platforms,
+            anchor_avatar=resolved_avatar or person.get("avatar"),
+            anchor_website=person.get("website"),
+            anchor_profiles=profiles,
         )
 
         # If a search-discovered LinkedIn candidate was found during base checks, add it to candidates list if not present

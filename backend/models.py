@@ -50,6 +50,10 @@ class SocialCandidate(BaseModel):
     sub_scores: dict = {}
     avatar_url: Optional[str] = None
     discovery_method: str = "probing"  # 'probing' or 'querying'
+    is_corroborated: bool = False
+    corroboration_type: Optional[str] = None  # 'visual_match' or 'link_match' or 'handle_match'
+    corroboration_badge: Optional[str] = None
+    corroboration_reason: Optional[str] = None
 
 
 class LookupResponse(BaseModel):

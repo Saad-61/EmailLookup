@@ -178,7 +178,7 @@ COMMON_FIRST_NAMES: Set[str] = {
     "komal", "natasha", "sonia", "haseeb", "rauf", "tauqeer", "tauqir", "touqeer", "touqir", "shafiq",
     "shafique", "mohid", "faraz", "shayan", "mubashir", "mohsin", "sharafat", "adnan", "imran", "kamran",
     "zeeshan", "waqas", "danish", "rizwan", "irfan", "salman", "mustafa", "murtaza", "ibrahim", "ismail",
-    "taha", "yaseen", "shoaib", "sohail", "talha", "danyal", "daniyal", "huzaifa", "subhan", "rehan", "rohan",
+    "taha", "yaseen", "shoaib", "sohail", "talha", "danyal", "daniyal", "huzaifa", "subhan", "rehan", "rohan", "rohaan", "roaan",
     "arham", "ayaan", "rayyan", "azlan", "musa", "isa", "dawud", "dawood", "idrees", "ilyas", "yahya",
     "areeb", "azhar", "babar", "dawar", "faizan", "ghani", "habib", "hanif", "hashim", "inam", "jawad",
     "khuram", "lukman", "luqman", "mudassar", "nadeem", "owais", "pervaiz", "qasim", "rehmat", "sufyan",
@@ -374,6 +374,26 @@ COMMON_FIRST_NAMES: Set[str] = {
     "satya", "sundar", "guido", "linus", "bill", "steve", "elon", "jeff", "sam", "sergey",
     "tim", "jensen", "danielle", "katie", "sarah", "laszlo", "horacio", "brendan", "bjarne",
     "vitalik", "ken", "dennis", "richard", "donald", "ada", "grace", "alan", "claude"
+}
+
+COMMON_SURNAMES: Set[str] = {
+    # South Asian & Islamic Surnames
+    "ashraf", "asif", "hameed", "ghaffar", "rashid", "khan", "ahmad", "ahmed", "ali", "malik", "sheikh",
+    "syed", "shah", "javed", "siddiqui", "abbasi", "mirza", "baig", "mughal", "rehman", "rahman", "aziz",
+    "khalid", "sultan", "alam", "raza", "munir", "zafar", "nawaz", "sarwar", "liaquat", "abid", "sajid",
+    "majid", "zahid", "shahzad", "khurram", "shahbaz", "tanveer", "tanvir", "waheed", "wahid", "yousaf",
+    "yusuf", "yaqoob", "ayub", "butt", "dar", "bhatti", "rana", "qureshi", "ansari", "chaudhry", "chaudhary",
+    "bukhari", "kazmi", "gilani", "farooqi", "farooq", "faraz", "osmani", "nadella", "pichai", "altman",
+    "sharma", "gupta", "singh", "kumar", "verma", "patel", "reddy", "joshi", "iyer", "nair", "rao", "kapoor",
+    "agarwal", "bose", "das", "chatterjee", "banerjee", "ghosh", "mukherjee", "sen", "dutta", "choudhury",
+    # Western, Anglo & European Surnames
+    "smith", "johnson", "williams", "brown", "jones", "garcia", "miller", "davis", "rodriguez", "martinez",
+    "hernandez", "lopez", "gonzalez", "wilson", "anderson", "thomas", "taylor", "moore", "jackson", "martin",
+    "lee", "perez", "thompson", "white", "harris", "sanchez", "clark", "ramirez", "lewis", "robinson",
+    "walker", "young", "allen", "king", "wright", "scott", "torres", "nguyen", "hill", "flores", "green",
+    "adams", "nelson", "baker", "hall", "rivera", "campbell", "mitchell", "carter", "roberts", "hansson",
+    "rossum", "vanrossum", "levels", "torvalds", "gates", "blank", "graham", "wang", "collison", "monaghan",
+    "bock", "gutierrez"
 }
 
 
